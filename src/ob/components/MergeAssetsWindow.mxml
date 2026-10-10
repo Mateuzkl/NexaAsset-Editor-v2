@@ -26,8 +26,9 @@ THE SOFTWARE.
     xmlns:mx="library://ns.adobe.com/flex/mx"
     xmlns:mg="library://ns.mignari.com/mg"
     xmlns:otlib="otlib.components.*"
+    xmlns:ob="ob.components.*"
     width="550"
-    height="500"
+    height="540"
     fontSize="11"
     title="@Resource(key='mergeClientFiles', bundle='strings')"
     creationComplete="windowCreationCompleteHandler(event)">
@@ -48,6 +49,7 @@ THE SOFTWARE.
             
             import otlib.assets.Assets;
             import otlib.core.Version;
+            import otlib.core.ClientFeatures;
             import otlib.core.VersionStorage;
             import otlib.events.FileTextInputEvent;
             import otlib.utils.ClientInfo;
@@ -74,6 +76,7 @@ THE SOFTWARE.
             public var extendedItems:Boolean;
             private var m_frameGroupsChanged:Boolean;
             private var m_detail:uint;
+            private var m_expectedInfo:ClientInfo;
             
             // --------------------------------------
             // Getters / Setters
@@ -187,7 +190,7 @@ THE SOFTWARE.
             
                 if (m_extendedChanged)
                 {
-                    setClientDirectory(m_clientDirectory);
+                    updateProperties();
                     m_extendedChanged = false;
                 }
             
@@ -298,6 +301,7 @@ THE SOFTWARE.
                 function completeHandler(event:Event):void
                 {
                     var info:ClientInfo = loader.clientInfo;
+                    m_expectedInfo = info;
                     extended = info.extended;
                     transparency = info.transparency;
                     improvedAnimations = info.improvedAnimations;
@@ -344,6 +348,8 @@ THE SOFTWARE.
                 m_sprFile = null;
                 m_datFile = null;
                 m_version = null;
+                m_expectedInfo = null;
+                featureNotice.configure(null, null);
             
                 setErrorText(null);
             }
@@ -388,7 +394,18 @@ THE SOFTWARE.
                 transparencyCheckBox.selected = m_transparency;
                 improvedAnimationsCheckBox.selected = m_improvedAnimations;
                 frameGroupsCheckBox.selected = m_frameGroups;
-                loadButton.enabled = done;
+                featureNotice.configure(m_expectedInfo, ClientFeatures.fromWindow(this));
+                loadButton.enabled = done && !featureNotice.blocksLoad;
+            }
+
+            private function applyDetectedFeatures():void
+            {
+                if (!m_expectedInfo) return;
+                extended = m_expectedInfo.extended;
+                transparency = m_expectedInfo.transparency;
+                improvedAnimations = m_expectedInfo.improvedAnimations;
+                frameGroups = m_expectedInfo.frameGroups;
+                updateProperties();
             }
             
             // --------------------------------------
@@ -440,6 +457,8 @@ THE SOFTWARE.
             
             private function loadButtonClickHandler(event:MouseEvent):void
             {
+                validateNow();
+                if (!loadButton.enabled) return;
                 m_detail = DialogDetail.OK;
                 close();
             }
@@ -456,7 +475,8 @@ THE SOFTWARE.
         <s:VerticalLayout/>
     </mg:layout>
 
-    <s:VGroup width="100%" height="100%" gap="10" padding="10">
+    <s:Scroller width="100%" height="100%" minHeight="0" horizontalScrollPolicy="off">
+    <s:VGroup width="100%" gap="10" padding="10">
         <!-- client files directory -->
         <s:Group width="100%">
             <s:layout>
@@ -569,16 +589,17 @@ THE SOFTWARE.
                 color="0x9AC9F8"/>
         </mg:GroupBox>
     </s:VGroup>
+    </s:Scroller>
 
     <s:BorderContainer width="100%" skinClass="com.mignari.skins.PixeledBorderContainerSkin">
         <s:layout>
-            <s:HorizontalLayout gap="10" padding="10" verticalAlign="middle"/>
+            <s:VerticalLayout gap="10" padding="10"/>
         </s:layout>
 
+        <ob:AssetFeatureNotice id="featureNotice" change="applyDetectedFeatures()"/>
+        <s:HGroup width="100%" gap="10" verticalAlign="middle">
         <s:Image id="errorIcon" visible="false" source="{Assets.ERROR}"/>
-        <s:Label id="errorLabel" visible="false" color="0xffffff"/>
-
-        <s:Spacer width="100%"/>
+        <s:Label id="errorLabel" width="100%" visible="false" color="0xffffff"/>
 
         <s:Button id="loadButton"
             label="@Resource(key='load', bundle='strings')"
@@ -590,5 +611,6 @@ THE SOFTWARE.
             label="@Resource(key='cancel', bundle='strings')"
             minWidth="70"
             click="cancelButtonClickHandler(event)"/>
+        </s:HGroup>
     </s:BorderContainer>
 </mg:TitleWindow>

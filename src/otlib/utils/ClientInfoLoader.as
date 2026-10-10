@@ -48,6 +48,7 @@ package otlib.utils
                 if (!dat || !spr || !dat.exists || !spr.exists)
                     throw new Error("DAT/SPR files not found.");
                 var info:ClientInfo = new ClientInfo();
+                info.hasMetadata = true;
                 info.features = new ClientFeatures(extended);
                 // Prefer the matching descriptor, not an arbitrary OTFI in the folder.
                 var dot:int = dat.name.lastIndexOf(".");
@@ -55,6 +56,7 @@ package otlib.utils
                 var otfi:OTFI = new OTFI();
                 if (descriptor.exists && otfi.load(descriptor))
                 {
+                    info.featureDescriptor = true;
                     info.features.copyFrom(otfi.features);
                     info.spriteSize = otfi.spriteSize;
                     info.spriteDataSize = otfi.spriteDataSize;
@@ -102,6 +104,11 @@ package otlib.utils
                 var version:Version = VersionStorage.getInstance().getBySignatures(info.datSignature, signature);
                 if (!version) throw new Error("Unsupported DAT/SPR signatures.");
                 info.features.applyVersionDefaults(version.value);
+                var header:Object = SpriteReader.probeHeader(spr, info.features.extended);
+                info.features.extended = header.extended;
+                info.extendedKnown = header.known;
+                if (version.value >= 960 && !info.features.extended)
+                    throw new Error("This client version requires a 32-bit SPR header.");
                 var reader:SpriteReader = new SpriteReader(info.features);
                 try
                 {
@@ -112,6 +119,8 @@ package otlib.utils
                     // Only override a stale descriptor when sampled records unambiguously
                     // validate in the opposite encoding; empty/ambiguous records do not vote.
                     info.features.transparency = reader.detectTransparency();
+                    info.transparencyKnown = reader.transparencyKnown;
+                    info.transparencyConflict = reader.transparencyConflict;
                 }
                 finally { reader.closeSpriteFile(); }
                 info.clientVersion = version.value;

@@ -12,6 +12,13 @@
         import mx.resources.ResourceManager;
         import ob.components.OpenAssetsWindow;
         import ob.components.CompileAssetsWindow;
+        import ob.components.MergeAssetsWindow;
+        import flash.events.Event;
+        import flash.geom.Point;
+        import flash.display.BitmapData;
+        import flash.display.PNGEncoderOptions;
+        import otlib.core.ClientFeatures;
+        import otlib.utils.OTFI;
         import otlib.core.Version;
         import otlib.core.VersionStorage;
         import otlib.core.SpriteDimensionStorage;
@@ -20,6 +27,8 @@
         private var fixtureRoot:File;
         private var version:Version;
         private var openWindow:OpenAssetsWindow;
+        private var mergeWindow:MergeAssetsWindow;
+        private var warningRoot:File;
         private function startTest():void
         {
             try
@@ -52,7 +61,9 @@
             try
             {
                 openWindow.validateNow();
-                if (!openWindow.sprFile || openWindow.sprFile.name != "spr_index.dat" || openWindow.version != version)
+                // v1/v2 share a SPR signature; without DAT only the version family is knowable.
+                if (!openWindow.sprFile || openWindow.sprFile.name != "spr_index.dat" || !openWindow.version ||
+                    openWindow.version.value != version.value || openWindow.version.sprSignature != version.sprSignature)
                     throw new Error("SPR-only multi-index selection/version failed.");
                 openWindow.close();
                 var bytes:ByteArray = buffer(); bytes.writeUnsignedInt(version.sprSignature); bytes.writeShort(1); bytes.writeUnsignedInt(0);
@@ -79,9 +90,104 @@
                 if (compileWindow.sprFile.name != "Tibia.spr") throw new Error("Standard output choice failed.");
                 compileWindow.close();
                 trace("PASS: SPR-only multi-index load, standard SPR priority, independent output selection");
+                prepareWarnings();
+            }
+            catch (error:Error) { fail(error); }
+        }
+        private function prepareWarnings():void
+        {
+            Resources.locale = "pt_BR";
+            ResourceManager.getInstance().localeChain = ["pt_BR"];
+            warningRoot = fixtureRoot.resolvePath("warnings"); warningRoot.createDirectory();
+            var bytes:ByteArray = buffer(); bytes.writeUnsignedInt(version.sprSignature); bytes.writeShort(32);
+            for (var id:uint = 1; id <= 32; id++) bytes.writeUnsignedInt(6 + 32 * 4 + (id - 1) * 12);
+            for (id = 1; id <= 32; id++)
+            {
+                bytes.writeByte(255); bytes.writeByte(0); bytes.writeByte(255); bytes.writeShort(7);
+                bytes.writeShort(0); bytes.writeShort(1); bytes.writeByte(10); bytes.writeByte(20); bytes.writeByte(30);
+            }
+            write(warningRoot.resolvePath("Tibia.spr"), bytes);
+            bytes = buffer(); bytes.writeUnsignedInt(version.datSignature); bytes.writeShort(100);
+            bytes.writeShort(0); bytes.writeShort(0); bytes.writeShort(0); bytes.writeByte(255);
+            for (id = 0; id < 7; id++) bytes.writeByte(1);
+            bytes.writeShort(1); write(warningRoot.resolvePath("Tibia.dat"), bytes);
+            new OTFI(new ClientFeatures(false, false), "Tibia.dat", "Tibia.spr", 32, 4096).save(warningRoot.resolvePath("Tibia.otfi"));
+            openWindow = new OpenAssetsWindow(); openWindow.open(this); openWindow.clientDirectory = warningRoot;
+            callLater(verifyOpenWarning);
+        }
+        private function verifyOpenWarning():void
+        {
+            try
+            {
+                openWindow.validateNow();
+                if (openWindow.transparency || !openWindow.loadButton.enabled || openWindow.featureNotice.visible)
+                    throw new Error("RGB auto-detection did not initialize cleanly.");
+                openWindow.transparency = true; openWindow.validateNow();
+                if (!openWindow.featureNotice.blocksLoad || openWindow.loadButton.enabled)
+                    throw new Error("Wrong RGB transparency must display a red warning and block Load.");
+                if (openWindow.featureNotice.message.indexOf("Transparência") < 0)
+                    throw new Error("Portuguese warning resources were not applied.");
+                snapshot("warning-red.png");
+                openWindow.transparency = false; openWindow.validateNow();
+                if (openWindow.featureNotice.visible || !openWindow.loadButton.enabled)
+                    throw new Error("Unchecking Transparency must clear the warning and restore Load.");
+                openWindow.extended = true; openWindow.validateNow();
+                if (!openWindow.featureNotice.blocksLoad || !openWindow.extended)
+                    throw new Error("Manual Extended choice must warn, not silently reload/reset.");
+                openWindow.featureNotice.dispatchEvent(new Event(Event.CHANGE)); openWindow.validateNow();
+                if (openWindow.extended || !openWindow.loadButton.enabled) throw new Error("Suggested settings did not restore Extended.");
+                openWindow.improvedAnimations = true; openWindow.frameGroups = true; openWindow.validateNow();
+                if (!openWindow.featureNotice.visible || openWindow.featureNotice.blocksLoad || !openWindow.loadButton.enabled)
+                    throw new Error("DAT hints must display yellow and allow a custom configuration.");
+                callLater(verifyWarningLayout);
+            }
+            catch (error:Error) { fail(error); }
+        }
+        private function verifyWarningLayout():void
+        {
+            try
+            {
+                openWindow.validateNow();
+                var label:Object = openWindow.featureNotice.messageLabel;
+                var bottom:Point = label.localToGlobal(new Point(0, label.height));
+                var button:Point = openWindow.loadButton.localToGlobal(new Point(0, 0));
+                if (label.width <= 0 || label.height <= 0 || bottom.y > button.y)
+                    throw new Error("Warning text overlaps the Load button.");
+                snapshot("warning-yellow.png");
+                openWindow.featureNotice.dispatchEvent(new Event(Event.CHANGE)); openWindow.validateNow();
+                if (openWindow.featureNotice.visible || openWindow.improvedAnimations || openWindow.frameGroups)
+                    throw new Error("Suggested DAT flags did not clear the warning.");
+                openWindow.close();
+                mergeWindow = new MergeAssetsWindow(); mergeWindow.open(this); mergeWindow.clientDirectory = warningRoot;
+                callLater(verifyMergeWarning);
+            }
+            catch (error:Error) { fail(error); }
+        }
+        private function verifyMergeWarning():void
+        {
+            try
+            {
+                mergeWindow.validateNow(); mergeWindow.transparency = true; mergeWindow.validateNow();
+                if (!mergeWindow.featureNotice.blocksLoad || mergeWindow.loadButton.enabled)
+                    throw new Error("Merge must apply the same transparency safety check.");
+                mergeWindow.featureNotice.dispatchEvent(new Event(Event.CHANGE)); mergeWindow.validateNow();
+                if (mergeWindow.transparency || !mergeWindow.loadButton.enabled) throw new Error("Merge warning correction failed.");
+                mergeWindow.close();
+                trace("PASS: Open/Merge red mismatch, checkbox correction, yellow DAT hints, suggested settings, warning layout");
+                trace("Warning screenshots: " + fixtureRoot.nativePath);
                 NativeApplication.nativeApplication.exit(0);
             }
             catch (error:Error) { fail(error); }
+        }
+        private function snapshot(name:String):void
+        {
+            var bitmap:BitmapData = new BitmapData(Math.ceil(openWindow.width), Math.ceil(openWindow.height), true, 0);
+            try
+            {
+                bitmap.draw(openWindow);
+                write(fixtureRoot.resolvePath(name), bitmap.encode(bitmap.rect, new PNGEncoderOptions()));
+            }
+            finally { bitmap.dispose(); }
         }
         private function buffer():ByteArray { var b:ByteArray = new ByteArray(); b.endian = Endian.LITTLE_ENDIAN; return b; }
         private function write(file:File, bytes:ByteArray):void

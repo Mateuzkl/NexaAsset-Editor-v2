@@ -44,6 +44,8 @@ package otlib.sprites
         private var m_offsets:ByteArray;
         private var m_window:ByteArray;
         private var m_windowStart:Number = -1;
+        public var transparencyKnown:Boolean;
+        public var transparencyConflict:Boolean;
 
         // --------------------------------------------------------------------------
         // CONSTRUCTOR
@@ -170,13 +172,32 @@ package otlib.sprites
 
         public function detectTransparency():Boolean
         {
-            var preferred:uint = 0, opposite:uint = 0, sampled:uint = 0;
+            var preferred:uint = 0, opposite:uint = 0;
+            transparencyKnown = false;
+            transparencyConflict = false;
             var count:uint = readSpriteCount();
-            for (var id:uint = 1; id <= Math.min(count, 4096) && sampled < 16; id++)
+            // Include distant records: some large archives begin with empty sprites.
+            // Sampling stays bounded and never scans/decompresses the whole archive.
+            var prefix:uint = Math.min(count, 4096);
+            var earlySamples:uint = 0, lastEarlyID:uint = 0, lastSpreadID:uint = 0;
+            for (var step:uint = 1; step <= prefix + 64 && count; step++)
             {
+                var id:uint;
+                if (step <= prefix)
+                {
+                    if (earlySamples >= 16) continue;
+                    id = step; lastEarlyID = id;
+                }
+                else
+                {
+                    id = 1 + Math.floor(Number(count - 1) * (step - prefix) / 64);
+                    if (id <= lastEarlyID || id == lastSpreadID) continue;
+                    lastSpreadID = id;
+                }
                 var sprite:Sprite = readSpriteRecord(id);
-                if (!sprite || sprite.isEmpty) continue;
-                sampled++;
+                if (!sprite) continue;
+                if (sprite.isEmpty) { sprite.dispose(); continue; }
+                if (step <= prefix) earlySamples++;
                 var other:Sprite = new Sprite(id, !m_transparency);
                 other.compressedPixels.writeBytes(sprite.compressedPixels);
                 var firstValid:Boolean = validRle(sprite), secondValid:Boolean = validRle(other);
@@ -189,7 +210,48 @@ package otlib.sprites
                 m_transparency = !m_transparency;
                 if (m_multi) m_multi.setTransparency(m_transparency);
             }
+            transparencyConflict = preferred > 0 && opposite > 0;
+            transparencyKnown = !transparencyConflict && (preferred >= 3 || opposite >= 3);
             return m_transparency;
+        }
+
+        /** A bounded structural probe. Ambiguous headers retain the caller's hint. */
+        public static function probeHeader(file:File, preferred:Boolean):Object
+        {
+            if (file.name.toLowerCase() == "spr_index.dat") return {extended:true, known:true};
+            var shortValid:Boolean = validHeader(file, false);
+            var longValid:Boolean = validHeader(file, true);
+            if (!shortValid && !longValid) throw new Error("Invalid SPR header/address table.");
+            return {extended:shortValid == longValid ? preferred : longValid, known:shortValid != longValid};
+        }
+
+        private static function validHeader(file:File, extended:Boolean):Boolean
+        {
+            var stream:FileStream = new FileStream();
+            try
+            {
+                stream.open(file, FileMode.READ); stream.endian = Endian.LITTLE_ENDIAN;
+                var header:uint = extended ? 8 : 6;
+                if (file.size < header) return false;
+                stream.position = 4;
+                var count:uint = extended ? stream.readUnsignedInt() : stream.readUnsignedShort();
+                var end:Number = header + Number(count) * 4;
+                if (end > file.size || (!count && file.size != header)) return false;
+                for (var i:uint = 0; i < Math.min(count, 64); i++)
+                {
+                    var index:uint = count <= 64 || i < 16 ? i : Math.floor(Number(count - 1) * i / 63);
+                    stream.position = header + Number(index) * 4;
+                    var address:uint = stream.readUnsignedInt();
+                    if (!address) continue;
+                    if (address < end || Number(address) + 5 > file.size) return false;
+                    stream.position = Number(address) + 3;
+                    if (Number(address) + 5 + stream.readUnsignedShort() > file.size) return false;
+                }
+                return true;
+            }
+            catch (error:Error) { return false; }
+            finally { try { stream.close(); } catch (closeError:Error) {} }
+            return false;
         }
 
         private static function validRle(sprite:Sprite):Boolean

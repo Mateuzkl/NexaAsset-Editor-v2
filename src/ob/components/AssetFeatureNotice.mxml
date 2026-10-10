@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:BorderContainer xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark"
+    width="100%" visible="false" includeInLayout="false"
+    backgroundColor="{blocksLoad ? 0x382121 : 0x302D22}" borderColor="{blocksLoad ? 0xE87575 : 0xE8BE59}">
+    <fx:Metadata>
+        [ResourceBundle("strings")]
+        [Event(name="change", type="flash.events.Event")]
+    </fx:Metadata>
+    <fx:Script><![CDATA[
+        import flash.events.Event;
+        import otlib.core.ClientFeatures;
+        import otlib.utils.ClientInfo;
+        import otlib.utils.AssetFeatureValidator;
+        [Bindable] public var blocksLoad:Boolean;
+        [Bindable] public var message:String = "";
+        [Bindable] private var titleText:String = "";
+        [Bindable] private var canApply:Boolean;
+        public function configure(info:ClientInfo, selected:ClientFeatures):void
+        {
+            var result:Object = AssetFeatureValidator.compare(info, selected);
+            message = result.text;
+            blocksLoad = result.blocking;
+            titleText = resourceManager.getString("strings", blocksLoad ? "assetMismatchTitle" : "warning");
+            visible = includeInLayout = message.length > 0;
+            canApply = info && info.features && !info.transparencyConflict &&
+                (info.features.extended != selected.extended || info.features.transparency != selected.transparency ||
+                (info.hasMetadata && (info.features.improvedAnimations != selected.improvedAnimations || info.features.frameGroups != selected.frameGroups)));
+        }
+    ]]></fx:Script>
+    <s:layout><s:VerticalLayout paddingLeft="10" paddingRight="10" paddingTop="8" paddingBottom="8" gap="6"/></s:layout>
+    <s:Label width="100%" fontWeight="bold" color="{blocksLoad ? 0xFF9999 : 0xFFD36B}"
+        text="{titleText}"/>
+    <s:Label id="messageLabel" width="100%" color="{blocksLoad ? 0xFFBBBB : 0xFFDE95}" text="{message}"/>
+    <s:Button label="@Resource(key='assetUseSuggested', bundle='strings')" visible="{canApply}" includeInLayout="{canApply}"
+        click="dispatchEvent(new Event(Event.CHANGE))"/>
+</s:BorderContainer>

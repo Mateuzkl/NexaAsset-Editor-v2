@@ -32,7 +32,7 @@ try {
     & (Join-Path $sdk 'bin/adl.exe') -nodebug (Join-Path $output 'ProgressLayoutTests-app.xml')
     if ($LASTEXITCODE -ne 0) { throw 'Progress layout tests failed.' }
     & $java -Xmx2g ('-Dapplication.home=' + $sdk) -jar (Join-Path $sdk 'lib/mxmlc.jar') '+configname=air' `
-        '-source-path=src' '-library-path+=libs' '-locale=en_US' '-source-path+=locale/{locale}' `
+        '-source-path=src' '-library-path+=libs' '-locale=en_US,es_ES,pt_BR' '-source-path+=locale/{locale}' `
         '-debug=true' ('-output=' + (Join-Path $output 'AssetWindowTests.swf')) 'tests/AssetWindowTests.mxml'
     if ($LASTEXITCODE -ne 0) { throw 'Asset window test compilation failed.' }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AssetWindowTests-app.xml') -Destination $output

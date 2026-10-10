@@ -24,6 +24,8 @@ package
     import otlib.utils.ClientInfoLoader;
     import otlib.utils.OTFI;
     import otlib.utils.AssetOutputTransaction;
+    import otlib.utils.AssetFeatureValidator;
+    import otlib.utils.ClientInfo;
     import otlib.storages.events.StorageEvent;
     import otlib.core.MetadataControllerStorage;
     import otlib.things.MetadataWriter;
@@ -60,6 +62,7 @@ package
                 testRoot.createDirectory();
                 testBitmaps();
                 testFormats();
+                testFeatureWarnings();
                 testTransaction();
                 testExtendedItems();
                 if (event.arguments.length > 1) testReal(new File(event.arguments[1]), new File(event.arguments[2]));
@@ -250,6 +253,80 @@ package
             var backup:File = AssetOutputTransaction.publish(stage, root, ["a.dat", "b.spr"]);
             check(readText(root.resolvePath("a.dat")) == "new a" && readText(backup.resolvePath("b.spr")) == "old b", "Publish and retained backup.");
             note("PASS: multi-file publication rollback and retained backups");
+        }
+
+        private function testFeatureWarnings():void
+        {
+            var file:File = testRoot.resolvePath("legacy.spr");
+            var header:Object = SpriteReader.probeHeader(file, true);
+            check(header.known && !header.extended, "Detect a legacy SPR even with the wrong initial hint.");
+            file = testRoot.resolvePath("feature-rgb.spr"); featureFixture(file, false, false);
+            var reader:SpriteReader = new SpriteReader(new ClientFeatures(false, true));
+            reader.openSpriteFile(file);
+            check(!reader.detectTransparency() && reader.transparencyKnown, "RGB input overrides a wrong transparency hint.");
+            reader.closeSpriteFile();
+            var info:ClientInfo = new ClientInfo(); info.features = new ClientFeatures(false, false);
+            info.extendedKnown = true; info.transparencyKnown = true; info.hasMetadata = true; info.featureDescriptor = true;
+            var selected:ClientFeatures = info.features.clone(); selected.transparency = true;
+            check(AssetFeatureValidator.compare(info, selected).blocking, "Wrong Transparency blocks load before thumbnail errors.");
+            selected.transparency = false;
+            check(!AssetFeatureValidator.compare(info, selected).text, "Correct checkbox clears the warning.");
+            selected.extended = true;
+            check(AssetFeatureValidator.compare(info, selected).blocking, "Wrong Extended option blocks load.");
+            selected = info.features.clone(); selected.improvedAnimations = true; selected.frameGroups = true;
+            var warning:Object = AssetFeatureValidator.compare(info, selected);
+            check(warning.text && !warning.blocking, "DAT descriptor hints warn without rejecting custom inputs.");
+            info.transparencyKnown = false; selected = info.features.clone();
+            check(!AssetFeatureValidator.compare(info, selected).blocking, "Ambiguous samples must not falsely block.");
+            reader = new SpriteReader(new ClientFeatures(true, true)); reader.openSpriteFile(testRoot.resolvePath("all-empty.spr"));
+            check(reader.detectTransparency() && !reader.transparencyKnown, "Empty data retains the hint without claiming detection.");
+            reader.closeSpriteFile();
+            file = testRoot.resolvePath("feature-rgba.spr"); featureFixture(file, true, true);
+            reader = new SpriteReader(new ClientFeatures(true, false));
+            reader.openSpriteFile(file);
+            check(reader.detectTransparency() && reader.transparencyKnown, "Detect RGBA with the wrong initial hint.");
+            reader.closeSpriteFile();
+            var mixed:File = testRoot.resolvePath("feature-mixed.spr"); featureFixture(mixed, true, true);
+            var edit:FileStream = new FileStream();
+            try
+            {
+                edit.open(mixed, FileMode.UPDATE); edit.endian = Endian.LITTLE_ENDIAN;
+                edit.position = 8 + 96 * 4 + 3; edit.writeShort(7); // First record RGB; the rest RGBA.
+            }
+            finally { edit.close(); }
+            reader = new SpriteReader(new ClientFeatures(true, true)); reader.openSpriteFile(mixed); reader.detectTransparency();
+            check(reader.transparencyConflict && !reader.transparencyKnown, "Mixed encodings must not be silently auto-corrected.");
+            reader.closeSpriteFile(); info.transparencyConflict = true;
+            check(AssetFeatureValidator.compare(info, selected).blocking, "Mixed archive warns before loading.");
+
+            // First 32 entries empty: detection must also sample distant logical IDs.
+            var sparse:File = testRoot.resolvePath("late-rgb.spr");
+            featureFixture(sparse, true, false, 32);
+            reader = new SpriteReader(new ClientFeatures(true, true)); reader.openSpriteFile(sparse);
+            check(!reader.detectTransparency() && reader.transparencyKnown, "Distant RGB records detected after empty initial entries.");
+            reader.closeSpriteFile();
+            note("PASS: RGB/RGBA/header detection, red mismatches, yellow DAT hints, ambiguity, mixed encodings, sparse samples");
+        }
+
+        private function featureFixture(file:File, extended:Boolean, alpha:Boolean, emptyFirst:uint = 0):void
+        {
+            var stream:FileStream = new FileStream();
+            try
+            {
+                stream.open(file, FileMode.WRITE); stream.endian = Endian.LITTLE_ENDIAN;
+                stream.writeUnsignedInt(version().sprSignature);
+                if (extended) stream.writeUnsignedInt(96); else stream.writeShort(96);
+                var record:uint = (extended ? 8 : 6) + 96 * 4;
+                for (var id:uint = 1; id <= 96; id++)
+                    stream.writeUnsignedInt(id <= emptyFirst ? 0 : record + (id - emptyFirst - 1) * (alpha ? 13 : 12));
+                for (id = emptyFirst + 1; id <= 96; id++)
+                {
+                    stream.writeByte(255); stream.writeByte(0); stream.writeByte(255); stream.writeShort(alpha ? 8 : 7);
+                    stream.writeShort(0); stream.writeShort(1); stream.writeByte(10); stream.writeByte(20); stream.writeByte(30);
+                    if (alpha) stream.writeByte(255);
+                }
+            }
+            finally { stream.close(); }
         }
 
         private function writeText(file:File, text:String):void
