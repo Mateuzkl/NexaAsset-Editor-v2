@@ -674,6 +674,19 @@ package
 
             var dat:File = new File(datPath);
             var spr:File = new File(sprPath);
+            features = features.clone();
+            features.applyVersionDefaults(version.value);
+            if (spr.name.toLowerCase() == "spr_index.dat")
+            {
+                features.extended = true;
+                if (spr.exists || spr.parent.resolvePath("spr_parts.dat").exists || spr.parent.resolvePath("FileParts").exists)
+                {
+                    Log.error("Select a new output folder for multi-SPR. Existing archives will not be overwritten.");
+                    return;
+                }
+            }
+            try { _sprites.validateOutput(features); }
+            catch (capacityError:Error) { Log.error(capacityError.message); return; }
             var structureChanged:Boolean = _features.differs(features);
 
             // Update attribute server in registry using the features passed to compile
@@ -3152,6 +3165,7 @@ package
                 info.sprSignature = _sprites.signature;
                 info.minSpriteId = 0;
                 info.maxSpriteId = _sprites.spritesCount;
+                info.multiSpr = _sprFile && _sprFile.name.toLowerCase() == "spr_index.dat";
                 info.features = _features;
                 info.changed = clientChanged;
                 info.isTemporary = clientIsTemporary;
@@ -3623,7 +3637,9 @@ package
 
         protected function spritesProgressHandler(event:ProgressEvent):void
         {
-            sendCommand(new ProgressCommand(event.id, event.loaded, event.total, event.label ? event.label : "Loading SPR"));
+            // Use a single active phase so the widget does not display obsolete bars.
+            var total:uint = event.total ? event.total + 1 : 1;
+            sendCommand(new ProgressCommand(ProgressBarID.METADATA, event.loaded, total, event.label ? event.label : "Loading SPR"));
         }
 
         protected function itemsProgressHandler(event:ProgressEvent):void

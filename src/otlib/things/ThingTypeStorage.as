@@ -81,6 +81,8 @@ package otlib.things
         private var _thingsCount:uint;
         otlib_internal var _changed:Boolean;
         private var _loaded:Boolean;
+        private var _compileDone:uint;
+        private var _compileTotal:uint;
         private var _settings:ObjectBuilderSettings;
         private var _currentFeatures:ClientFeatures;
 
@@ -192,8 +194,9 @@ package otlib.things
             catch (error:Error)
             {
                 dispatchEvent(new ErrorEvent(ErrorEvent.ERROR, false, false, error.getStackTrace(), error.errorID));
-                // return;
+                return;
             }
+            finally { if (reader) { try { reader.close(); } catch (closeError:Error) {} } }
 
             _file = file;
             _changed = false;
@@ -399,12 +402,17 @@ package otlib.things
             var compileFeatures:ClientFeatures = features.clone();
             compileFeatures.applyVersionDefaults(version.value);
 
-            var tmpFile:File = FileUtil.getDirectory(file).resolvePath("tmp_" + file.name);
+            var tmpFile:File = file.parent.resolvePath(".ob-" + flash.utils.getTimer() + "-" + uint(Math.random() * uint.MAX_VALUE) + ".dat");
+            if (tmpFile.exists) throw new Error("DAT staging path already exists.");
             var done:Boolean = true;
 
             try
             {
                 _thingsCount = _itemsCount + _outfitsCount + _effectsCount + _missilesCount;
+                if (_itemsCount > 65535 || _outfitsCount > 65535 || _effectsCount > 65535 || _missilesCount > 65535)
+                    throw new Error("Standard DAT object-category counts are 16-bit (maximum 65,535 per category).");
+                _compileDone = 0;
+                _compileTotal = Math.max(0, _itemsCount - MIN_ITEM_ID + 1) + _outfitsCount + _effectsCount + _missilesCount;
 
                 var writer:MetadataWriter = MetadataControllerStorage.getInstance().createWriter(compileFeatures.metadataController, version.value);
 
@@ -438,6 +446,15 @@ package otlib.things
                 }
 
                 writer.close();
+                if (done)
+                {
+                    tmpFile.moveTo(file, true);
+                    if (!_file || FileUtil.equals(_file, file))
+                    {
+                        _file = file;
+                        _changed = false;
+                    }
+                }
             }
             catch (error:Error)
             {
@@ -448,22 +465,10 @@ package otlib.things
 
                 done = false;
             }
-
-            if (done)
+            finally
             {
-                var fileName:String = FileUtil.getName(file);
-
-                // Delete old file.
-                if (file.exists)
-                    file.deleteFile();
-
-                // Rename temporary file
-                _file = FileUtil.rename(tmpFile, fileName);
-                _changed = false;
-            }
-            else if (tmpFile.exists)
-            {
-                tmpFile.deleteFile();
+                if (writer) { try { writer.close(); } catch (closeWriterError:Error) {} }
+                if (tmpFile.exists) tmpFile.deleteFile();
             }
 
             dispatchEvent(new StorageEvent(StorageEvent.COMPILE));
@@ -1137,6 +1142,7 @@ package otlib.things
                 {
                     writer.writeByte(ThingSerializer.LAST_FLAG); // Close flags
                 }
+                compileProgress();
             }
 
             return true;
@@ -1164,6 +1170,7 @@ package otlib.things
                 {
                     writer.writeByte(ThingSerializer.LAST_FLAG); // Close flags
                 }
+                compileProgress();
             }
 
             return true;
@@ -1178,5 +1185,13 @@ package otlib.things
         public static const MIN_EFFECT_ID:uint = 1;
         public static const MIN_MISSILE_ID:uint = 1;
         private static const CHANGE_RESULT_HELPER:ChangeResult = new ChangeResult();
+
+        private function compileProgress():void
+        {
+            _compileDone++;
+            if ((_compileDone % 256 == 0 || _compileDone == _compileTotal) && hasEventListener(ProgressEvent.PROGRESS))
+                dispatchEvent(new ProgressEvent(ProgressEvent.PROGRESS, ProgressBarID.METADATA,
+                    _compileDone, _compileTotal + 1, "Saving DAT"));
+        }
     }
 }

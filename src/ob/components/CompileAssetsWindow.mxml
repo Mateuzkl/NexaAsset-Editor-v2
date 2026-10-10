@@ -27,7 +27,7 @@ THE SOFTWARE.
     xmlns:mg="library://ns.mignari.com/mg"
     xmlns:otlib="otlib.components.*"
     width="500"
-    height="400"
+    height="480"
     fontSize="11"
     title="@Resource(key='compileAssetFiles', bundle='strings')"
     creationComplete="creationCompleteHandler(event)">
@@ -64,6 +64,7 @@ THE SOFTWARE.
             private var m_versionChanged:Boolean;
             private var m_extended:Boolean;
             private var m_extendedChanged:Boolean;
+            private var m_multiSpr:Boolean;
             private var m_transparency:Boolean;
             private var m_transparencyChanged:Boolean;
             private var m_improvedAnimations:Boolean;
@@ -313,7 +314,7 @@ THE SOFTWARE.
                 if (directory && !isNullOrEmpty(m_filesName))
                 {
                     m_datFile = directory.resolvePath(m_filesName + ".dat");
-                    m_sprFile = directory.resolvePath(m_filesName + ".spr");
+                    m_sprFile = directory.resolvePath(m_multiSpr ? "spr_index.dat" : m_filesName + ".spr");
                 }
             
                 updateProperties();
@@ -345,6 +346,7 @@ THE SOFTWARE.
                 }
             
                 extendedCheckBox.selected = m_extended;
+                outputFormatList.selectedIndex = m_multiSpr ? 2 : (m_extended ? 1 : 0);
                 transparencyCheckBox.selected = m_transparency;
                 improvedAnimationsCheckBox.selected = m_improvedAnimations;
                 frameGroupsCheckBox.selected = m_frameGroups;
@@ -401,6 +403,13 @@ THE SOFTWARE.
             private function extendedCheckBoxChangeHandler(event:Event):void
             {
                 extended = extendedCheckBox.selected;
+            }
+
+            private function outputFormatChangeHandler(event:IndexChangeEvent):void
+            {
+                m_multiSpr = outputFormatList.selectedIndex == 2;
+                m_extended = outputFormatList.selectedIndex != 0 || (m_version && m_version.value >= 960);
+                setClientDirectory(m_clientDirectory);
             }
             
             private function transparencyCheckBoxChangeHandler(event:Event):void
@@ -585,6 +594,18 @@ THE SOFTWARE.
         </mg:GroupBox>
 
         <!-- client options -->
+        <s:VGroup width="100%" gap="4">
+            <s:Label text="Output format / sprite IDs"/>
+            <s:DropDownList id="outputFormatList" width="100%" requireSelection="true"
+                change="outputFormatChangeHandler(event)">
+                <s:dataProvider><s:ArrayList>
+                    <fx:String>Standard DAT + SPR — 16-bit (up to 65,535 sprites)</fx:String>
+                    <fx:String>Standard DAT + SPR — 32-bit (extended IDs)</fx:String>
+                    <fx:String>DAT + multi-SPR — 32-bit (SPMT/SPIX, parts of 65,535)</fx:String>
+                </s:ArrayList></s:dataProvider>
+            </s:DropDownList>
+            <s:Label width="100%" text="Multi-SPR requires a fresh output folder. To merge parts, open multi-SPR and choose standard 32-bit output. Clients must support the selected format; DAT object counts remain 16-bit."/>
+        </s:VGroup>
         <mg:GroupBox width="100%" label="@Resource(key='options', bundle='strings')">
             <mg:layout>
                 <s:TileLayout requestedColumnCount="2" horizontalGap="10" verticalGap="5" padding="10"/>
@@ -592,6 +613,7 @@ THE SOFTWARE.
 
             <s:CheckBox id="extendedCheckBox"
                 label="@Resource(key='extended', bundle='strings')"
+                toolTip="32-bit sprite counts and DAT sprite references. Multi-SPR requires this option."
                 enabled="false"
                 change="extendedCheckBoxChangeHandler(event)"/>
 

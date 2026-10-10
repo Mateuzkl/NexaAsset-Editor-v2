@@ -23,6 +23,8 @@
 package otlib.sprites
 {
     import flash.filesystem.FileStream;
+    import flash.filesystem.File;
+    import flash.filesystem.FileMode;
     import flash.utils.Endian;
     import otlib.core.ClientFeatures;
 
@@ -35,6 +37,9 @@ package otlib.sprites
         private var m_extended:Boolean;
         private var m_transparency:Boolean;
         private var m_headerSize:uint;
+        private var m_fileSize:Number;
+        private var m_count:uint;
+        private var m_multi:MultiSpriteReader;
 
         // --------------------------------------------------------------------------
         // CONSTRUCTOR
@@ -57,25 +62,65 @@ package otlib.sprites
         // Public
         // --------------------------------------
 
+        public function openSpriteFile(file:File):void
+        {
+            if (file.name.toLowerCase() == "spr_index.dat")
+            {
+                m_multi = new MultiSpriteReader(m_transparency);
+                m_multi.open(file);
+                return;
+            }
+            try
+            {
+                open(file, FileMode.READ);
+                m_fileSize = file.size;
+                if (m_fileSize < m_headerSize)
+                    throw new Error("Truncated SPR header: " + file.nativePath);
+                m_count = readSpriteCount();
+                if (m_headerSize + Number(m_count) * 4 > m_fileSize)
+                    throw new Error("SPR address table exceeds file size: " + file.nativePath);
+            }
+            catch (error:Error)
+            {
+                closeSpriteFile();
+                throw error;
+            }
+        }
+
+        public function closeSpriteFile():void
+        {
+            if (m_multi) { m_multi.close(); m_multi = null; }
+            else { try { close(); } catch (error:Error) {} }
+            m_count = 0;
+            m_fileSize = 0;
+        }
+
         public function readSignature():uint
         {
+            if (m_multi) return m_multi.signature;
             position = SpriteFilePosition.SIGNATURE;
             return readUnsignedInt();
         }
 
         public function readSpriteCount():uint
         {
+            if (m_multi) return m_multi.count;
             position = SpriteFilePosition.LENGTH;
             return m_extended ? readUnsignedInt() : readUnsignedShort();
         }
 
         public function readSprite(id:uint):Sprite
         {
+            if (m_multi) return m_multi.readSprite(id);
+            if (id == 0 || id > m_count) throw new RangeError("Invalid SPR id: " + id);
             position = ((id - 1) * SpriteFileSize.ADDRESS) + m_headerSize;
 
             var address:uint = readUnsignedInt();
             if (address == 0)
                 return null;
+
+            if (address < m_headerSize + Number(m_count) * 4 || Number(address) + 5 > m_fileSize)
+                throw new Error("Invalid SPR offset for sprite " + id);
 
             position = address;
             readUnsignedByte(); // skip red color
@@ -84,29 +129,22 @@ package otlib.sprites
 
             var sprite:Sprite = new Sprite(id, m_transparency);
             var length:uint = readUnsignedShort();
+            if (Number(address) + 5 + length > m_fileSize)
+                throw new Error("Truncated SPR payload for sprite " + id);
 
             if (length != 0)
             {
                 readBytes(sprite.compressedPixels, 0, length);
             }
+            sprite.validateCompressedPixels();
 
             return sprite;
         }
 
         public function isEmptySprite(id:uint):Boolean
         {
-            position = ((id - 1) * SpriteFileSize.ADDRESS) + m_headerSize;
-
-            var address:uint = readUnsignedInt();
-            if (address == 0)
-                return true;
-
-            position = address;
-            readUnsignedByte(); // skip red color
-            readUnsignedByte(); // skip green color
-            readUnsignedByte(); // skip blue color
-
-            return readUnsignedShort() == 0;
+            var sprite:Sprite = readSprite(id);
+            return !sprite || sprite.isEmpty;
         }
     }
 }

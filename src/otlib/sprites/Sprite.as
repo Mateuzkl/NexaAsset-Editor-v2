@@ -131,6 +131,25 @@ package otlib.sprites
             return uncompressPixels(target);
         }
 
+        internal function validateCompressedPixels():void
+        {
+            _compressedPixels.position = 0;
+            var pixels:Number = 0;
+            var channels:uint = _transparent ? 4 : 3;
+            while (_compressedPixels.bytesAvailable)
+            {
+                if (_compressedPixels.bytesAvailable < 4) throw new Error("Truncated SPR RLE header.");
+                pixels += _compressedPixels.readUnsignedShort();
+                var colored:uint = _compressedPixels.readUnsignedShort();
+                pixels += colored;
+                var bytes:Number = Number(colored) * channels;
+                if (pixels > SpriteExtent.DEFAULT_DATA_SIZE / 4 || bytes > _compressedPixels.bytesAvailable)
+                    throw new Error("Invalid SPR RLE run length.");
+                _compressedPixels.position += bytes;
+            }
+            _compressedPixels.position = 0;
+        }
+
         /**
          * Gets RGB data like ItemEditor's GetRGBData().
          * Returns 3072 bytes (32*32*3), with 0x11 for transparent pixels.
@@ -170,6 +189,9 @@ package otlib.sprites
                 coloredPixels = _compressedPixels.readUnsignedShort();
 
                 // Advance read counter (headers + data)
+                if (write + Number(transparentPixels + coloredPixels) * 3 > RGB_SIZE ||
+                        _compressedPixels.bytesAvailable < Number(coloredPixels) * bitPerPixel)
+                    throw new Error("Invalid SPR RLE run length.");
                 read += 4 + (coloredPixels * bitPerPixel);
 
                 // Write transparent pixels (filled with 0x11)
@@ -219,6 +241,7 @@ package otlib.sprites
                 throw new Error("Invalid sprite pixels length");
 
             _hash = null;
+            if (_bitmap) { _bitmap.dispose(); _bitmap = null; }
             return compressPixels(pixels);
         }
 
@@ -249,7 +272,9 @@ package otlib.sprites
                 return false;
 
             _hash = null;
-            _bitmap = bitmap.clone();
+            var copy:BitmapData = bitmap.clone();
+            if (_bitmap) _bitmap.dispose();
+            _bitmap = copy;
             return true;
         }
 
@@ -271,7 +296,7 @@ package otlib.sprites
             _compressedPixels.position = 0;
             _compressedPixels.readBytes(sprite._compressedPixels);
 
-            sprite._bitmap = _bitmap;
+            sprite._bitmap = _bitmap ? _bitmap.clone() : null;
             return sprite;
         }
 
@@ -282,6 +307,7 @@ package otlib.sprites
 
             if (_bitmap)
                 _bitmap.fillRect(_rect, 0x00FF00FF);
+            _hash = null;
         }
 
         public function dispose():void
@@ -398,6 +424,9 @@ package otlib.sprites
                 transparentPixels = _compressedPixels.readUnsignedShort();
                 coloredPixels = _compressedPixels.readUnsignedShort();
 
+                if (write + Number(transparentPixels + coloredPixels) * 4 > SpriteExtent.DEFAULT_DATA_SIZE ||
+                        _compressedPixels.bytesAvailable < Number(coloredPixels) * channels)
+                    throw new Error("Invalid SPR RLE run length.");
                 for (i = 0; i < transparentPixels; i++)
                 {
                     pixels[write++] = 0x00; // Alpha

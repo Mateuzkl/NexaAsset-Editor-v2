@@ -54,6 +54,7 @@ package otlib.utils
         public var spriteSize:uint;
         public var spriteDataSize:uint;
         public var loadedFileName:String;
+        public var multiSpr:Boolean;
 
         [Bindable]
         public var otbLoaded:Boolean;

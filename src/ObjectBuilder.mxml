@@ -51,7 +51,7 @@ THE SOFTWARE.
     <fx:Script>
         <![CDATA[
             import com.mignari.animator.AnimationEditor;
-            import com.mignari.components.ProgressWidget;
+            import ob.components.ReadableProgressWidget;
             import com.mignari.utils.DialogDetail;
             import com.mignari.workers.IWorkerCommunicator;
             import com.mignari.workers.WorkerCommand;
@@ -261,7 +261,9 @@ THE SOFTWARE.
             private var _showThingsPanel:Boolean = true;
             private var _showSpritesPanel:Boolean = true;
             private var _showPanelChanged:Boolean;
-            private var _progressWidget:ProgressWidget;
+            private var _progressWidget:ReadableProgressWidget;
+            private var _progressPhase:String;
+            private var _progressStarted:int;
             private var _category:String;
             private var _categoryChanged:Boolean;
             private var _objectViewer:ObjectViewer;
@@ -692,7 +694,7 @@ THE SOFTWARE.
                 if (!clientLoaded)
                     return;
             
-                if (clientIsTemporary)
+                if (clientIsTemporary || _clientInfo.multiSpr)
                 {
                     compileProjectAs();
                     return;
@@ -2107,7 +2109,8 @@ THE SOFTWARE.
             
                 if (!_progressWidget)
                 {
-                    _progressWidget = new ProgressWidget();
+                    _progressWidget = new ReadableProgressWidget();
+                    _progressWidget.width = 560;
                     _progressWidget.addEventListener(Event.CLOSE, function closeHandler(event:Event):void
                         {
                             _locked = false;
@@ -2117,7 +2120,25 @@ THE SOFTWARE.
                     _locked = true;
                 }
             
+                var phase:String = label || "Working";
+                if (_progressPhase != phase || loaded == 0)
+                {
+                    _progressPhase = phase;
+                    _progressStarted = flash.utils.getTimer();
+                }
+                if (total > 3)
+                {
+                    var units:uint = total - 1; // Last unit is reserved for publishing/flush.
+                    var done:uint = Math.min(loaded, units);
+                    var percent:int = Math.floor(Number(done) * 100 / Math.max(1, units));
+                    var elapsed:Number = (flash.utils.getTimer() - _progressStarted) / 1000;
+                    label = phase + "  " + percent + "%  (" + done + " / " + units + ")";
+                    if (elapsed >= 2 && done > 0 && done < units)
+                        label += "  ~" + Math.ceil(elapsed * (units - done) / done) + "s remaining";
+                    else if (done == units) label += "  Finalizing...";
+                }
                 _progressWidget.progress(id, loaded, total, label);
+                if (_progressWidget) _progressWidget.fitLabelText();
             }
             
             private function logCallback(level:uint, message:String, stack:String, id:uint):void

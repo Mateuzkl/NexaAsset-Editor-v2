@@ -25,233 +25,102 @@ package otlib.utils
     import flash.events.ErrorEvent;
     import flash.events.Event;
     import flash.events.EventDispatcher;
-    import flash.events.IOErrorEvent;
-    import flash.events.ProgressEvent;
     import flash.filesystem.File;
     import flash.filesystem.FileMode;
     import flash.filesystem.FileStream;
     import flash.utils.Endian;
-
-    import nail.errors.NullArgumentError;
-    import nail.utils.FileUtil;
-
+    import otlib.core.ClientFeatures;
     import otlib.core.Version;
     import otlib.core.VersionStorage;
-    import otlib.core.ClientFeatures;
-    import otlib.resources.Resources;
+    import otlib.sprites.SpriteReader;
 
-    [Event(name="complete", type="flash.events.Event")]
-    [Event(name="progress", type="flash.events.ProgressEvent")]
-    [Event(name="error", type="flash.events.ErrorEvent")]
-
-    [ResourceBundle("strings")]
-
+    /** Reads small headers synchronously: no outstanding async streams or stale callbacks. */
     public class ClientInfoLoader extends EventDispatcher
     {
-        // --------------------------------------------------------------------------
-        // PROPERTIES
-        // --------------------------------------------------------------------------
-
-        private var m_otfi:File;
-        private var m_dat:File;
-        private var m_spr:File;
         private var m_clientInfo:ClientInfo;
-        private var m_total:uint;
-        private var m_loaded:uint;
-
-        // --------------------------------------
-        // Getters / Setters
-        // --------------------------------------
-
-        public function get clientInfo():ClientInfo
-        {
-            return m_clientInfo;
-        }
-
-        // --------------------------------------------------------------------------
-        // CONSTRUCTOR
-        // --------------------------------------------------------------------------
-
-        public function ClientInfoLoader()
-        {
-        }
-
-        // --------------------------------------------------------------------------
-        // METHODS
-        // --------------------------------------------------------------------------
-
-        // --------------------------------------
-        // Public
-        // --------------------------------------
+        public function get clientInfo():ClientInfo { return m_clientInfo; }
 
         public function load(dat:File, spr:File, extended:Boolean):void
         {
-            if (!dat)
-                throw new NullArgumentError("dat");
-
-            if (!spr)
-                throw new NullArgumentError("spr");
-
-            if (!dat.exists)
-                dispatchEvent(createErrorEvent(Resources.getString("datFileNotFound")));
-
-            if (!spr.exists)
-                dispatchEvent(createErrorEvent(Resources.getString("sprFileNotFound")));
-
-            // Seachs for otfi file
-            var result:Vector.<File> = FileUtil.findExtension(dat, "otfi");
-            if (result.length != 0)
-                m_otfi = result[0];
-
-            m_dat = dat;
-            m_spr = spr;
-            m_clientInfo = new ClientInfo();
-            m_clientInfo.features = new ClientFeatures();
-            m_clientInfo.features.extended = extended;
-            m_total = 3;
-
-            loadNext();
-        }
-
-        // --------------------------------------
-        // Private
-        // --------------------------------------
-
-        private function loadNext():void
-        {
-            m_loaded++;
-
-            dispatchEvent(new ProgressEvent(ProgressEvent.PROGRESS, false, false, m_loaded, m_total));
-
-            if (m_loaded == 1)
-                loadOTFI();
-            if (m_loaded == 2)
-                loadDat();
-            else if (m_loaded == 3)
-                loadSpr();
-            else
-                dispatchEvent(new Event(Event.COMPLETE));
-        }
-
-        private function loadOTFI():void
-        {
-            if (m_otfi)
+            m_clientInfo = null;
+            try
             {
+                if (!dat || !spr || !dat.exists || !spr.exists)
+                    throw new Error("DAT/SPR files not found.");
+                var info:ClientInfo = new ClientInfo();
+                info.features = new ClientFeatures(extended);
+                // Prefer the matching descriptor, not an arbitrary OTFI in the folder.
+                var dot:int = dat.name.lastIndexOf(".");
+                var descriptor:File = dat.parent.resolvePath(dat.name.substring(0, dot) + ".otfi");
                 var otfi:OTFI = new OTFI();
-                if (otfi.load(m_otfi))
+                if (descriptor.exists && otfi.load(descriptor))
                 {
-                    m_clientInfo.features.extended = otfi.extended;
-                    m_clientInfo.features.transparency = otfi.transparency;
-                    m_clientInfo.features.improvedAnimations = otfi.improvedAnimations;
-                    m_clientInfo.features.frameGroups = otfi.frameGroups;
-                    m_clientInfo.features.attributeServer = otfi.attributeServer;
-                    m_clientInfo.spriteSize = otfi.spriteSize;
-                    m_clientInfo.spriteDataSize = otfi.spriteDataSize;
+                    info.features.copyFrom(otfi.features);
+                    info.spriteSize = otfi.spriteSize;
+                    info.spriteDataSize = otfi.spriteDataSize;
                 }
+                var stream:FileStream = new FileStream();
+                try
+                {
+                    stream.open(dat, FileMode.READ);
+                    stream.endian = Endian.LITTLE_ENDIAN;
+                    if (dat.size < 12) throw new Error("Truncated DAT header.");
+                    info.datSignature = stream.readUnsignedInt();
+                    info.maxItemId = stream.readUnsignedShort();
+                    info.maxOutfitId = stream.readUnsignedShort();
+                    info.maxEffectId = stream.readUnsignedShort();
+                    info.maxMissileId = stream.readUnsignedShort();
+                }
+                finally { try { stream.close(); } catch (closeError:Error) {} }
+                var multi:Boolean = spr.name.toLowerCase() == "spr_index.dat";
+                if (multi) info.features.extended = true;
+                // Read the signature first to choose version-dependent header width.
+                var signature:uint;
+                if (!multi)
+                {
+                    try
+                    {
+                        stream.open(spr, FileMode.READ);
+                        if (spr.size < 6) throw new Error("Truncated SPR header.");
+                        signature = stream.readUnsignedInt();
+                    }
+                    finally { try { stream.close(); } catch (closeSprError:Error) {} }
+                }
+                else
+                {
+                    var manifest:File = spr.parent.resolvePath("spr_parts.dat");
+                    try
+                    {
+                        stream.open(manifest, FileMode.READ);
+                        if (manifest.size < 16 || stream.readUTFBytes(4) != "SPMT")
+                            throw new Error("Invalid multi-SPR manifest.");
+                        stream.readUnsignedInt();
+                        signature = stream.readUnsignedInt();
+                    }
+                    finally { try { stream.close(); } catch (closeManifestError:Error) {} }
+                }
+                var version:Version = VersionStorage.getInstance().getBySignatures(info.datSignature, signature);
+                if (!version) throw new Error("Unsupported DAT/SPR signatures.");
+                info.features.applyVersionDefaults(version.value);
+                var reader:SpriteReader = new SpriteReader(info.features);
+                try
+                {
+                    reader.openSpriteFile(spr);
+                    info.sprSignature = reader.readSignature();
+                    info.maxSpriteId = reader.readSpriteCount();
+                }
+                finally { reader.closeSpriteFile(); }
+                info.clientVersion = version.value;
+                info.clientVersionStr = version.valueStr;
+                m_clientInfo = info;
             }
-
-            loadNext();
-        }
-
-        private function loadDat():void
-        {
-            var stream:FileStream = new FileStream();
-            stream.endian = Endian.LITTLE_ENDIAN;
-            stream.addEventListener(ProgressEvent.PROGRESS, metadataProgressHandler);
-            stream.addEventListener(IOErrorEvent.IO_ERROR, ioErrorHandler);
-            stream.openAsync(m_dat, FileMode.READ);
-        }
-
-        private function loadSpr():void
-        {
-            var stream:FileStream = new FileStream();
-            stream.endian = Endian.LITTLE_ENDIAN;
-            stream.addEventListener(ProgressEvent.PROGRESS, spritesProgressHandler);
-            stream.addEventListener(IOErrorEvent.IO_ERROR, ioErrorHandler);
-            stream.openAsync(m_spr, FileMode.READ);
-        }
-
-        // --------------------------------------
-        // Event Handlers
-        // --------------------------------------
-
-        private function readMetadaInfo(stream:FileStream):void
-        {
-            m_clientInfo.datSignature = stream.readUnsignedInt();
-            m_clientInfo.maxItemId = stream.readUnsignedShort();
-            m_clientInfo.maxOutfitId = stream.readUnsignedShort();
-            m_clientInfo.maxEffectId = stream.readUnsignedShort();
-            m_clientInfo.maxMissileId = stream.readUnsignedShort();
-
-            loadNext();
-        }
-
-        private function readSpritesInfo(stream:FileStream):void
-        {
-            m_clientInfo.sprSignature = stream.readUnsignedInt();
-
-            var version:Version = VersionStorage.getInstance().getBySignatures(
-                    m_clientInfo.datSignature,
-                    m_clientInfo.sprSignature);
-
-            if (!version)
+            catch (error:Error)
             {
-                m_clientInfo.maxItemId = 0;
-                m_clientInfo.maxOutfitId = 0;
-                m_clientInfo.maxEffectId = 0;
-                m_clientInfo.maxMissileId = 0;
-                m_clientInfo.maxSpriteId = 0;
-
-                dispatchEvent(new Event(Event.COMPLETE));
-                dispatchEvent(createErrorEvent(Resources.getString("unsupportedVersion")));
+                dispatchEvent(new ErrorEvent(ErrorEvent.ERROR, false, false, error.message, error.errorID));
                 return;
             }
-
-            m_clientInfo.clientVersion = version.value;
-            m_clientInfo.clientVersionStr = version.valueStr;
-
-            if (m_clientInfo.extended || version.value >= 960)
-            {
-                m_clientInfo.maxSpriteId = stream.readUnsignedInt();
-                m_clientInfo.features.extended = true;
-            }
-            else
-                m_clientInfo.maxSpriteId = stream.readUnsignedShort();
-
-            loadNext();
-        }
-
-        private function metadataProgressHandler(event:ProgressEvent):void
-        {
-            var stream:FileStream = event.target as FileStream;
-            if (stream.bytesAvailable >= 12)
-                readMetadaInfo(stream);
-
-            stream.removeEventListener(ProgressEvent.PROGRESS, metadataProgressHandler);
-            stream.removeEventListener(IOErrorEvent.IO_ERROR, ioErrorHandler);
-            stream.close();
-        }
-
-        private function spritesProgressHandler(event:ProgressEvent):void
-        {
-            var stream:FileStream = event.target as FileStream;
-            if (stream.bytesAvailable >= 8)
-                readSpritesInfo(stream);
-
-            stream.removeEventListener(ProgressEvent.PROGRESS, spritesProgressHandler);
-            stream.removeEventListener(IOErrorEvent.IO_ERROR, ioErrorHandler);
-            stream.close();
-        }
-
-        private function ioErrorHandler(event:IOErrorEvent):void
-        {
-            m_clientInfo = null;
-            dispatchEvent(createErrorEvent(event.text, event.errorID));
-        }
-
-        private function createErrorEvent(text:String, id:uint = 0):ErrorEvent
-        {
-            return new ErrorEvent(ErrorEvent.ERROR, false, false, text, id);
+            // Exactly one terminal event, after every stream has been closed.
+            dispatchEvent(new Event(Event.COMPLETE));
         }
     }
 }

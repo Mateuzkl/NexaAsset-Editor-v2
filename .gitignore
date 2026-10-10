@@ -4,6 +4,7 @@ bin-debug/
 bin-debug-temp/
 bin-release/
 bin-release-temp/
+bin-tests/
 workerswfs/
 
 # Other files and folders

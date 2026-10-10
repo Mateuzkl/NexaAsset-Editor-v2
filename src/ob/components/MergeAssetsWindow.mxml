@@ -242,6 +242,11 @@ THE SOFTWARE.
                 file = directory.resolvePath("Tibia.spr");
                 if (file.exists)
                     spr = file;
+
+                // Rust-compatible multi-SPR entry point (physical parts stay lazy).
+                var indexFile:File = directory.resolvePath("spr_index.dat");
+                if (indexFile.exists && directory.resolvePath("spr_parts.dat").exists)
+                    spr = indexFile;
             
                 // Searchs renamed spr/dat files on directory.
                 if (!spr || !dat)
@@ -255,7 +260,8 @@ THE SOFTWARE.
                         if (!spr && file.extension == OTFormat.SPR)
                             spr = file;
             
-                        if (!dat && file.extension == OTFormat.DAT)
+                        if (!dat && !file.isDirectory && file.extension == OTFormat.DAT &&
+                                file.name.toLowerCase() != "spr_index.dat" && file.name.toLowerCase() != "spr_parts.dat")
                             dat = file;
             
                         if (spr && dat)

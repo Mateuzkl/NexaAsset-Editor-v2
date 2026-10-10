@@ -121,6 +121,7 @@ package otlib.core
             return (extended != other.extended ||
                     transparency != other.transparency ||
                     improvedAnimations != other.improvedAnimations ||
+                    frameGroups != other.frameGroups ||
                     metadataController != other.metadataController ||
                     attributeServer != other.attributeServer);
         }
