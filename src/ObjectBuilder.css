@@ -114,7 +114,7 @@ s|ComboBox {
     paddingLeft: 3;
     paddingRight: 3;
     paddingTop: 5;
-    skinClass: ClassReference("nail.components.skins.ComboBoxSkin");
+    skinClass: ClassReference("spark.skins.spark.ComboBoxSkin");
 }
 
 s|DropDownList {
@@ -126,7 +126,7 @@ s|HScrollBar {
 }
 
 s|HSlider {
-    skinClass: ClassReference("nail.components.skins.HSliderSkin");
+    skinClass: ClassReference("spark.skins.spark.HSliderSkin");
 }
 
 s|NumericStepper {
@@ -134,7 +134,7 @@ s|NumericStepper {
 }
 
 s|RadioButton {
-    skinClass: ClassReference("com.mignari.skins.RadioButtonSkin");
+    skinClass: ClassReference("spark.skins.spark.RadioButtonSkin");
 }
 
 s|SkinnableComponent {
@@ -163,7 +163,7 @@ s|VScrollBar {
 }
 
 s|VSlider {
-    skinClass: ClassReference("nail.components.skins.VSliderSkin");
+    skinClass: ClassReference("spark.skins.spark.VSliderSkin");
 }
 
 /*
@@ -240,3 +240,5 @@ s|Window { backgroundColor: #0B141E; }
 s|List { contentBackgroundColor: #16232F; borderColor: #2C3C4D; }
 s|TextArea { color: #F0F5FB; contentBackgroundColor: #101C29; }
 otlib|CheckerBoard { cellColors: #182633, #202E3C; }
+mg|TitleWindow { skinClass: ClassReference("ob.ui.skins.NexaTitleWindowSkin"); backgroundColor: #111D2A; color: #ADC0D4; }
+s|TabBar { skinClass: ClassReference("ob.ui.skins.NexaTabBarSkin"); }

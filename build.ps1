@@ -2,6 +2,7 @@
 param(
     [string]$ProjectRoot,
     [string]$ToolsRoot,
+    [string]$BundleName = 'NexaAsset Editor v2',
     [switch]$CompileOnly,
     [switch]$PackageOnly
 )
@@ -41,10 +42,12 @@ try {
 
     $stage = Join-Path $ProjectRoot 'bin-debug'
     $descriptor = Join-Path $stage 'ObjectBuilder-app.xml'
-    foreach ($required in @($descriptor, (Join-Path $stage 'ObjectBuilder.swf'))) {
+    $compiledSwf = 'NexaAsset-Editor-v2.swf'
+    foreach ($required in @($descriptor, (Join-Path $stage $compiledSwf))) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing compiled output: $required" }
     }
-    $bundle = Join-Path $ProjectRoot 'bin/ObjectBuilder'
+    if ([IO.Path]::GetFileName($BundleName) -ne $BundleName -or $BundleName -in @('.', '..')) { throw 'BundleName must be a directory name, not a path.' }
+    $bundle = Join-Path (Join-Path $ProjectRoot 'bin') $BundleName
     New-Item -ItemType Directory -Path (Split-Path -Parent $bundle) -Force | Out-Null
     # AIR requires a package certificate. This temporary self-signed certificate
     # is for local builds, not a trusted Windows publisher or production release.
@@ -53,17 +56,19 @@ try {
     $certificate = $certificatePath
     $certificatePassword = [Guid]::NewGuid().ToString('N')
     & $java "-Djava.io.tmpdir=$tempDirectory" -jar (Join-Path $sdk 'lib/adt.jar') `
-        -certificate -cn 'ObjectBuilder Local Build' -validityPeriod 1 2048-RSA $certificate $certificatePassword
+        -certificate -cn 'NexaAsset Editor Local Build' -validityPeriod 1 2048-RSA $certificate $certificatePassword
     if ($LASTEXITCODE -ne 0) { throw "Local certificate creation failed: $LASTEXITCODE" }
     & $java "-Djava.io.tmpdir=$tempDirectory" -jar (Join-Path $sdk 'lib/adt.jar') `
         -package -storetype pkcs12 -keystore $certificate -storepass $certificatePassword -tsa none `
         -target bundle -arch x64 $bundle $descriptor `
-        -C $stage ObjectBuilder.swf `
+        -C $stage $compiledSwf `
         -C (Join-Path $ProjectRoot 'assets') icon `
+        -C (Join-Path $ProjectRoot 'assets') nexa `
+        -C $ProjectRoot LICENSE `
         -C (Join-Path $ProjectRoot 'src') config
     if ($LASTEXITCODE -ne 0) { throw "AIR bundle packaging failed: $LASTEXITCODE" }
-    $executable = Join-Path $bundle 'ObjectBuilder.exe'
-    if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) { throw 'Packaging did not produce ObjectBuilder.exe.' }
+    $executable = Join-Path $bundle 'NexaAsset Editor v2.exe'
+    if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) { throw 'Packaging did not produce NexaAsset Editor v2.exe.' }
     Write-Output "Portable executable: $executable"
 }
 finally {

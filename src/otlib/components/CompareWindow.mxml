@@ -29,7 +29,7 @@ THE SOFTWARE.
     height="550"
     minWidth="500"
     minHeight="350"
-    backgroundColor="0x494949"
+    backgroundColor="0x111D2A"
     showStatusBar="false"
     fontSize="11"
     title="Compare Objects">
@@ -313,7 +313,7 @@ THE SOFTWARE.
         fontSize="10"
         selectable="true"
         allowMultipleSelection="false"
-        contentBackgroundColor="0x3A3A3A"
+        contentBackgroundColor="0x101C29"
         alternatingItemColors="[0x3A3A3A, 0x333333]"
         color="0xCCCCCC"
         rollOverColor="0x4A4A4A"

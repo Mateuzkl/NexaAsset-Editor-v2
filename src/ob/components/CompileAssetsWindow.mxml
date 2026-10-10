@@ -26,8 +26,8 @@ THE SOFTWARE.
     xmlns:mx="library://ns.adobe.com/flex/mx"
     xmlns:mg="library://ns.mignari.com/mg"
     xmlns:otlib="otlib.components.*"
-    width="500"
-    height="510"
+    width="580"
+    height="640"
     fontSize="11"
     title="@Resource(key='compileAssetFiles', bundle='strings')"
     creationComplete="creationCompleteHandler(event)">
@@ -495,7 +495,8 @@ THE SOFTWARE.
         <s:VerticalLayout/>
     </mg:layout>
 
-    <s:VGroup width="100%" height="100%" gap="10" padding="10">
+    <s:Scroller width="100%" height="100%" minHeight="0" minWidth="0" horizontalScrollPolicy="off">
+    <s:VGroup width="100%" gap="10" padding="10">
         <!-- name -->
         <s:Group width="100%">
             <s:layout>
@@ -642,8 +643,9 @@ THE SOFTWARE.
                 toolTip="Required by custom DAT files with item IDs above 65,535, including the provided 10.98 assets."/>
         </mg:GroupBox>
     </s:VGroup>
+    </s:Scroller>
 
-    <s:BorderContainer width="100%" skinClass="com.mignari.skins.PixeledBorderContainerSkin">
+    <s:BorderContainer width="100%" backgroundColor="0x111D2A" borderColor="0x2C3C4D">
         <s:layout>
             <s:HorizontalLayout gap="10" padding="10" verticalAlign="middle" horizontalAlign="right"/>
         </s:layout>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Skin xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark" minWidth="240" minHeight="100" alpha.disabled="0.5">
+    <fx:Metadata>[HostComponent("com.mignari.components.TitleWindow")]</fx:Metadata>
+    <s:states>
+        <s:State name="normal"/><s:State name="inactive"/><s:State name="disabled"/>
+        <s:State name="normalWithControlBar"/><s:State name="inactiveWithControlBar"/><s:State name="disabledWithControlBar"/>
+    </s:states>
+    <s:Rect left="0" right="0" top="0" bottom="0" radiusX="6">
+        <s:fill><s:SolidColor color="0x111D2A"/></s:fill>
+        <s:stroke><s:SolidColorStroke color="0x3B5368"/></s:stroke>
+    </s:Rect>
+    <!-- Retain the library's drag area, title, close and content skin parts. -->
+    <s:Group id="moveArea" left="1" right="1" top="1" height="39">
+        <s:Rect left="0" right="0" top="0" bottom="0" radiusX="5"><s:fill><s:SolidColor color="0x1B2937"/></s:fill></s:Rect>
+        <s:Label id="titleDisplay" left="14" right="50" verticalCenter="0" fontSize="14" fontWeight="bold" color="0xF0F5FB" maxDisplayedLines="1"/>
+    </s:Group>
+    <s:Button id="closeButton" right="10" top="8" width="25" height="25" label="×" toolTip="Close"/>
+    <s:Group id="contentGroup" left="1" right="1" top="41" bottom="1" minHeight="0" minWidth="0"
+        bottom.normalWithControlBar="49" bottom.inactiveWithControlBar="49" bottom.disabledWithControlBar="49"/>
+    <s:Group id="controlBarGroup" left="1" right="1" bottom="1" height="48"
+        includeIn="normalWithControlBar,inactiveWithControlBar,disabledWithControlBar"/>
+</s:Skin>

@@ -34,7 +34,7 @@ THE SOFTWARE.
           minimizable="false"
           maximizable="false"
           type="utility"
-          backgroundColor="0x494949"
+          backgroundColor="0x111D2A"
           fontSize="11"
           alwaysInFront="true"
           creationComplete="creationCompleteHandler(event)">
@@ -142,7 +142,7 @@ THE SOFTWARE.
              top="55">
 
         <s:filters>
-            <s:DropShadowFilter color="0x636363"
+            <s:DropShadowFilter color="0x0B141E"
                                 distance="2"
                                 blurX="2"
                                 blurY="2"/>
@@ -154,18 +154,18 @@ THE SOFTWARE.
     <nail:ShadowLabel id="versionDisplay"
                       right="55"
                       top="115"
-                      color="0xCCCCCC"
-                      shadowColor="0x535353"
+                      color="0xADC0D4"
+                      shadowColor="0x0B141E"
                       fontSize="12"
                       fontWeight="bold"/>
 
     <nail:ShadowLabel id="infernoDisplay"
                       right="55"
                       top="130"
-                      color="0xCCCCCC"
-                      shadowColor="0x535353"
+                      color="0xADC0D4"
+                      shadowColor="0x0B141E"
                       fontSize="12"
-                      text="dbko-inferno.pl"/>
+                      text="JokeCore · NexaMap"/>
 
     <nail:ShadowLabel id="statusDisplay"
                       left="10"

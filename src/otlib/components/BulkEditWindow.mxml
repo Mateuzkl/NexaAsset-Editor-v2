@@ -31,7 +31,7 @@ THE SOFTWARE.
     height="700"
     minWidth="625"
     minHeight="400"
-    backgroundColor="0x494949"
+    backgroundColor="0x111D2A"
     showStatusBar="false"
     fontSize="11"
     creationComplete="creationCompleteHandler(event)"

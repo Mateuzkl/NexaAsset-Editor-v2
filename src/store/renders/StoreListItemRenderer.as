@@ -54,9 +54,9 @@ package store.renders
 
         private var _hovered:Boolean = false;
 
-        private static const COLOR_NORMAL:uint = 0x474747;
-        private static const COLOR_HOVERED:uint = 0x3385B2; // ThingList style hover
-        private static const COLOR_SELECTED:uint = 0x156692; // ThingList style select
+        private static const COLOR_NORMAL:uint = 0x1B2937;
+        private static const COLOR_HOVERED:uint = 0x213143;
+        private static const COLOR_SELECTED:uint = 0x193D55;
 
         public function StoreListItemRenderer()
         {
@@ -77,7 +77,7 @@ package store.renders
             _bgRect.top = 0;
             _bgRect.bottom = 0;
             _bgRect.fill = new SolidColor(COLOR_NORMAL);
-            _bgRect.stroke = new SolidColorStroke(0x272727);
+            _bgRect.stroke = new SolidColorStroke(0x2C3C4D);
             addElement(_bgRect);
 
             // 2. Image Background Group (64x64)
@@ -85,12 +85,12 @@ package store.renders
             // HGroup height is 100% (68). 64 is fits.
 
             _imageBgRect = new Rect();
-            _imageBgRect.fill = new SolidColor(0x636363);
-            _imageBgRect.stroke = new SolidColorStroke(0x333333);
+            _imageBgRect.fill = new SolidColor(0x101C29);
+            _imageBgRect.stroke = new SolidColorStroke(0x2C3C4D);
             addElement(_imageBgRect);
 
             _indicator = new BusyIndicator();
-            _indicator.setStyle("symbolColor", 0x272727);
+            _indicator.setStyle("symbolColor", 0x2BB7F5);
             _indicator.setStyle("rotationInterval", 50);
             addElement(_indicator);
 

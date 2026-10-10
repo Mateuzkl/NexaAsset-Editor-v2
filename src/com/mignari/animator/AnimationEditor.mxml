@@ -32,7 +32,7 @@ THE SOFTWARE.
     minWidth="800"
     minHeight="600"
     fontSize="11"
-    backgroundColor="0x494949"
+    backgroundColor="0x111D2A"
     showStatusBar="false"
     title="@Resource(key='animationEditor', bundle='strings')"
     creationComplete="creationCompleteHandler(event)"
@@ -1078,7 +1078,7 @@ THE SOFTWARE.
                     right="0"
                     top="0"
                     bottom="0"
-                    cellColors="{[0x636363, 0x535353]}"
+                    cellColors="{[0x182633, 0x202E3C]}"
                     mouseChildren="false"
                     mouseEnabled="false"/>
 
@@ -1087,7 +1087,7 @@ THE SOFTWARE.
                     height="100%"
                     mouseChildren="false"
                     mouseEnabled="false"
-                    lineColor="0x636363"/>
+                    lineColor="0x3B5368"/>
 
                 <s:Scroller left="15"
                     right="0"
@@ -1124,7 +1124,7 @@ THE SOFTWARE.
                 <animator:FrameList id="framesList"
                     width="100%"
                     height="100%"
-                    contentBackgroundColor="0x494949"
+                    contentBackgroundColor="0x16232F"
                     borderVisible="false"
                     requireSelection="true"
                     allowMultipleSelection="true"

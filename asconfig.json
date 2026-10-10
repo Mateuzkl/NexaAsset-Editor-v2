@@ -1,6 +1,6 @@
 {
 	"compilerOptions": {
-		"output": "bin-debug/ObjectBuilder.swf",
+		"output": "bin-debug/NexaAsset-Editor-v2.swf",
 		"source-path": [
 			"src"
 		],
@@ -19,6 +19,14 @@
 			{
 				"file": "assets/icon",
 				"path": "icon"
+			},
+			{
+				"file": "assets/nexa",
+				"path": "nexa"
+			},
+			{
+				"file": "LICENSE",
+				"path": "LICENSE"
 			},
 			{
 				"file": "src/config",

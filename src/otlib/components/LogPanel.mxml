@@ -194,8 +194,8 @@ THE SOFTWARE.
     <s:List id="logList"
         left="0" right="0" top="0" bottom="24"
         fontSize="11"
-        borderColor="0x272727"
-        contentBackgroundColor="0x494949"
+        borderColor="0x2C3C4D"
+        contentBackgroundColor="0x101C29"
         visible="{_expanded}"
         allowMultipleSelection="true"
         keyDown="logList_keyDownHandler(event)">

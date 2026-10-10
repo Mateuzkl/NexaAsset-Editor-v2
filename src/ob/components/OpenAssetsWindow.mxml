@@ -942,7 +942,7 @@ THE SOFTWARE.
       </s:VGroup>
     </s:Scroller>
 
-    <s:BorderContainer width="100%" skinClass="com.mignari.skins.PixeledBorderContainerSkin">
+    <s:BorderContainer width="100%" backgroundColor="0x111D2A" borderColor="0x2C3C4D">
         <s:layout>
             <s:VerticalLayout gap="10" padding="10"/>
         </s:layout>

@@ -44,8 +44,8 @@ THE SOFTWARE.
     <s:Rect left="1" right="1" top="1" bottom="1">
         <s:fill>
             <s:LinearGradient rotation="90">
-                <s:GradientEntry color="0xAAAAAA"/>
-                <s:GradientEntry color="0x888888"/>
+                <s:GradientEntry color="0x2BB7F5"/>
+                <s:GradientEntry color="0x193D55"/>
             </s:LinearGradient>
         </s:fill>
     </s:Rect>
@@ -53,7 +53,7 @@ THE SOFTWARE.
     <!-- border -->
     <s:Rect left="0" right="0" top="0" bottom="0">
         <s:stroke>
-            <s:SolidColorStroke color="0x272727"/>
+            <s:SolidColorStroke color="0x2C3C4D"/>
         </s:stroke>
     </s:Rect>
 </s:SparkSkin>

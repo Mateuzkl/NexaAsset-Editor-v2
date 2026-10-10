@@ -23,6 +23,14 @@
         import otlib.things.ThingCategory;
         import otlib.utils.ClientInfoLoader;
         import otlib.resources.Resources;
+        import ob.components.OpenAssetsWindow;
+        import ob.components.CompileAssetsWindow;
+        import ob.components.PreferencesWindow;
+        import ob.components.AboutWindow;
+        import ob.components.ErrorWindow;
+        import ob.ui.skins.NexaTitleWindowSkin;
+        import flash.display.DisplayObject;
+        import flash.geom.Point;
 
         private var testTimer:Timer = new Timer(250);
         private var testStart:int;
@@ -38,6 +46,9 @@
             [1366, 768, "pt_BR", 1, 1], [1366, 768, "pt_BR", 1, 2]
         ];
         private var testStep:int = 0;
+        private var dialogsChecked:Boolean;
+        private var dialogStep:int;
+        private var testDialog:Object;
 
         override protected function applicationPreinitializeHandler(event:FlexEvent):void
         {
@@ -96,6 +107,7 @@
                     testPhase = 3;
                 } else if (testPhase == 3) {
                     if (testStep >= testSteps.length) {
+                        if (!dialogsChecked) { testPhase = 5; return; }
                         var selectedId:uint = thingData ? thingData.id : 0;
                         var wasChanged:Boolean = clientChanged;
                         for (var pass:int = 0; pass < 20; pass++) {
@@ -150,6 +162,11 @@
                     trace("PASS: captured real editor controls " + file.name + " logical viewport " + nexaShell.width + "x" + nexaShell.height);
                     testStep++;
                     testPhase = 3;
+                } else if (testPhase == 5) {
+                    openThemeDialog();
+                    testPhase = 6;
+                } else if (testPhase == 6) {
+                    verifyThemeDialog();
                 }
             } catch (error:Error) { fail(error.getStackTrace()); }
         }
@@ -161,6 +178,77 @@
             if (!spr.exists) spr = folder.resolvePath("Tibia.spr");
             sendCommand(new LoadFilesCommand(folder.resolvePath("Tibia.dat"), spr,
                 VersionStorage.getInstance().getBySignatures(info.datSignature, info.sprSignature), null, info.features));
+        }
+        private function openThemeDialog():void {
+            switch (dialogStep) {
+                case 0:
+                    thingTypeEditor.tabNavigator.selectedIndex = 0;
+                    logPanel.expanded = true; logPanel.height = 180;
+                    break;
+                case 1:
+                    testDialog = new OpenAssetsWindow(); testDialog.open(this); break;
+                case 2:
+                    var compile:CompileAssetsWindow = new CompileAssetsWindow();
+                    compile.filesName = "Tibia"; compile.directory = testRoot;
+                    compile.version = VersionStorage.getInstance().getBySignatures(0x4C2C7993, 0x4C220594);
+                    compile.multiSpr = true; compile.extendedItems = true;
+                    compile.improvedAnimations = true; compile.frameGroups = true;
+                    testDialog = compile; compile.open(this); break;
+                case 3:
+                case 4:
+                    var preferences:PreferencesWindow = new PreferencesWindow(); preferences.settings = settings;
+                    testDialog = preferences; preferences.open(this);
+                    if (dialogStep == 4) { preferences.validateNow(); preferences.viewStack.selectedIndex = 2; }
+                    break;
+                case 5: testDialog = new AboutWindow(); testDialog.open(); break;
+                case 6:
+                    var error:ErrorWindow = new ErrorWindow(); error.message = "Readable error details on the Nexa Dark surface.";
+                    testDialog = error; error.open(); break;
+            }
+        }
+        private function verifyThemeDialog():void {
+            var names:Array = ["expanded-log", "open-assets", "compile-assets", "preferences-general", "preferences-sprite-sheet", "about-jokecore", "error-details"];
+            validateNow();
+            if (dialogStep == 0) {
+                logPanel.validateNow();
+                if (uint(logPanel.logList.getStyle("contentBackgroundColor")) != 0x101C29)
+                    throw new Error("Expanded log still uses the legacy gray surface");
+                if (!logPanel.toggleButton.label)
+                    throw new Error("Localized log toggle caption is missing");
+                captureTheme(names[dialogStep], nexaShell, nexaShell.width, nexaShell.height);
+                logPanel.expanded = false;
+            } else {
+                testDialog.validateNow();
+                if (dialogStep <= 4) {
+                    if (!(testDialog.skin is NexaTitleWindowSkin) || !testDialog.skin.moveArea || !testDialog.skin.closeButton)
+                        throw new Error("Dialog drag/close skin contracts are missing");
+                    var action:Object = dialogStep == 1 ? testDialog.loadButton : testDialog.confirmButton;
+                    var bounds:Point = DisplayObject(action).localToGlobal(new Point());
+                    var origin:Point = DisplayObject(testDialog).localToGlobal(new Point());
+                    if (bounds.y + action.height > origin.y + testDialog.height + 1)
+                        throw new Error("Dialog action bar extends below the window");
+                } else if (dialogStep == 5) {
+                    if (testDialog.jokeCoreButton.label.indexOf("JokeCore") < 0 || !testDialog.copyrightDisplay.textFlow)
+                        throw new Error("About branding/upstream attribution is missing");
+                }
+                captureTheme(names[dialogStep], DisplayObject(testDialog), testDialog.width, testDialog.height);
+                if (dialogStep <= 4) {
+                    testDialog.skin.closeButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+                    if (!testDialog.closed) throw new Error("Dialog close button does not close the window");
+                } else testDialog.close();
+                testDialog = null;
+            }
+            trace("PASS: dark surface and real window controls " + names[dialogStep]);
+            dialogStep++;
+            if (dialogStep == names.length) { dialogsChecked = true; testPhase = 3; }
+            else testPhase = 5;
+        }
+        private function captureTheme(name:String, target:DisplayObject, w:Number, h:Number):void {
+            var bitmap:BitmapData = new BitmapData(Math.ceil(w), Math.ceil(h), false, 0x111D2A);
+            bitmap.draw(target);
+            var stream:FileStream = new FileStream(); stream.open(testRoot.resolvePath(name + ".png"), FileMode.WRITE);
+            try { stream.writeBytes(bitmap.encode(bitmap.rect, new PNGEncoderOptions())); }
+            finally { stream.close(); bitmap.dispose(); }
         }
         private function fail(message:String):void
         {

@@ -82,7 +82,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 
 `ExecutionPolicy Bypass` applies only to that process. The script uses process-local Java and temporary-directory settings and restores them afterward; it does not modify the global PATH. To select another prepared toolchain, pass `-ToolsRoot 'D:\your-tools-folder'`. Use `-CompileOnly` to generate the SWFs or `-PackageOnly` to package existing compiled output.
 
-The executable is generated at `bin/ObjectBuilder/ObjectBuilder.exe`. Keep the entire `bin/ObjectBuilder` directory together, including its AIR runtime, icons, and configuration. The local AIR package uses a temporary self-signed certificate that is deleted after packaging; it is not a trusted Windows publisher signature or a production signing configuration. The running application may still save preferences in the normal Windows AppData directory.
+The executable is generated at `bin/NexaAsset Editor v2/NexaAsset Editor v2.exe`. Keep the entire bundle directory together, including its AIR runtime, icons, configuration and license. Use `-BundleName '<new directory name>'` to package a separate bundle without replacing an earlier build. The local AIR package uses a temporary self-signed certificate that is deleted after packaging; it is not a trusted Windows publisher signature or a production signing configuration. The running application may still save preferences in the normal Windows AppData directory.
 
 Compilation and packaging have been verified locally. Interactive DAT/SPR editing has not been tested as part of this import.
 

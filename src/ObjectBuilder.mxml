@@ -567,10 +567,10 @@ THE SOFTWARE.
                         return;
                     }
                     var info:NativeProcessStartupInfo = new NativeProcessStartupInfo();
-                    info.executable = File.applicationDirectory.resolvePath("ObjectBuilder.exe");
+                    info.executable = File.applicationDirectory.resolvePath("NexaAsset Editor v2.exe");
                     if (!info.executable.exists)
                     {
-                        appendLog("Cannot find ObjectBuilder.exe");
+                        appendLog("Cannot find " + info.executable.name);
                         return;
                     }
                     var process:NativeProcess = new NativeProcess();

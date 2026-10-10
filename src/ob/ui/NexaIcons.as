@@ -3,6 +3,7 @@ package ob.ui
     /** Supplied author-owned SVGs, compiled once into native vector assets. */
     public final class NexaIcons
     {
+        [Embed(source="/../assets/nexa/nexa-logo.svg")] public static const LOGO:Class;
         [Embed(source="/../assets/nexa/icons/default/home.svg")] public static const HOME:Class;
         [Embed(source="/../assets/nexa/icons/default/objects.svg")] public static const OBJECTS:Class;
         [Embed(source="/../assets/nexa/icons/default/sprites.svg")] public static const SPRITES:Class;

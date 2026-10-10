@@ -51,15 +51,15 @@ THE SOFTWARE.
     <s:Rect left="1" right="1" top="1" bottom="1">
         <s:fill>
             <s:LinearGradient rotation="90">
-                <s:GradientEntry color="0x626262"
-                    color.over="0x6F6F6F"
-                    color.down="0x414141"
-                    color.selectedStates="0x353535"
+                <s:GradientEntry color="0x1B2937"
+                    color.over="0x213143"
+                    color.down="0x101C29"
+                    color.selectedStates="0x193D55"
                     alpha.up="0"/>
-                <s:GradientEntry color="0x535353"
-                    color.over="0x606060"
-                    color.down="0x414141"
-                    color.selectedStates="0x353535"
+                <s:GradientEntry color="0x16232F"
+                    color.over="0x213143"
+                    color.down="0x101C29"
+                    color.selectedStates="0x193D55"
                     alpha.up="0"/>
             </s:LinearGradient>
         </s:fill>
@@ -68,7 +68,7 @@ THE SOFTWARE.
     <!-- border -->
     <s:Rect left="0" right="0" top="0" bottom="0" excludeFrom="up">
         <s:stroke>
-            <s:SolidColorStroke color="0x272727"/>
+            <s:SolidColorStroke color="0x2C3C4D"/>
         </s:stroke>
     </s:Rect>
 
@@ -76,8 +76,8 @@ THE SOFTWARE.
     <s:Rect left="1" right="1" top="1" bottom="1" excludeFrom="up">
         <s:stroke>
             <s:LinearGradientStroke rotation="90" weight="1">
-                <s:GradientEntry color="0x787878" color.overAndSelected="0x606060" color.upAndSelected="0x323232" ratio="0"/>
-                <s:GradientEntry color="0x606060" color.overAndSelected="0x4D4D4D" color.upAndSelected="0x272727" ratio="1"/>
+                <s:GradientEntry color="0x3B5368" color.overAndSelected="0x213143" color.upAndSelected="0x193D55" ratio="0"/>
+                <s:GradientEntry color="0x213143" color.overAndSelected="0x1B2937" color.upAndSelected="0x2C3C4D" ratio="1"/>
             </s:LinearGradientStroke>
         </s:stroke>
     </s:Rect>

@@ -1729,11 +1729,11 @@ THE SOFTWARE.
                         mdFrameGrp.addEventListener(MouseEvent.CLICK, filmRollFrameClickHandler);
                         container.addElement(mdFrameGrp);
 
-                        // Gray background
+                        // Nexa Dark frame background
                         var mdBgRect:Rect = new Rect();
                         mdBgRect.width = frameW;
                         mdBgRect.height = frameH;
-                        mdBgRect.fill = new SolidColor(0x636363);
+                        mdBgRect.fill = new SolidColor(0x101B26);
                         mdFrameGrp.addElement(mdBgRect);
 
                         var img:Image = new Image();
