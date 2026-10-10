@@ -28,7 +28,7 @@ THE SOFTWARE.
     minWidth="550"
     minHeight="500"
     showStatusBar="false"
-    backgroundColor="0x494949"
+    backgroundColor="0x111D2A"
     fontSize="11"
     title="@Resource(key='error', bundle='strings')">
 
@@ -87,10 +87,10 @@ THE SOFTWARE.
         height="100%"
         text="{message}"
         editable="false"
-        color="0x212121"
+        color="0xF0F5FB"
         fontSize="12"
-        focusedTextSelectionColor="0xFFFFFF"
-        contentBackgroundColor="0xCCCCCC"
+        focusedTextSelectionColor="0x193D55"
+        contentBackgroundColor="0x101C29"
         lineBreak="explicit"/>
 
     <nail:ShadowLine width="100%"/>

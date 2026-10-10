@@ -29,13 +29,14 @@ THE SOFTWARE.
     xmlns:ob="ob.components.*"
     xmlns:menu="ob.menu.*"
     xmlns:mg="library://ns.mignari.com/mg"
+    xmlns:ui="ob.ui.*"
     implements="ob.core.IObjectBuilder"
     minWidth="1200"
     minHeight="768"
-    fontSize="11"
+    fontSize="12"
     showStatusBar="false"
     visible="false"
-    backgroundColor="0x494949"
+    backgroundColor="0x0B141E"
     invoke="applicationInvokeHandler(event)"
     preinitialize="applicationPreinitializeHandler(event)"
     creationComplete="creationCompleteHandler(event)"
@@ -52,6 +53,8 @@ THE SOFTWARE.
         <![CDATA[
             import com.mignari.animator.AnimationEditor;
             import ob.components.ReadableProgressWidget;
+            import ob.ui.NexaUiEvent;
+            import ob.ui.NexaIcons;
             import com.mignari.utils.DialogDetail;
             import com.mignari.workers.IWorkerCommunicator;
             import com.mignari.workers.WorkerCommand;
@@ -564,10 +567,10 @@ THE SOFTWARE.
                         return;
                     }
                     var info:NativeProcessStartupInfo = new NativeProcessStartupInfo();
-                    info.executable = File.applicationDirectory.resolvePath("ObjectBuilder.exe");
+                    info.executable = File.applicationDirectory.resolvePath("NexaAsset Editor v2.exe");
                     if (!info.executable.exists)
                     {
-                        appendLog("Cannot find ObjectBuilder.exe");
+                        appendLog("Cannot find " + info.executable.name);
                         return;
                     }
                     var process:NativeProcess = new NativeProcess();
@@ -674,6 +677,7 @@ THE SOFTWARE.
                         var knownAttrs:Array = _attributeRegistry.getAttributeKeysInOrder();
             
                         // Close any active object editor
+                        cancelPendingThingRequest();
                         editThing(null);
 
                         // Drop stale search results from the previously loaded client.
@@ -1277,6 +1281,7 @@ THE SOFTWARE.
             
             public function clear():void
             {
+                cancelPendingThingRequest();
                 _thingData = null;
                 _thingDataChanged = false;
                 _clientInfo = null;
@@ -1287,6 +1292,7 @@ THE SOFTWARE.
                 thingGridList.removeAll();
                 foundThingsList.removeAll();
                 spritesList.removeAll();
+                spritesGridList.removeAll();
 
                 editThing(null);
                 thingView.thingData = null;
@@ -1295,6 +1301,7 @@ THE SOFTWARE.
                 categoryDropDownList.selectedIndex = 0;
                 thingStepper.value = 0;
                 _logs.removeAll();
+                updateNexaSaveState();
             }
 
             private function clearFoundResults():void
@@ -1418,6 +1425,14 @@ THE SOFTWARE.
                 previewPanel.width = Math.max(previewPanel.minWidth, _settings.previewContainerWidth);
                 thingsPanel.width = Math.max(thingsPanel.minWidth, _settings.thingListContainerWidth);
                 spritesPanel.width = Math.max(spritesPanel.minWidth, _settings.spritesContainerWidth);
+                // Keep usable saved splitter sizes; old narrow/default widths adopt the new proportions.
+                if (_settings.previewContainerWidth < previewPanel.minWidth) previewPanel.percentWidth = 17;
+                if (_settings.thingListContainerWidth < thingsPanel.minWidth) thingsPanel.percentWidth = 22;
+                if (_settings.spritesContainerWidth < spritesPanel.minWidth) spritesPanel.percentWidth = 15;
+                editorPanel.percentWidth = 100
+                    - (isNaN(previewPanel.percentWidth) ? 0 : previewPanel.percentWidth)
+                    - (isNaN(thingsPanel.percentWidth) ? 0 : thingsPanel.percentWidth)
+                    - (isNaN(spritesPanel.percentWidth) ? 0 : spritesPanel.percentWidth);
 
                 if (_settings.largerWindowsFor4K)
                 {
@@ -1624,6 +1639,10 @@ THE SOFTWARE.
                 _clientIsTemporary = info.isTemporary;
                 _clientLoaded = info.loaded;
                 _otbLoaded = info.otbLoaded;
+                nexaNavigation.loaded = info.loaded;
+                nexaActions.loaded = info.loaded;
+                updateNexaSaveState();
+                if (!info.loaded) nexaActions.hasSelection = false;
                 thingList.otbLoaded = _otbLoaded;
                 thingGridList.otbLoaded = _otbLoaded;
                 foundThingsList.otbLoaded = _otbLoaded;
@@ -1682,6 +1701,7 @@ THE SOFTWARE.
                     _ignoringPropertyChange = false;
 
                     confirmButton.enabled = false;
+                    updateNexaSaveState();
                     updateTitle(OtlibUtils.toLocale(thing.category) + " " + thing.id);
                 }
             }
@@ -2031,6 +2051,7 @@ THE SOFTWARE.
             private function setThingData(thingData:ThingData):void
             {
                 _thingData = thingData;
+                nexaActions.hasSelection = (thingData != null);
 
                 if (!thingData)
                 {
@@ -2178,6 +2199,8 @@ THE SOFTWARE.
             
             private function onSetCategory(category:String):void
             {
+                if (["items", "outfits", "effects", "missiles"].indexOf(nexaNavigation.active) >= 0)
+                    nexaNavigation.active = category + "s";
                 if (clientLoaded)
                 {
                     switch (category)
@@ -2224,6 +2247,8 @@ THE SOFTWARE.
                     text += "*";
             
                 this.title = text;
+                statusLabel.text = resourceManager.getString("strings", saved ? "nexa.ready" : "nexa.unsaved");
+                documentLabel.text = info;
             }
             
             private function openErrorWindow(message:String):void
@@ -2672,16 +2697,10 @@ THE SOFTWARE.
             
             private function requestThingWithDebounce(thingId:uint, category:String):void
             {
+                cancelPendingThingRequest();
                 // Store pending request
                 _pendingThingId = thingId;
                 _pendingThingCategory = category;
-            
-                // Cancel previous timer
-                if (_thingSelectionDebounceTimer)
-                {
-                    _thingSelectionDebounceTimer.stop();
-                    _thingSelectionDebounceTimer.removeEventListener(TimerEvent.TIMER, onThingSelectionDebounce);
-                }
             
                 // Start new debounce timer (150ms delay)
                 _thingSelectionDebounceTimer = new Timer(150, 1);
@@ -2691,13 +2710,24 @@ THE SOFTWARE.
             
             private function onThingSelectionDebounce(event:TimerEvent):void
             {
-                _thingSelectionDebounceTimer.removeEventListener(TimerEvent.TIMER, onThingSelectionDebounce);
-                _thingSelectionDebounceTimer = null;
-            
-                if (_pendingThingId != 0 && _pendingThingCategory)
+                var id:uint = _pendingThingId;
+                var category:String = _pendingThingCategory;
+                cancelPendingThingRequest();
+                if (_clientInfo && _clientInfo.loaded && id != 0 && category)
                 {
-                    sendCommand(new GetThingCommand(_pendingThingId, _pendingThingCategory));
+                    sendCommand(new GetThingCommand(id, category));
                 }
+            }
+            private function cancelPendingThingRequest():void
+            {
+                if (_thingSelectionDebounceTimer)
+                {
+                    _thingSelectionDebounceTimer.stop();
+                    _thingSelectionDebounceTimer.removeEventListener(TimerEvent.TIMER, onThingSelectionDebounce);
+                    _thingSelectionDebounceTimer = null;
+                }
+                _pendingThingId = 0;
+                _pendingThingCategory = null;
             }
             protected function categoryDropDownListChangeHandler(event:IndexChangeEvent):void
             {
@@ -2728,6 +2758,7 @@ THE SOFTWARE.
             
                 updateTitle(title);
                 confirmButton.enabled = false;
+                updateNexaSaveState();
             }
             
             protected function thingPropertyChangedHandler(event:ThingEditorEvent):void
@@ -2740,6 +2771,7 @@ THE SOFTWARE.
                 }
             
                 updateTitle(title, !thingTypeEditor.changed);
+                updateNexaSaveState();
             
                 // Only enable button if not ignoring property changes from worker
                 if (!_ignoringPropertyChange)
@@ -4062,6 +4094,57 @@ THE SOFTWARE.
                 if (thingList) thingList[flag] = value;
                 if (thingGridList) thingGridList[flag] = value;
                 if (foundThingsList) foundThingsList[flag] = value;
+                if (flag == "hasClipboardObject") nexaActions.hasClipboard = value;
+            }
+
+            /** Include unsaved editor changes, not only the last worker snapshot. */
+            protected function updateNexaSaveState():void
+            {
+                nexaActions.canSave = _clientInfo != null && _clientInfo.loaded && !_clientInfo.isTemporary &&
+                        (_clientInfo.changed || thingTypeEditor.changed);
+            }
+
+            /** Presentation-only shortcuts. All mutations still use the original handlers. */
+            protected function nexaActionHandler(event:NexaUiEvent):void
+            {
+                switch (event.action)
+                {
+                    case "open": openProject(); break;
+                    case "save": compileProject(); break;
+                    case "compileAs": compileProjectAs(); break;
+                    case "export": exportThingHandler(event); break;
+                    case "add": newThingHandler(event); break;
+                    case "duplicate": duplicateThingHandler(event); break;
+                    case "delete": removeThingHandler(event); break;
+                    case "copy": copyObjectHandler(event); break;
+                    case "paste": pasteObjectHandler(event); break;
+                }
+            }
+
+            protected function nexaNavigationHandler(event:NexaUiEvent):void
+            {
+                toobar.visible = toobar.includeInLayout = (event.action == "tools");
+                switch (event.action)
+                {
+                    case "home":
+                        showPreviewPanel = showThingsPanel = showSpritesPanel = true;
+                        break;
+                    case "objects": showThingsPanel = true; getActiveThingList().setFocus(); break;
+                    case "sprites": showSpritesPanel = true; activeSpriteList.setFocus(); break;
+                    case "settings": openPreferencesWindow(); break;
+                    case "items":
+                    case "outfits":
+                    case "effects":
+                    case "missiles":
+                        if (!clientLoaded) return;
+                        showThingsPanel = true;
+                        var categories:Array = [ThingCategory.ITEM, ThingCategory.OUTFIT, ThingCategory.EFFECT, ThingCategory.MISSILE];
+                        var names:Array = ["items", "outfits", "effects", "missiles"];
+                        var index:int = names.indexOf(event.action);
+                        categoryDropDownList.selectedIndex = index;
+                        currentCategory = categories[index];
+                        break;
+                }
             }
 
             public function requestEditThing(id:uint, category:String):void
@@ -4195,8 +4278,7 @@ THE SOFTWARE.
                         if (_settings.deleteAfterPaste)
                         {
                             _copiedThingData = null;
-                            if (thingList)
-                                thingList.hasClipboardObject = false;
+                            setClipboardFlag("hasClipboardObject", false);
                         }
             
                         appendLog(StringUtil.format(resourceManager.getString('strings', 'objectPasted'), resourceManager.getString('strings', sourceCategory), _copiedSourceId, targets.length > 1 ? targets.length + " items" : targets[0].id));
@@ -4399,33 +4481,35 @@ THE SOFTWARE.
             selected="nativeMenuSelectedHandler(event)"/>
     </s:menu>
 
-    <ob:Toolbar id="toobar" width="100%" height="35"/>
+    <s:VGroup id="nexaShell" left="0" right="0" top="0" bottom="0" gap="0">
+    <ui:NexaNavigation id="nexaNavigation" width="100%" nexaAction="nexaNavigationHandler(event)"/>
+    <ui:NexaActionBar id="nexaActions" width="100%" nexaAction="nexaActionHandler(event)"/>
+    <!-- Existing utilities remain available in Tools and in the native menu. -->
+    <ob:Toolbar id="toobar" width="100%" height="42" visible="false" includeInLayout="false"/>
 
-    <mx:VDividedBox width="100%" top="35" bottom="0">
+    <mx:VDividedBox id="workspace" width="100%" height="100%" paddingLeft="8" paddingRight="8" paddingTop="8">
 
         <mx:HDividedBox width="100%" height="100%">
 
             <!-- info/view container -->
             <s:BorderContainer id="previewPanel"
-                minWidth="165"
-                maxWidth="280"
-                width="165"
+                minWidth="240"
+                maxWidth="430"
+                width="260"
                 height="100%"
-                fontSize="11"
-                skinClass="nail.components.skins.BorderContainerSkin">
-                <s:layout>
-                    <s:VerticalLayout horizontalAlign="center" padding="5" gap="5"/>
-                </s:layout>
+                fontSize="12">
+                <s:Scroller width="100%" height="100%" horizontalScrollPolicy="off">
+                <s:VGroup width="100%" height="100%" gap="7" padding="1">
 
                 <otlib:FilesInfoPanel id="infoPanel" width="100%"/>
 
                 <nail:ShadowLine width="100%"/>
 
                 <s:HGroup width="100%"
-                    height="22">
+                    height="30">
                     <s:DropDownList id="categoryDropDownList"
                         selectedIndex="0"
-                        width="100%" height="20"
+                        width="100%" height="28"
                         change="categoryDropDownListChangeHandler(event)">
                         <s:dataProvider>
                             <s:ArrayList>
@@ -4437,7 +4521,7 @@ THE SOFTWARE.
                         </s:dataProvider>
                     </s:DropDownList>
                     <s:ToggleButton id="showThingsPanelButton"
-                        toolTip="@Resource(key='showObjectList', bundle='strings')"
+                        toolTip="{resourceManager.getString('strings', 'showObjectList')}"
                         width="20" height="20"
                         selected="true"
                         icon="{Assets.SHOW_LIST_ICON}"
@@ -4448,25 +4532,25 @@ THE SOFTWARE.
                     <s:Button id="zoomOutButton"
                         toolTip="Zoom Out"
                         width="24" height="24"
-                        icon="{Assets.ZOOM_OUT}"
+                        icon="{NexaIcons.MINUS}"
                         click="zoomOutButtonClickHandler(event)"/>
                     <s:Label id="zoomLabel" text="{Math.round(_previewZoom * 100) + '%'}"
                         textAlign="center" width="40"/>
                     <s:Button id="zoomInButton"
                         toolTip="Zoom In"
                         width="24" height="24"
-                        icon="{Assets.ZOOM_IN}"
+                        icon="{NexaIcons.PLUS}"
                         click="zoomInButtonClickHandler(event)"/>
                     <s:Button id="zoomResetButton"
                         toolTip="Reset Zoom (1:1)"
                         width="24" height="24"
-                        icon="{Assets.ZOOM_RESET}"
+                        icon="{NexaIcons.EXPAND}"
                         click="zoomResetButtonClickHandler(event)"/>
                 </s:HGroup>
 
                 <nail:GroupBox id="thingViewGroup"
-                    label="@Resource(key='preview', bundle='strings')"
-                    width="100%" height="100%"
+                    label="{resourceManager.getString('strings', 'nexa.itemPreview')}"
+                    width="100%" height="100%" minHeight="140"
                     nativeDragEnter="thingDataNativeDragEnterHandler(event)"
                     nativeDragDrop="thingDataNativeDragDropHandler(event)">
                     <s:Scroller id="previewScroller"
@@ -4534,19 +4618,20 @@ THE SOFTWARE.
                         </s:HGroup>
                     </s:Group>
                 </mg:GroupCheckBox>
+                </s:VGroup>
+                </s:Scroller>
             </s:BorderContainer>
 
             <!-- thing list container -->
             <s:BorderContainer id="thingsPanel"
-                minWidth="190" maxWidth="1340" width="290" height="100%"
-                fontSize="11"
-                skinClass="nail.components.skins.BorderContainerSkin">
+                minWidth="255" maxWidth="1340" width="310" height="100%"
+                fontSize="12">
                 <s:layout>
-                    <s:VerticalLayout horizontalAlign="center" padding="5" gap="5"/>
+                    <s:VerticalLayout horizontalAlign="center" padding="5" gap="7"/>
                 </s:layout>
 
                 <nail:GroupBox id="objectListGroupBox"
-                    label="@Resource(key='objects', bundle='strings')"
+                    label="{resourceManager.getString('strings', 'objects')}"
                     width="100%" height="100%">
                     <nail:layout>
                         <s:VerticalLayout paddingRight="0" paddingLeft="0" paddingTop="5" paddingBottom="0" gap="3"/>
@@ -4556,22 +4641,28 @@ THE SOFTWARE.
                     <s:HGroup width="100%" horizontalAlign="left" verticalAlign="middle" paddingLeft="5" paddingRight="5">
                         <s:ToggleButton id="listViewButton"
                             label="{resourceManager.getString('strings', 'list')}"
-                            width="33%" height="22" selected="true"
+                            width="33%" height="30" selected="true"
                             click="setObjectsView(0)"/>
                         <s:ToggleButton id="gridViewButton"
                             label="{resourceManager.getString('strings', 'grid')}"
-                            width="33%" height="22" selected="false"
+                            width="33%" height="30" selected="false"
                             click="setObjectsView(1)"/>
                         <s:ToggleButton id="foundViewButton"
-                            label="Found"
-                            width="34%" height="22" selected="false"
+                            label="{resourceManager.getString('strings', 'found')}"
+                            width="34%" height="30" selected="false"
                             click="setObjectsView(2)"/>
                     </s:HGroup>
+
+                    <!-- Reuse the existing finder; do not introduce a new search/parser pipeline. -->
+                    <s:Button width="100%" height="30"
+                        label="{resourceManager.getString('strings', 'nexa.searchObjects')}"
+                        toolTip="{resourceManager.getString('strings', 'find')}"
+                        icon="{NexaIcons.SEARCH}" click="openFinder()"/>
 
                     <!-- Hide empty checkbox -->
                     <s:HGroup width="100%" paddingLeft="5">
                         <s:CheckBox id="hideEmptyObjectsCheckbox"
-                            label="@Resource(key='hideEmptyObjects', bundle='strings')"
+                            label="{resourceManager.getString('strings', 'hideEmptyObjects')}"
                             selected="false"
                             change="hideEmptyObjectsChangeHandler(event)"/>
                     </s:HGroup>
@@ -4585,7 +4676,7 @@ THE SOFTWARE.
                                 height="100%"
                                 fontSize="11"
                                 borderAlpha="0"
-                                contentBackgroundColor="0x494949"
+                                contentBackgroundColor="0x16232F"
                                 horizontalScrollPolicy="off"
                                 doubleClickEnabled="true"
                                 allowMultipleSelection="true"
@@ -4631,7 +4722,7 @@ THE SOFTWARE.
                                     height="100%"
                                     fontSize="11"
                                     borderAlpha="0"
-                                    contentBackgroundColor="0x494949"
+                                    contentBackgroundColor="0x16232F"
                                     horizontalScrollPolicy="off"
                                     doubleClickEnabled="true"
                                     allowMultipleSelection="true"
@@ -4664,7 +4755,7 @@ THE SOFTWARE.
                                 height="100%"
                                 fontSize="11"
                                 borderAlpha="0"
-                                contentBackgroundColor="0x494949"
+                                contentBackgroundColor="0x16232F"
                                 horizontalScrollPolicy="off"
                                 doubleClickEnabled="true"
                                 allowMultipleSelection="true"
@@ -4699,49 +4790,49 @@ THE SOFTWARE.
                 <s:Group width="100%" height="22">
                     <s:HGroup horizontalCenter="0" verticalCenter="0" gap="3">
                         <s:Button id="replaceThingButton"
-                            toolTip="@Resource(key='replace', bundle='strings')"
+                            toolTip="{resourceManager.getString('strings', 'replace')}"
                             width="22"
                             height="22"
                             icon="{Assets.REPLACE}"
                             click="replaceThingHandler(event)"/>
                         <s:Button id="importThingButton"
-                            toolTip="@Resource(key='import', bundle='strings')"
+                            toolTip="{resourceManager.getString('strings', 'import')}"
                             width="22"
                             height="22"
                             icon="{Assets.IMPORT}"
                             click="importThingHandler(event)"/>
                         <s:Button id="exportThingButton"
-                            toolTip="@Resource(key='export', bundle='strings')"
+                            toolTip="{resourceManager.getString('strings', 'export')}"
                             width="22"
                             height="22"
                             icon="{Assets.EXPORT}"
                             click="exportThingHandler(event)"/>
                         <s:Button id="exportAllThingButton"
-                            toolTip="@Resource(key='exportAll', bundle='strings')"
+                            toolTip="{resourceManager.getString('strings', 'exportAll')}"
                             width="22"
                             height="22"
                             icon="{Assets.EXPORT_ALL}"
                             click="exportAllThingsHandler(event)"/>
                         <s:Button id="editThingButton"
-                            toolTip="@Resource(key='edit', bundle='strings')"
+                            toolTip="{resourceManager.getString('strings', 'edit')}"
                             width="22"
                             height="22"
                             icon="{Assets.EDIT}"
                             click="editThingHandler(event)"/>
                         <s:Button id="duplicateThingButton"
-                            toolTip="@Resource(key='duplicate', bundle='strings')"
+                            toolTip="{resourceManager.getString('strings', 'duplicate')}"
                             width="22"
                             height="22"
                             icon="{Assets.DUPLICATE}"
                             click="duplicateThingHandler(event)"/>
                         <s:Button id="newThingButton"
-                            toolTip="@Resource(key='new', bundle='strings')"
+                            toolTip="{resourceManager.getString('strings', 'new')}"
                             width="22"
                             height="22"
                             icon="{Assets.NEW}"
                             click="newThingHandler(event)"/>
                         <s:Button id="removeThingButton"
-                            toolTip="@Resource(key='remove', bundle='strings')"
+                            toolTip="{resourceManager.getString('strings', 'remove')}"
                             width="22"
                             height="22"
                             icon="{Assets.DELETE}"
@@ -4750,7 +4841,7 @@ THE SOFTWARE.
                     <s:Button id="findThingButton"
                         right="3"
                         verticalCenter="0"
-                        toolTip="@Resource(key='find', bundle='strings')"
+                        toolTip="{resourceManager.getString('strings', 'find')}"
                         width="22"
                         height="22"
                         icon="{Assets.BINOCULARS}"
@@ -4759,14 +4850,13 @@ THE SOFTWARE.
             </s:BorderContainer>
 
             <!-- ThingType editor -->
-            <s:Group minWidth="310" width="100%" height="100%">
+            <s:Group id="editorPanel" minWidth="400" width="100%" height="100%">
                 <s:layout>
                     <s:VerticalLayout gap="-1"/>
                 </s:layout>
 
                 <s:BorderContainer width="100%"
-                    height="100%"
-                    skinClass="nail.components.skins.BorderContainerSkin">
+                    height="100%">
                     <otlib:ThingTypeEditor id="thingTypeEditor"
                         width="100%"
                         height="100%"
@@ -4780,8 +4870,8 @@ THE SOFTWARE.
                 </s:BorderContainer>
 
                 <s:BorderContainer width="100%"
-                    backgroundColor="0x535353"
-                    borderColor="0x272727">
+                    backgroundColor="0x111D2A"
+                    borderColor="0x2C3C4D">
                     <s:layout>
                         <s:HorizontalLayout horizontalAlign="right"
                             verticalAlign="middle"
@@ -4791,13 +4881,13 @@ THE SOFTWARE.
                             paddingBottom="3"/>
                     </s:layout>
                     <s:Button id="confirmButton"
-                        label="@Resource(key='save', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'save')}"
                         fontSize="11"
                         height="20"
                         enabled="false"
                         click="confirmButtonClickHandler(event)"/>
                     <s:Button id="cancelButton"
-                        label="@Resource(key='close', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'close')}"
                         fontSize="11"
                         height="20"
                         enabled="false"
@@ -4807,16 +4897,15 @@ THE SOFTWARE.
 
             <!-- sprites container -->
             <s:BorderContainer id="spritesPanel"
-                minWidth="190"
+                minWidth="210"
                 maxWidth="900"
-                width="190"
-                height="100%"
-                skinClass="nail.components.skins.BorderContainerSkin">
+                width="220"
+                height="100%">
                 <s:layout>
                     <s:VerticalLayout horizontalAlign="center" padding="5" gap="5"/>
                 </s:layout>
 
-                <nail:GroupBox label="@Resource(key='sprites', bundle='strings')"
+                <nail:GroupBox label="{resourceManager.getString('strings', 'sprites')}"
                     width="100%" height="100%">
                     <nail:layout>
                         <s:VerticalLayout paddingRight="0" paddingLeft="0" paddingTop="5" paddingBottom="0" gap="3"/>
@@ -4826,11 +4915,11 @@ THE SOFTWARE.
                     <s:HGroup width="100%" horizontalAlign="left" verticalAlign="middle" paddingLeft="5" paddingRight="5">
                         <s:ToggleButton id="spriteListViewButton"
                             label="{resourceManager.getString('strings', 'list')}"
-                            width="50%" height="22" selected="true"
+                            width="50%" height="30" selected="true"
                             click="setSpritesView(0)"/>
                         <s:ToggleButton id="spriteGridViewButton"
                             label="{resourceManager.getString('strings', 'grid')}"
-                            width="50%" height="22" selected="false"
+                            width="50%" height="30" selected="false"
                             click="setSpritesView(1)"/>
                     </s:HGroup>
 
@@ -4845,7 +4934,7 @@ THE SOFTWARE.
                                 dragEnabled="true"
                                 fontSize="11"
                                 borderAlpha="0"
-                                contentBackgroundColor="0x494949"
+                                contentBackgroundColor="0x16232F"
                                 requireSelection="true"
                                 change="spritesListChangeHandler(event)"
                                 copy="onCopySprite()"
@@ -4879,7 +4968,7 @@ THE SOFTWARE.
                                     allowMultipleSelection="true"
                                     dragEnabled="true"
                                     borderAlpha="0"
-                                    contentBackgroundColor="0x494949"
+                                    contentBackgroundColor="0x16232F"
                                     itemRenderer="otlib.components.renders.SpriteGridRenderer"
                                     change="spritesListChangeHandler(event)"
                                     copy="onCopySprite()"
@@ -4908,49 +4997,49 @@ THE SOFTWARE.
 
                 <s:HGroup width="100%" horizontalAlign="center" verticalAlign="middle" gap="3">
                     <s:Button id="replaceSpriteButton"
-                        toolTip="@Resource(key='replace', bundle='strings')"
+                        toolTip="{resourceManager.getString('strings', 'replace')}"
                         width="22"
                         height="22"
                         icon="{Assets.REPLACE}"
                         click="replaceSpriteHandler(event)"/>
                     <s:Button id="importSpriteButton"
-                        toolTip="@Resource(key='import', bundle='strings')"
+                        toolTip="{resourceManager.getString('strings', 'import')}"
                         width="22"
                         height="22"
                         icon="{Assets.IMPORT}"
                         click="importSpriteHandler(event)"/>
                     <s:Button id="exportSpriteButton"
-                        toolTip="@Resource(key='export', bundle='strings')"
+                        toolTip="{resourceManager.getString('strings', 'export')}"
                         width="22"
                         height="22"
                         icon="{Assets.EXPORT}"
                         click="exportSpriteHandler(event)"/>
                     <s:Button id="exportAllSpriteButton"
-                        toolTip="@Resource(key='exportAll', bundle='strings')"
+                        toolTip="{resourceManager.getString('strings', 'exportAll')}"
                         width="22"
                         height="22"
                         icon="{Assets.EXPORT_ALL}"
                         click="exportAllSpritesHandler(event)"/>
                     <s:Button id="copySpriteButton"
-                        toolTip="@Resource(key='copy', bundle='strings')"
+                        toolTip="{resourceManager.getString('strings', 'copy')}"
                         width="22"
                         height="22"
                         icon="{Assets.MINI_COPY}"
                         click="onCopySprite()"/>
                     <s:Button id="pasteSpriteButton"
-                        toolTip="@Resource(key='paste', bundle='strings')"
+                        toolTip="{resourceManager.getString('strings', 'paste')}"
                         width="22"
                         height="22"
                         icon="{Assets.MINI_PASTE}"
                         click="onPasteSprite()"/>
                     <s:Button id="newSpriteButton"
-                        toolTip="@Resource(key='new', bundle='strings')"
+                        toolTip="{resourceManager.getString('strings', 'new')}"
                         width="22"
                         height="22"
                         icon="{Assets.NEW}"
                         click="newSpriteButtonClickHandler(event)"/>
                     <s:Button id="removeSpriteButton"
-                        toolTip="@Resource(key='remove', bundle='strings')"
+                        toolTip="{resourceManager.getString('strings', 'remove')}"
                         width="22"
                         height="22"
                         icon="{Assets.DELETE}"
@@ -4966,4 +5055,13 @@ THE SOFTWARE.
             dataProvider="{_logs}"
             clear="logPanelClearHandler(event)"/>
     </mx:VDividedBox>
+    <s:BorderContainer width="100%" height="26" backgroundColor="0x0A1520" borderColor="0x2C3C4D">
+        <s:HGroup left="12" right="12" top="0" bottom="0" verticalAlign="middle" gap="12">
+            <s:Label id="statusLabel" text="{resourceManager.getString('strings', 'nexa.ready')}" fontSize="11" color="0xADC0D4"/>
+            <s:Spacer width="100%"/>
+            <s:Label id="documentLabel" fontSize="11" color="0xADC0D4" maxDisplayedLines="1"/>
+            <s:Label text="NexaAsset Editor v2" fontSize="11" color="0x8498AC"/>
+        </s:HGroup>
+    </s:BorderContainer>
+    </s:VGroup>
 </s:WindowedApplication>

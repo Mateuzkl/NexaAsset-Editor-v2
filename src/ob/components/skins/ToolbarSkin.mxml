@@ -46,14 +46,14 @@ THE SOFTWARE.
     <!-- highlight -->
     <s:Rect left="-1" right="-1" top="1" bottom="0">
         <s:stroke>
-            <s:SolidColorStroke color="0x636363"/>
+            <s:SolidColorStroke color="0x2C3C4D"/>
         </s:stroke>
     </s:Rect>
 
     <!-- border -->
     <s:Rect left="-1" right="-1" top="0" bottom="0">
         <s:stroke>
-            <s:SolidColorStroke color="0x272727"/>
+            <s:SolidColorStroke color="0x2C3C4D"/>
         </s:stroke>
     </s:Rect>
 
@@ -66,75 +66,75 @@ THE SOFTWARE.
         </s:layout>
 
         <s:Button id="newButton"
-            width="25"
-            height="25"
+            width="32"
+            height="32"
             toolTip="{resourceManager.getString('strings', 'menu.new')}"
             icon="{Assets.NEW_FILE}"
-            skinClass="nail.components.skins.IconButtonSkin"/>
+            skinClass="ob.ui.skins.NexaButtonSkin"/>
 
         <s:Button id="openButton"
-            width="25"
-            height="25"
+            width="32"
+            height="32"
             toolTip="{resourceManager.getString('strings', 'menu.open')}"
             icon="{Assets.OPEN}"
-            skinClass="nail.components.skins.IconButtonSkin"/>
+            skinClass="ob.ui.skins.NexaButtonSkin"/>
 
         <s:Button id="compileButton"
-            width="25"
-            height="25"
+            width="32"
+            height="32"
             toolTip="{resourceManager.getString('strings', 'menu.compile')}"
             icon="{Assets.SAVE}"
             enabled="false"
-            skinClass="nail.components.skins.IconButtonSkin"/>
+            skinClass="ob.ui.skins.NexaButtonSkin"/>
 
         <s:Button id="compileAsButton"
-            width="25"
-            height="25"
+            width="32"
+            height="32"
             enabled="false"
             toolTip="{resourceManager.getString('strings', 'menu.compileAs')}"
             icon="{Assets.SAVE_AS}"
-            skinClass="nail.components.skins.IconButtonSkin"/>
+            skinClass="ob.ui.skins.NexaButtonSkin"/>
 
         <nail:ShadowLine height="20"/>
 
         <s:Button id="openObjectViewerButton"
-            width="25"
-            height="25"
+            width="32"
+            height="32"
             toolTip="{resourceManager.getString('strings', 'objectViewer')}"
             icon="{Assets.VIEWER}"
-            skinClass="nail.components.skins.IconButtonSkin"/>
+            skinClass="ob.ui.skins.NexaButtonSkin"/>
 
         <s:Button id="openSlicerButton"
-            width="25"
-            height="25"
+            width="32"
+            height="32"
             toolTip="Slicer"
             icon="{Assets.SLICER}"
-            skinClass="nail.components.skins.IconButtonSkin"/>
+            skinClass="ob.ui.skins.NexaButtonSkin"/>
 
         <s:Button id="openAnimationEditorButton"
-            width="25"
-            height="25"
+            width="32"
+            height="32"
             toolTip="{resourceManager.getString('strings', 'animationEditor')}"
             icon="{Assets.ANIMATION}"
-            skinClass="nail.components.skins.IconButtonSkin"/>
+            skinClass="ob.ui.skins.NexaButtonSkin"/>
 
         <nail:ShadowLine height="20"/>
 
         <s:Button id="assetStoreButton"
-            width="25"
-            height="25"
+            width="32"
+            height="32"
             toolTip="Asset Store"
             enabled="false"
             icon="{Assets.ASSET_STORE}"
-            skinClass="nail.components.skins.IconButtonSkin"/>
+            skinClass="ob.ui.skins.NexaButtonSkin"/>
 
         <nail:ShadowLine height="20"/>
 
         <s:Button id="openLogWindowButton"
-            width="25"
-            height="25"
+            width="32"
+            height="32"
             toolTip="{resourceManager.getString('strings', 'menu.logWindow')}"
             icon="{Assets.LOG}"
-            skinClass="nail.components.skins.IconButtonSkin"/>
+            skinClass="ob.ui.skins.NexaButtonSkin"/>
     </s:Group>
 </s:Skin>

@@ -74,7 +74,7 @@ THE SOFTWARE.
         width="100%"
         height="19"
         textAlign="center"
-        skinClass="nail.components.skins.NumericStepperTextInputSkin"/>
+        skinClass="ob.ui.skins.NexaTextInputSkin"/>
 
     <s:Button id="incrementButton"
         width="19"

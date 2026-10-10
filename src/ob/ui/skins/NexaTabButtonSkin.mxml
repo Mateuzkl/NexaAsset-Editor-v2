@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Skin xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark"
+    minWidth="105" minHeight="36">
+    <fx:Metadata>[HostComponent("nail.components.navigation.TabNavigatorButton")]</fx:Metadata>
+    <fx:Script><![CDATA[
+        override protected function updateDisplayList(w:Number, h:Number):void {
+            super.updateDisplayList(w, h);
+            hostComponent.minWidth = 112;
+            hostComponent.minHeight = 36;
+            closeButton.visible = hostComponent.showCloseButton;
+            backButton.label = hostComponent.label;
+            backButton.right = hostComponent.showCloseButton ? 24 : 0;
+        }
+    ]]></fx:Script>
+    <s:states><s:State name="normal"/><s:State name="disabled"/></s:states>
+    <!-- Keep the old tab component's required parts, including its optional close action. -->
+    <s:ToggleButton id="backButton" left="0" right="0" top="0" bottom="0" minWidth="105"
+        skinClass="ob.ui.skins.NexaButtonSkin"/>
+    <s:Button id="closeButton" right="4" verticalCenter="0" width="20" height="20" label="×"/>
+</s:Skin>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Skin xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark" mouseEnabled="false" mouseChildren="false"
+    minWidth="20" minHeight="20" alpha.disabledStates="0.5">
+    <fx:Metadata>[HostComponent("spark.components.Button")]</fx:Metadata>
+    <s:states>
+        <s:State name="up" stateGroups="normalStates"/>
+        <s:State name="over" stateGroups="hoverStates"/>
+        <s:State name="down" stateGroups="selectedStates"/>
+        <s:State name="disabled" stateGroups="disabledStates"/>
+        <s:State name="upAndSelected" stateGroups="selectedStates"/>
+        <s:State name="overAndSelected" stateGroups="selectedStates"/>
+        <s:State name="downAndSelected" stateGroups="selectedStates"/>
+        <s:State name="disabledAndSelected" stateGroups="disabledStates,selectedStates"/>
+    </s:states>
+    <s:Rect left="0" right="0" top="0" bottom="0" radiusX="5">
+        <s:fill><s:SolidColor color="0x1B2937" color.hoverStates="0x213143" color.selectedStates="0x193D55"/></s:fill>
+        <s:stroke><s:SolidColorStroke color="0x2C3C4D" color.hoverStates="0x3B5368" color.selectedStates="0x2BB7F5"/></s:stroke>
+    </s:Rect>
+    <s:HGroup left="4" right="4" top="2" bottom="2" gap="6" horizontalAlign="center" verticalAlign="middle">
+        <s:Image source="{getStyle('icon')}" width="18" height="18"
+            visible="{getStyle('icon') != null}" includeInLayout="{getStyle('icon') != null}"/>
+        <s:Label id="labelDisplay" maxDisplayedLines="1" verticalAlign="middle" textAlign="center"
+            color="0xF0F5FB" color.selectedStates="0x2BB7F5"
+            visible="{Boolean(hostComponent.label)}"
+            includeInLayout="{Boolean(hostComponent.label)}"/>
+    </s:HGroup>
+</s:Skin>

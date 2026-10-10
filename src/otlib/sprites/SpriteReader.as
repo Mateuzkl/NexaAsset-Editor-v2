@@ -70,14 +70,15 @@ package otlib.sprites
 
         public function openSpriteFile(file:File, progress:Function = null):void
         {
-            if (file.name.toLowerCase() == "spr_index.dat")
-            {
-                m_multi = new MultiSpriteReader(m_transparency);
-                m_multi.open(file, progress);
-                return;
-            }
+            closeSpriteFile();
             try
             {
+                if (file.name.toLowerCase() == "spr_index.dat")
+                {
+                    m_multi = new MultiSpriteReader(m_transparency);
+                    m_multi.open(file, progress);
+                    return;
+                }
                 open(file, FileMode.READ);
                 m_fileSize = file.size;
                 if (m_fileSize < m_headerSize)
@@ -102,7 +103,7 @@ package otlib.sprites
         public function closeSpriteFile():void
         {
             if (m_multi) { m_multi.close(); m_multi = null; }
-            else { try { close(); } catch (error:Error) {} }
+            try { close(); } catch (error:Error) {}
             m_count = 0;
             m_fileSize = 0;
             if (m_offsets) m_offsets.clear();

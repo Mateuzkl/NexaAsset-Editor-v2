@@ -203,6 +203,7 @@ package otlib.sprites
             }
 
             var result:ChangeResult = internalAddSprite(pixels);
+            _changed = _changed || result.done;
             if (result.done && hasEventListener(StorageEvent.CHANGE))
             {
                 _changed = true;
@@ -220,6 +221,7 @@ package otlib.sprites
             }
 
             var result:ChangeResult = internalAddSprites(sprites);
+            _changed = _changed || result.done;
             if (result.done && hasEventListener(StorageEvent.CHANGE))
             {
                 _changed = true;
@@ -247,6 +249,7 @@ package otlib.sprites
             }
 
             var result:ChangeResult = internalReplaceSprite(id, pixels);
+            _changed = _changed || result.done;
             if (result.done && hasEventListener(StorageEvent.CHANGE))
             {
                 _changed = true;
@@ -264,6 +267,7 @@ package otlib.sprites
             }
 
             var result:ChangeResult = internalReplaceSprites(sprites);
+            _changed = _changed || result.done;
             if (result.done && hasEventListener(StorageEvent.CHANGE))
             {
                 _changed = true;
@@ -281,6 +285,7 @@ package otlib.sprites
             }
 
             var result:ChangeResult = internalRemoveSprite(id);
+            _changed = _changed || result.done;
             if (result.done && hasEventListener(StorageEvent.CHANGE))
             {
                 _changed = true;
@@ -298,6 +303,7 @@ package otlib.sprites
             }
 
             var result:ChangeResult = internalRemoveSprites(sprites);
+            _changed = _changed || result.done;
             if (result.done && hasEventListener(StorageEvent.CHANGE))
             {
                 _changed = true;
@@ -351,6 +357,28 @@ package otlib.sprites
                 }
             }
             return null;
+        }
+
+        /** Destructive imports must reject bad records, never import a preview error icon. */
+        public function getPixelsStrict(id:uint):ByteArray
+        {
+            if (!_loaded || id > _spritesCount) throw new RangeError("Invalid source sprite id: " + id);
+            if (id == 0) return _blankSprite.getPixels();
+            var cached:Boolean = _sprites[id] !== undefined;
+            var sprite:Sprite = cached ? Sprite(_sprites[id]) : _reader.readSprite(id);
+            try { return sprite ? sprite.getPixels() : _blankSprite.getPixels(); }
+            finally { if (sprite && !cached) sprite.dispose(); }
+            return null;
+        }
+
+        public function getSpriteStrict(id:uint):Sprite
+        {
+            if (!_loaded || id > _spritesCount) throw new RangeError("Invalid source sprite id: " + id);
+            if (id == 0) return _blankSprite;
+            var cached:Boolean = _sprites[id] !== undefined;
+            var sprite:Sprite = cached ? Sprite(_sprites[id]) : _reader.readSprite(id);
+            if (sprite && cached) sprite.validateCompressedPixels();
+            return sprite ? sprite : _blankSprite;
         }
 
         /**
@@ -609,7 +637,9 @@ package otlib.sprites
                     writeSprFile(tmpFile, version, compileFeatures, 1, _spritesCount, 0);
                     if (equal && _reader) { _reader.closeSpriteFile(); readerClosed = true; }
                     // Do not delete the destination before a completed staging file exists.
+                    var stagedPath:File = new File(tmpFile.nativePath);
                     tmpFile.moveTo(file, true);
+                    if (stagedPath.exists || !file.exists) throw new Error("SPR output could not be replaced: " + file.nativePath);
                     if (!_exporting && (equal || isTemporary)) onLoad(file, version, compileFeatures, true);
                     done = true;
                 }

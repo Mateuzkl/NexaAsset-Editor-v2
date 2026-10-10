@@ -139,6 +139,7 @@ package
     import otlib.utils.ChangeResult;
     import otlib.utils.ClientInfo;
     import otlib.utils.ClientMerger;
+    import otlib.utils.ThingSpriteMap;
     import otlib.utils.OTFI;
     import otlib.utils.OTFormat;
     import otlib.utils.SpritesOptimizer;
@@ -585,7 +586,18 @@ package
             var merger:ClientMerger = new ClientMerger(_things, _sprites, _settings);
             merger.addEventListener(ProgressEvent.PROGRESS, progressHandler);
             merger.addEventListener(Event.COMPLETE, completeHandler);
+            merger.addEventListener(ErrorEvent.ERROR, mergeErrorHandler);
             merger.start(datFile, sprFile, version, mergeFeatures);
+
+            function mergeErrorHandler(event:ErrorEvent):void
+            {
+                merger.removeEventListener(ProgressEvent.PROGRESS, progressHandler);
+                merger.removeEventListener(Event.COMPLETE, completeHandler);
+                merger.removeEventListener(ErrorEvent.ERROR, mergeErrorHandler);
+                Log.error("Merge stopped: " + event.text);
+                sendClientInfo();
+                sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
+            }
 
             function progressHandler(event:ProgressEvent):void
             {
@@ -594,6 +606,9 @@ package
 
             function completeHandler(event:Event):void
             {
+                merger.removeEventListener(ProgressEvent.PROGRESS, progressHandler);
+                merger.removeEventListener(Event.COMPLETE, completeHandler);
+                merger.removeEventListener(ErrorEvent.ERROR, mergeErrorHandler);
                 if (!_things || !_sprites)
                 {
                     sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
@@ -794,6 +809,8 @@ package
 
         private function unloadFilesCallback():void
         {
+            if (_renderBuffer) { _renderBuffer.dispose(); _renderBuffer = null; }
+            _renderBufferSize = 0;
             if (_things)
             {
                 _things.unload();
@@ -2028,19 +2045,24 @@ package
             {
                 var datStream:FileStream = new FileStream();
                 datStream.open(sourceDatFile, FileMode.READ);
+                datStream.endian = flash.utils.Endian.LITTLE_ENDIAN;
                 datSignature = datStream.readUnsignedInt();
                 datStream.close();
 
-                var sprStream:FileStream = new FileStream();
-                sprStream.open(sourceSprFile, FileMode.READ);
-                sprSignature = sprStream.readUnsignedInt();
-                sprStream.close();
+                var sprReader:otlib.sprites.SpriteReader = new otlib.sprites.SpriteReader(new ClientFeatures(sourceExtended, sourceTransparency));
+                sprReader.openSpriteFile(sourceSprFile);
+                sprSignature = sprReader.readSignature();
             }
             catch (error:Error)
             {
                 Log.error("Failed to read source file headers: " + error.message);
                 sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
                 return;
+            }
+            finally
+            {
+                if (datStream) { try { datStream.close(); } catch (closeError:Error) {} }
+                if (sprReader) sprReader.closeSpriteFile();
             }
 
             var sourceVersion:Version = VersionStorage.getInstance().getBySignatures(datSignature, sprSignature);
@@ -2067,6 +2089,8 @@ package
             catch (error:Error)
             {
                 Log.error("Failed to load source files: " + error.message);
+                sourceSprites.unload();
+                sourceThings.unload();
                 sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
                 return;
             }
@@ -2074,12 +2098,16 @@ package
             if (!sourceThings.loaded || !sourceSprites.loaded)
             {
                 Log.error("Source files could not be loaded.");
+                sourceSprites.unload();
+                sourceThings.unload();
                 sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
                 return;
             }
 
             var replacedCount:uint = 0;
 
+            try
+            {
             for (var i:uint = 0; i < total; i++)
             {
                 var id:uint = uint(thingIds[i]);
@@ -2104,7 +2132,7 @@ package
                         if (srcSpriteId == 0 || spriteMap.hasOwnProperty(srcSpriteId.toString()))
                             continue;
 
-                        var srcPixels:ByteArray = sourceSprites.getPixels(srcSpriteId);
+                        var srcPixels:ByteArray = sourceSprites.getPixelsStrict(srcSpriteId);
                         if (srcPixels)
                         {
                             var addResult:ChangeResult = _sprites.addSprite(srcPixels);
@@ -2112,29 +2140,14 @@ package
                             {
                                 spriteMap[srcSpriteId.toString()] = addResult.list[0].id;
                             }
+                            else throw new Error("Sprite import failed at " + srcSpriteId + ": " + addResult.message);
                         }
                     }
                 }
 
                 // Clone the thing and remap sprite indices
-                var clonedThing:ThingType = sourceThing.clone();
+                var clonedThing:ThingType = ThingSpriteMap.remap(sourceThing, spriteMap);
                 clonedThing.id = id;
-
-                for (groupType = FrameGroupType.DEFAULT; groupType <= FrameGroupType.WALKING; groupType++)
-                {
-                    fg = clonedThing.getFrameGroup(groupType);
-                    if (!fg || !fg.spriteIndex)
-                        continue;
-
-                    for (s = 0; s < fg.spriteIndex.length; s++)
-                    {
-                        var oldId:uint = fg.spriteIndex[s];
-                        if (oldId != 0 && spriteMap.hasOwnProperty(oldId.toString()))
-                        {
-                            fg.spriteIndex[s] = spriteMap[oldId.toString()];
-                        }
-                    }
-                }
 
                 // Replace in current storage
                 var result:ChangeResult = _things.replaceThing(clonedThing, category, id);
@@ -2144,13 +2157,17 @@ package
                     syncOrCreateItem(id, category);
                 }
             }
-
-            // Unload source storage
-            sourceSprites.unload();
-            sourceThings.unload();
-
-            // Force GC hint
-            System.gc();
+            }
+            catch (importError:Error)
+            {
+                Log.error("Bulk replace stopped: " + importError.message);
+                sendClientInfo();
+            }
+            finally
+            {
+                sourceSprites.unload();
+                sourceThings.unload();
+            }
 
             if (replacedCount > 0)
             {

@@ -1,92 +1,120 @@
-# ObjectBuilderV2
+# NexaAsset Editor v2
 
-This repository is based on [punkice3407/ObjectBuilder](https://github.com/punkice3407/ObjectBuilder), imported at commit `b07f254`. The upstream Git history, MIT license, source-code notices, and contributor credits are preserved. The application currently retains its original Object Builder name and behavior.
+**A modern asset-editing workspace for NexaMap and compatible OTClient projects.**
 
-What is Object Builder?
-----
+Maintained by [JokeCore / Mateuzkl](https://github.com/Mateuzkl), NexaAsset Editor v2 builds on the original Object Builder editor rather than replacing its proven editing foundation. It combines a redesigned dark interface with practical improvements to asset loading, compilation, format validation and resource handling.
 
-Object Builder is an editor for creating graphic objects for [OTClient](https://github.com/edubart/otclient). You can edit or add new items, outfits, effects or missiles to your client.
+The codebase was imported from [punkice3407/ObjectBuilder](https://github.com/punkice3407/ObjectBuilder) at commit `b07f254`, retaining its Git history. The original MIT license, copyright notices and upstream attribution remain intact. This is an independently maintained adaptation, not an official upstream release.
 
-Some features:
+[Interface documentation](docs/NEXA_UI.md) · [Reliability audit](docs/AUDIT_2026-10-10.md) · [MIT license](LICENSE)
 
-* Support frame groups.
-* It's faster to load or compile your projects.
-* Import or export your objects as sprite sheet.
-* Export All objects or sprites at once.
-* Support for transparent sprites.
-* You're able to cut the imported images.
-* Modify server attributes and flags directly.
-* Optimized rendering and memory usage for large projects.
-* 4K / high-DPI display support.
-* Bulk replace objects and sprites.
-* Quick Save and multiple window support.
-* Edit Pixels - shift sprite pixels with boundary protection.
-* Film Roll view for browsing animation frames.
-* Pixel grid overlay for precise editing.
+## Capabilities
 
+- Create and edit items, outfits, effects and missiles using the existing Object Builder workflows.
+- Work with object properties, server attributes, sprite sheets, animation durations and frame groups.
+- Import, export, duplicate, copy and replace objects; browse sprites and edit pixels.
+- Use a cohesive Nexa Dark workspace, resizable panels, pixel-art previews and accessible editing tools.
+- Read standard DAT/SPR assets and indexed multi-SPR archives.
+- Choose the output format independently of the input: a standard SPR archive or a multi-SPR generation.
+- Compile legacy 16-bit or extended 32-bit sprite counts; optionally use the custom 32-bit DAT item-count extension.
+- Monitor loading and compilation progress with processed counts, percentages and estimated remaining time.
+- Check detected format options before loading, with blocking mismatch alerts and advisory warnings where detection is uncertain.
 
-Supported client versions:
-----
+Some tools and translations are inherited from upstream. The NexaMap adaptation does not imply that every custom client format or server extension is interchangeable.
 
-* 7.10 - 13.10
+## Formats and compatibility
 
+| Format | Description |
+| --- | --- |
+| Standard DAT + SPR | Object metadata and a single sprite archive, with legacy or extended sprite IDs. |
+| DAT + multi-SPR | Object metadata plus `spr_parts.dat`, `spr_index.dat` and split SPR files. Uses the supported SPMT/SPIX layout, with up to 65,535 sprites per part. |
+| OTFI | Companion format settings, including transparency and supported extended options. |
+| Extended DAT item IDs | Custom 32-bit item-count encoding. The consuming client must support it; this is not a universal legacy-client format. |
 
-Downloads
-----
+Choose **Open Asset Files** to select the input, then **Compile As** to select the output. A multi-SPR input can be compiled into a standard archive, and a standard input can be split into multi-SPR. The input files are not themselves an output-format restriction.
 
-#### Windows
+Compatibility depends on the DAT signature, metadata controller, sprite encoding and selected options—not solely on a version label. Consult `src/config/versions.xml` for the configured signatures. The tests include a retained 8.60 project and synthetic boundary fixtures; they do not certify every configured version or custom archive.
 
-AIR runtime downloads are available from [HARMAN](https://airsdk.harman.com/runtime).
-For upstream prebuilt binaries, see the [upstream releases](https://github.com/punkice3407/ObjectBuilder/releases). This repository provides the source code and local build helper; compiled packages are not included in Git.
+### Data protection
 
+Completed project generations are staged before publication. Replaced generations are retained in a `.ob-backup-*` directory, and ordinary publication failures trigger rollback. Invalid offsets, truncated records, invalid RLE and unsupported count limits are rejected.
 
-Compiling in Windows
-----
+These safeguards are not a substitute for an independent backup. Publication is not guaranteed to be atomic across a power loss, and in-memory merge/bulk-edit operations are not all-or-nothing transactions. A failed import may leave successfully appended sprites or earlier completed replacements in the current document; it must not silently substitute preview error icons or retain foreign sprite IDs. Review the document before saving.
 
-Follow the [upstream build guide](https://github.com/punkice3407/ObjectBuilder/wiki/Compiling-Object-Builder-(Windows)) to prepare Apache Flex with the HARMAN AIR SDK. Accept the relevant SDK license terms yourself; the SDK and its license are not bundled with this repository.
+When a feature alert appears, verify **Extended**, **Transparency**, **Improved animations**, **Frame Groups** and any item-count extension against the intended client. Ambiguous samples are advisory, not proof of a format.
 
-The included `build.ps1` compiles the worker and application using `asconfig.json`, then packages a portable Windows x64 application with the captive AIR runtime. SDKs, package caches, certificates, and generated binaries are not committed.
+## Building on Windows
 
-The locally verified toolchain is:
+The project uses ActionScript 3, Apache Flex and the HARMAN AIR SDK. It is not the separate Rust Object Builder implementation.
 
-- Eclipse Temurin JDK 17.0.20.1+1.
-- Apache Flex SDK 4.16.1 overlaid with HARMAN AIR SDK for Flex 51.2.2.7.
-- Apache Ant 1.10.18 for SDK preparation.
-- Node.js with a local asconfigc 1.9.0 installation.
+The locally used toolchain is Apache Flex 4.16.1 with HARMAN AIR SDK for Flex 51.2.2.7, a portable Temurin JDK 17, Node.js and asconfigc 1.9.0. Prepare the SDK under the supplier's license terms; SDKs and runtimes are not distributed as source dependencies in this repository.
 
-By default, the script expects this layout next to the checkout. All of these directories can be placed on another drive:
+Keep the toolchain beside the checkout, including on a secondary drive:
 
 ```text
 workspace/
-  ObjectBuilderV2/                 # this checkout (the folder name may differ)
+  ObjectBuilderV2/                   # checkout; its directory name may differ
     build.ps1
     asconfig.json
   ObjectBuilder-tools/
-    flex-air/                     # prepared Flex + AIR SDK
-    java/<jdk-folder>/bin/java.exe # exactly one extracted JDK
-    node/node_modules/asconfigc/  # local npm installation
-    tmp/                          # created automatically
+    flex-air/                        # prepared Flex + AIR SDK
+    java/<jdk-directory>/bin/java.exe # exactly one extracted JDK
+    node/node_modules/asconfigc/
+    tmp/
 ```
 
-Install the build helper locally, directing the npm cache to the same drive:
+Install the build helper with a local cache:
 
 ```powershell
 npm.cmd install --prefix ..\ObjectBuilder-tools\node --cache ..\ObjectBuilder-tools\npm-cache --ignore-scripts --no-audit --no-fund asconfigc@1.9.0
 ```
 
-From the checkout, run:
+Compile and package from the checkout:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
-`ExecutionPolicy Bypass` applies only to that process. The script uses process-local Java and temporary-directory settings and restores them afterward; it does not modify the global PATH. To select another prepared toolchain, pass `-ToolsRoot 'D:\your-tools-folder'`. Use `-CompileOnly` to generate the SWFs or `-PackageOnly` to package existing compiled output.
+Useful options:
 
-The executable is generated at `bin/ObjectBuilder/ObjectBuilder.exe`. Keep the entire `bin/ObjectBuilder` directory together, including its AIR runtime, icons, and configuration. The local AIR package uses a temporary self-signed certificate that is deleted after packaging; it is not a trusted Windows publisher signature or a production signing configuration. The running application may still save preferences in the normal Windows AppData directory.
+```powershell
+./build.ps1 -CompileOnly
+./build.ps1 -ToolsRoot 'D:\ObjectBuilder-tools' -BundleName 'NexaAsset-review'
+```
 
-Compilation and packaging have been verified locally. Interactive DAT/SPR editing has not been tested as part of this import.
+The default executable is `bin/NexaAsset Editor v2/NexaAsset Editor v2.exe`. Keep the entire bundle directory together: the executable requires its captive AIR runtime, application files, configuration and license. `-BundleName` creates a separate output directory so earlier builds can be retained. Use `-PackageOnly` only after compiling the intended sources.
 
+The helper uses process-local Java and temporary-directory settings, restores them afterward and does not modify the global PATH. The local package's temporary self-signed AIR certificate is not a trusted Windows publisher signature. Preferences may still be stored in Windows AppData.
 
-Donate
-----
-[![Donate](https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=QFNUYQ24ULK7S)
+The AIR application ID and internal ObjectBuilder class names remain unchanged for compatibility; the user-facing name and executable are **NexaAsset Editor v2**.
+
+## Validation
+
+Run the asset, format-warning, progress-layout and alert tests:
+
+```powershell
+./tests/run.ps1
+```
+
+For real assets, supply a **test copy**, never the only copy of a production project:
+
+```powershell
+./tests/run.ps1 -RealAssets 'D:\asset-test-copy'
+./tests/run-ui.ps1 -RealAssets 'D:\asset-test-copy'
+```
+
+The real-assets runners expect `Tibia.dat` plus either `Tibia.spr` or `spr_index.dat` and its companion parts/settings. Generated test output is stored under ignored `bin-tests/` directories.
+
+Coverage includes count boundaries, RGB/RGBA conversion, standard/multi-SPR round trips, invalid records, Windows file locks, rollback, close cycles, import failures, clipboard synchronization, Save state, actual instantiated list renderers and dark confirmation callbacks. The real-data test validates every SPR record and compares its compressed payload, in addition to sampled decoded pixels and DAT reopen checks.
+
+See the [audit report](docs/AUDIT_2026-10-10.md) for measured results, known diagnostics and the limits of this validation. Neither a successful build nor a short test run establishes an absolute absence of memory leaks, corruption or runtime defects.
+
+## Development principles
+
+Retain the original editing functionality while improving presentation, correctness and maintainability. Changes should be supported by a reproduced issue or a regression test; apparent dead code should not be removed solely because a text search finds no direct caller. MXML bindings, registered worker commands and library callbacks can be indirect entry points.
+
+ActionScript objects are garbage-collected, but file streams, bitmaps, timers and event subscriptions still require careful ownership and lifecycle handling. Cleanup work focuses on those resources rather than introducing C++ smart-pointer patterns into a managed-language application.
+
+## License and attribution
+
+Distributed under the [MIT license](LICENSE), preserving the original Object Builder notices and contributor attribution. Nexa branding and adaptation are maintained by [JokeCore](https://github.com/Mateuzkl). Included artwork retains its associated license notices.

@@ -1,0 +1,1 @@
+<application xmlns="http://ns.adobe.com/air/application/51.2"><id>local.GenerateNexaIcons</id><filename>GenerateNexaIcons</filename><name>Nexa icon generator</name><versionNumber>1.0.0</versionNumber><initialWindow><content>GenerateNexaIcons.swf</content><visible>false</visible></initialWindow><supportedProfiles>extendedDesktop</supportedProfiles></application>

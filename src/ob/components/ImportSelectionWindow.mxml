@@ -222,10 +222,10 @@ THE SOFTWARE.
             dataProvider="{_fileList}"
             labelField="name"
             borderAlpha="0"
-            contentBackgroundColor="0x494949"/>
+            contentBackgroundColor="0x16232F"/>
     </s:VGroup>
 
-    <s:BorderContainer width="100%" skinClass="com.mignari.skins.PixeledBorderContainerSkin">
+    <s:BorderContainer width="100%" backgroundColor="0x111D2A" borderColor="0x2C3C4D">
         <s:layout>
             <s:HorizontalLayout gap="10" padding="10" verticalAlign="middle" horizontalAlign="right"/>
         </s:layout>

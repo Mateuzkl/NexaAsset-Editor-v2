@@ -29,7 +29,7 @@ THE SOFTWARE.
     xmlns:otlib="otlib.components.*"
     minWidth="300"
     minHeight="0"
-    fontSize="11"
+    fontSize="12"
     creationComplete="creationCompleteHandler(event)">
 
     <fx:Declarations>
@@ -641,7 +641,7 @@ THE SOFTWARE.
                     previewStroke.color = 0xFF4444;
                     setTimeout(function():void {
                         if (previewStroke)
-                            previewStroke.color = _editPixelsMode ? 0x6CACEC : 0x636363;
+                            previewStroke.color = _editPixelsMode ? 0x2BB7F5 : 0x101B26;
                     }, 200);
                 }
             }
@@ -1526,7 +1526,7 @@ THE SOFTWARE.
                     var bgRect:Rect = new Rect();
                     bgRect.width = frameW;
                     bgRect.height = frameH;
-                    bgRect.fill = new SolidColor(0x636363);
+                    bgRect.fill = new SolidColor(0x101B26);
                     frameGrp.addElement(bgRect);
 
                     // Compose frame bitmap
@@ -1729,11 +1729,11 @@ THE SOFTWARE.
                         mdFrameGrp.addEventListener(MouseEvent.CLICK, filmRollFrameClickHandler);
                         container.addElement(mdFrameGrp);
 
-                        // Gray background
+                        // Nexa Dark frame background
                         var mdBgRect:Rect = new Rect();
                         mdBgRect.width = frameW;
                         mdBgRect.height = frameH;
-                        mdBgRect.fill = new SolidColor(0x636363);
+                        mdBgRect.fill = new SolidColor(0x101B26);
                         mdFrameGrp.addElement(mdBgRect);
 
                         var img:Image = new Image();
@@ -3056,7 +3056,7 @@ THE SOFTWARE.
     <nail:TabNavigator id="tabNavigator"
         width="100%" height="100%"
         change="{setPreviewMode(false);}">
-        <s:NavigatorContent label="@Resource(key='texture', bundle='strings')"
+        <s:NavigatorContent label="{resourceManager.getString('strings', 'texture')}"
             width="100%" height="100%">
             <s:Scroller id="textureScroller" width="100%" height="100%"
                 mouseWheel="onTextureMouseWheel(event)">
@@ -3067,9 +3067,9 @@ THE SOFTWARE.
 
                     <!-- appearance group -->
                     <mg:GroupBox id="appearanceGroupBox"
-                        label="@Resource(key='appearance', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'appearance')}"
                         width="100%"
-                        minHeight="470">
+                        minHeight="0">
                         <mg:layout>
                             <s:VerticalLayout padding="10" gap="10"/>
                         </mg:layout>
@@ -3086,64 +3086,65 @@ THE SOFTWARE.
                                 change="{_zoom = zoomSlider.value; spriteViewContainer.scaleX = _zoom; spriteViewContainer.scaleY = _zoom;}"/>
                             <s:Label text="{_zoom + 'x'}" minWidth="25"/>
 
-                            <s:Spacer width="100%"/>
+                        </s:HGroup>
+                        <s:HGroup width="100%" verticalAlign="middle" gap="5">
 
                             <s:HGroup id="directionGroup" verticalAlign="middle" horizontalAlign="center">
                                 <otlib:DirectionButton id="topLeftButton"
                                     direction="{Direction.NORTHWEST}"
-                                    toolTip="@Resource(key='northwest', bundle='strings')"
+                                    toolTip="{resourceManager.getString('strings', 'northwest')}"
                                     icon="@Embed('/../assets/icons/arrow_top_left.png')"
                                     click="directionButtonClickHandler(event)"/>
                                 <otlib:DirectionButton id="topCenterButton"
                                     direction="{Direction.NORTH}"
-                                    toolTip="@Resource(key='north', bundle='strings')"
+                                    toolTip="{resourceManager.getString('strings', 'north')}"
                                     icon="@Embed('/../assets/icons/arrow_up.png')"
                                     click="directionButtonClickHandler(event)"/>
                                 <otlib:DirectionButton id="topRightButton"
                                     direction="{Direction.NORTHEAST}"
-                                    toolTip="@Resource(key='northeast', bundle='strings')"
+                                    toolTip="{resourceManager.getString('strings', 'northeast')}"
                                     icon="@Embed('/../assets/icons/arrow_top_right.png')"
                                     click="directionButtonClickHandler(event)"/>
                                 <otlib:DirectionButton id="middleRightButton"
                                     direction="{Direction.EAST}"
-                                    toolTip="@Resource(key='east', bundle='strings')"
+                                    toolTip="{resourceManager.getString('strings', 'east')}"
                                     icon="@Embed('/../assets/icons/arrow_right.png')"
                                     click="directionButtonClickHandler(event)"/>
                                 <otlib:DirectionButton id="bottomRightButton"
                                     direction="{Direction.SOUTHEAST}"
-                                    toolTip="@Resource(key='southeast', bundle='strings')"
+                                    toolTip="{resourceManager.getString('strings', 'southeast')}"
                                     icon="@Embed('/../assets/icons/arrow_bottom_right.png')"
                                     click="directionButtonClickHandler(event)"/>
                                 <otlib:DirectionButton id="bottomCenterButton"
                                     direction="{Direction.SOUTH}"
-                                    toolTip="@Resource(key='south', bundle='strings')"
+                                    toolTip="{resourceManager.getString('strings', 'south')}"
                                     icon="@Embed('/../assets/icons/arrow_down.png')"
                                     click="directionButtonClickHandler(event)"/>
                                 <otlib:DirectionButton id="bottomLeftButton"
                                     direction="{Direction.SOUTHWEST}"
-                                    toolTip="@Resource(key='southwest', bundle='strings')"
+                                    toolTip="{resourceManager.getString('strings', 'southwest')}"
                                     icon="@Embed('/../assets/icons/arrow_bottom_left.png')"
                                     click="directionButtonClickHandler(event)"/>
                                 <otlib:DirectionButton id="middleLeftButton"
                                     direction="{Direction.WEST}"
-                                    toolTip="@Resource(key='west', bundle='strings')"
+                                    toolTip="{resourceManager.getString('strings', 'west')}"
                                     icon="@Embed('/../assets/icons/arrow_left.png')"
                                     click="directionButtonClickHandler(event)"/>
                             </s:HGroup>
 
                             <s:Spacer width="100%"/>
-                            <s:Label text="{_currentDirectionLabel}" minWidth="35" fontSize="10" color="0xAAAAAA"/>
+                            <s:Label text="{_currentDirectionLabel}" minWidth="35" fontSize="10" color="0xADC0D4"/>
                             <s:Spacer width="100%"/>
 
                             <s:CheckBox id="editPixelsCheckBox"
-                                label="Edit Pixels"
+                                label="{resourceManager.getString('strings', 'nexa.editPixels')}"
                                 selected="{_editPixelsMode}"
                                 change="{_editPixelsMode = editPixelsCheckBox.selected; clearMultiSelection(); if (_editPixelsMode) setFocus(); if (_filmRollMode) updatePreview();}"/>
                         </s:HGroup>
 
                         <s:HGroup width="100%" horizontalAlign="right" verticalAlign="middle">
                             <s:CheckBox id="wrapPixelShiftCheckBox"
-                                label="Wrap"
+                                label="{resourceManager.getString('strings', 'nexa.wrap')}"
                                 toolTip="Wrap pixels to opposite edge instead of blocking at boundary"
                                 selected="{_wrapPixelShift}"
                                 enabled="{_editPixelsMode}"
@@ -3169,22 +3170,25 @@ THE SOFTWARE.
                             </s:DropDownList>
 
                             <s:CheckBox id="filmRollCheckBox"
-                                label="Film Roll"
+                                label="{resourceManager.getString('strings', 'nexa.filmRoll')}"
                                 selected="{_filmRollMode}"
                                 change="{_filmRollMode = filmRollCheckBox.selected; clearMultiSelection(); updatePreview();}"/>
                         </s:HGroup>
 
-                        <s:Group width="100%" minHeight="200">
+                        <s:Group width="100%" minHeight="200"
+                            height="{Math.max(200, Math.min(460, textureScroller.height - 300))}">
+                            <!-- Presentation-only checkerboard; sprite transforms and hit-testing stay unchanged. -->
+                            <otlib:CheckerBoard width="100%" height="100%" cellSize="10"/>
                             <s:Group id="spriteViewContainer" horizontalCenter="0" verticalCenter="0">
                                 <s:Rect width="{bitmapView.width}"
                                     height="{bitmapView.height}"
                                     visible="{bitmapView.visible}">
                                     <s:fill>
-                                        <s:SolidColor color="0x636363"/>
+                                        <s:SolidColor color="0x101B26"/>
                                     </s:fill>
                                     <s:stroke>
                                         <s:SolidColorStroke id="previewStroke"
-                                            color="{_editPixelsMode ? 0x6CACEC : 0x636363}"
+                                            color="{_editPixelsMode ? 0x2BB7F5 : 0x101B26}"
                                             weight="{_editPixelsMode ? 2 : 0}"/>
                                     </s:stroke>
                                 </s:Rect>
@@ -3246,7 +3250,7 @@ THE SOFTWARE.
 
                         <s:Spacer height="5"/>
 
-                        <s:HGroup id="animationGroup" width="100%"
+                        <s:HGroup id="animationGroup" width="100%" includeInLayout="{animationGroup.visible}"
                             verticalAlign="middle"
                             horizontalAlign="right"
                             visible="{_frameGroup.frames > 1}">
@@ -3262,7 +3266,7 @@ THE SOFTWARE.
                                 click="playAnimationButtonClickHandler(event)"/>
                         </s:HGroup>
 
-                        <s:HGroup id="minimumGroup" width="100%" horizontalAlign="right" visible="false">
+                        <s:HGroup id="minimumGroup" width="100%" horizontalAlign="right" visible="false" includeInLayout="{minimumGroup.visible}">
                             <s:Label id="minimumDurationLabel" text="{resourceManager.getString('strings', 'minimumDuration') + ':'}" paddingTop="5"/>
                             <s:NumericStepper id="minimumNumericStepper"
                                 width="100"
@@ -3271,14 +3275,14 @@ THE SOFTWARE.
                                 change="minimumNumericStepperChangeHandler(event)"/>
 
                             <s:Button id="defaultDurations"
-                                toolTip="@Resource(key='defaultDurations', bundle='strings')"
+                                toolTip="{resourceManager.getString('strings', 'defaultDurations')}"
                                 width="19"
                                 height="19"
                                 icon="{Assets.EDIT}"
                                 click="setDefaultDurationsHandler(event)"/>
                         </s:HGroup>
 
-                        <s:HGroup id="maximumGroup" width="100%" verticalAlign="middle" horizontalAlign="right" visible="false">
+                        <s:HGroup id="maximumGroup" width="100%" verticalAlign="middle" horizontalAlign="right" visible="false" includeInLayout="{maximumGroup.visible}">
                             <s:Label id="maximumDurationLabel" text="{resourceManager.getString('strings', 'maximumDuration') + ':'}" paddingTop="5"/>
                             <s:NumericStepper id="maximumNumericStepper"
                                 width="100"
@@ -3287,7 +3291,7 @@ THE SOFTWARE.
                                 change="maximumNumericStepperChangeHandler(event)"/>
 
                             <s:Button id="forAllFrames"
-                                toolTip="@Resource(key='setForAllFrames', bundle='strings')"
+                                toolTip="{resourceManager.getString('strings', 'setForAllFrames')}"
                                 width="19"
                                 height="19"
                                 icon="{Assets.EDIT}"
@@ -3295,6 +3299,7 @@ THE SOFTWARE.
                         </s:HGroup>
 
                         <s:HGroup id="addonGroup"
+                            includeInLayout="{addonGroup.visible}"
                             width="100%"
                             verticalAlign="middle"
                             horizontalAlign="right"
@@ -3309,6 +3314,7 @@ THE SOFTWARE.
                         </s:HGroup>
 
                         <s:HGroup id="mountGroup"
+                            includeInLayout="{mountGroup.visible}"
                             width="100%"
                             verticalAlign="middle"
                             horizontalAlign="right"
@@ -3323,6 +3329,7 @@ THE SOFTWARE.
                         </s:HGroup>
 
                         <s:HGroup id="frameGroup"
+                            includeInLayout="{frameGroup.visible}"
                             width="100%"
                             verticalAlign="middle"
                             horizontalAlign="right"
@@ -3337,6 +3344,7 @@ THE SOFTWARE.
                         </s:HGroup>
 
                         <s:HGroup id="layerGroup"
+                            includeInLayout="{layerGroup.visible}"
                             width="100%"
                             verticalAlign="middle"
                             horizontalAlign="right"
@@ -3351,18 +3359,18 @@ THE SOFTWARE.
                         </s:HGroup>
 
                         <s:CheckBox id="showCropSizeCheckBox"
-                            label="@Resource(key='showCropSize', bundle='strings')"
+                            label="{resourceManager.getString('strings', 'showCropSize')}"
                             change="drawCropSize()"/>
 
                         <s:CheckBox id="showGridCheckBox"
-                            label="@Resource(key='showGrid', bundle='strings')"
+                            label="{resourceManager.getString('strings', 'showGrid')}"
                             change="{changeButtonsVisible(showGridCheckBox.selected);}"/>
 
                     </mg:GroupBox>
 
                     <!-- has bones group -->
                     <mg:GroupCheckBox id="hasBonesGroupCheckBox"
-                        label="@Resource(key='hasBones', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'hasBones')}"
                         width="100%"
                         selected="{_thingBinding.hasBones}"
                         change="{_thingBinding.hasBones = hasBonesGroupCheckBox.selected;}">
@@ -3403,7 +3411,7 @@ THE SOFTWARE.
 
                     <!-- patterns group -->
                     <mg:GroupBox id="patternsGroupBox"
-                        label="@Resource(key='patterns', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'patterns')}"
                         width="100%">
 
                         <s:TileGroup id="patternsTileGroup" right="35"
@@ -3490,7 +3498,7 @@ THE SOFTWARE.
 
                     <!-- animation -->
                     <mg:GroupBox id="animationGroupBox"
-                        label="@Resource(key='animation', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'animation')}"
                         width="100%"
                         visible="{_frameGroup.frames > 1}"
                         includeInLayout="{_frameGroup.frames > 1}">
@@ -3550,7 +3558,7 @@ THE SOFTWARE.
                 </s:Group>
             </s:Scroller>
         </s:NavigatorContent>
-        <s:NavigatorContent label="@Resource(key='properties', bundle='strings')"
+        <s:NavigatorContent label="{resourceManager.getString('strings', 'properties')}"
             width="100%" height="100%">
             <s:Scroller id="propertiesScroller" width="100%" height="100%"
                 mouseWheel="onPropertiesMouseWheel(event)">
@@ -3561,7 +3569,7 @@ THE SOFTWARE.
 
                     <!-- ground group -->
                     <mg:GroupCheckBox id="groundGroupCheckBox"
-                        label="@Resource(key='isGround', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'isGround')}"
                         width="100%"
                         selected="{_thingBinding.isGround}"
                         change="{_thingBinding.isGround = groundGroupCheckBox.selected;}">
@@ -3584,7 +3592,7 @@ THE SOFTWARE.
 
                     <!-- has ligth group -->
                     <mg:GroupCheckBox id="hasLigthGroupCheckBox"
-                        label="@Resource(key='hasLight', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'hasLight')}"
                         width="100%"
                         selected="{_thingBinding.hasLight}"
                         change="{_thingBinding.hasLight = hasLigthGroupCheckBox.selected;}">
@@ -3626,7 +3634,7 @@ THE SOFTWARE.
 
                     <!-- automap group -->
                     <mg:GroupCheckBox id="automapGroupCheckBox"
-                        label="@Resource(key='automap', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'automap')}"
                         width="100%"
                         selected="{_thingBinding.miniMap}"
                         change="{_thingBinding.miniMap = automapGroupCheckBox.selected;}">
@@ -3652,7 +3660,7 @@ THE SOFTWARE.
 
                     <!-- has offset group -->
                     <mg:GroupCheckBox id="hasOffsetGroupCheckBox"
-                        label="@Resource(key='hasOffset', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'hasOffset')}"
                         width="100%"
                         selected="{_thingBinding.hasOffset}"
                         change="{_thingBinding.hasOffset = hasOffsetGroupCheckBox.selected;}">
@@ -3691,7 +3699,7 @@ THE SOFTWARE.
 
                     <!-- has elevation group -->
                     <mg:GroupCheckBox id="hasElevationGroupCheckBox"
-                        label="@Resource(key='hasElevation', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'hasElevation')}"
                         width="100%"
                         selected="{_thingBinding.hasElevation}"
                         change="{_thingBinding.hasElevation = hasElevationGroupCheckBox.selected;}">
@@ -3715,7 +3723,7 @@ THE SOFTWARE.
 
                     <!-- equip group -->
                     <mg:GroupCheckBox id="equipGroupCheckBox"
-                        label="@Resource(key='cloth', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'cloth')}"
                         width="100%"
                         selected="{_thingBinding.cloth}"
                         change="{_thingBinding.cloth = equipGroupCheckBox.selected;
@@ -3733,7 +3741,7 @@ THE SOFTWARE.
                                 width="100%"
                                 height="20"
                                 fontSize="11"
-                                prompt="@Resource(key='slot.prompt', bundle='strings')"
+                                prompt="{resourceManager.getString('strings', 'slot.prompt')}"
                                 selectedIndex="{_thingBinding.clothSlot}"
                                 change="{_thingBinding.clothSlot = equipSlotDropDownList.selectedIndex;}">
                                 <s:dataProvider>
@@ -3757,7 +3765,7 @@ THE SOFTWARE.
 
                     <!-- market group -->
                     <mg:GroupCheckBox id="marketGroupCheckBox"
-                        label="@Resource(key='market', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'market')}"
                         width="100%"
                         selected="{_thingBinding.isMarketItem}"
                         change="{_thingBinding.isMarketItem = marketGroupCheckBox.selected;}">
@@ -3875,7 +3883,7 @@ THE SOFTWARE.
 
                     <!-- write / read group -->
                     <mg:GroupBox id="writeReadGroupCheckBox"
-                        label="@Resource(key='writeRead', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'writeRead')}"
                         width="100%">
                         <s:Group width="100%"
                             height="100%">
@@ -3889,11 +3897,11 @@ THE SOFTWARE.
 
                             <s:HGroup width="100%" verticalAlign="middle" horizontalAlign="right">
                                 <s:CheckBox id="writableCheckBox"
-                                    label="@Resource(key='writable', bundle='strings')"
+                                    label="{resourceManager.getString('strings', 'writable')}"
                                     minWidth="100"
                                     selected="{_thingBinding.writable}"
                                     change="{_thingBinding.writable = writableCheckBox.selected;}"/>
-                                <s:Label text="@Resource(key='maxLength', bundle='strings')"
+                                <s:Label text="{resourceManager.getString('strings', 'maxLength')}"
                                     minWidth="80"
                                     textAlign="right"
                                     enabled="{writableCheckBox.selected}"/>
@@ -3905,11 +3913,11 @@ THE SOFTWARE.
 
                             <s:HGroup width="100%" verticalAlign="middle" horizontalAlign="right">
                                 <s:CheckBox id="writableOnceCheckBox"
-                                    label="@Resource(key='writableOnce', bundle='strings')"
+                                    label="{resourceManager.getString('strings', 'writableOnce')}"
                                     minWidth="100"
                                     selected="{_thingBinding.writableOnce}"
                                     change="{_thingBinding.writableOnce = writableOnceCheckBox.selected;}"/>
-                                <s:Label text="@Resource(key='maxLength', bundle='strings')"
+                                <s:Label text="{resourceManager.getString('strings', 'maxLength')}"
                                     minWidth="80"
                                     textAlign="right"
                                     enabled="{writableOnceCheckBox.selected}"/>
@@ -3922,7 +3930,7 @@ THE SOFTWARE.
                     </mg:GroupBox>
 
                     <mg:GroupCheckBox id="actionGroupCheckBox"
-                        label="@Resource(key='hasAction', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'hasAction')}"
                         width="100%"
                         selected="{_thingBinding.hasDefaultAction}"
                         change="{_thingBinding.hasDefaultAction = actionGroupCheckBox.selected;}">
@@ -3937,7 +3945,7 @@ THE SOFTWARE.
                                     verticalAlign="middle"
                                     horizontalAlign="right"/>
                             </s:layout>
-                            <s:Label text="@Resource(key='actionType', bundle='strings')"
+                            <s:Label text="{resourceManager.getString('strings', 'actionType')}"
                                 textAlign="right"
                                 minWidth="60"/>
                             <s:DropDownList id="actionDropDownList"
@@ -3961,7 +3969,7 @@ THE SOFTWARE.
 
                     <!-- Lens Help-->
                     <mg:GroupCheckBox id="isLensHelpGroupCheckBox"
-                        label="@Resource(key='lensHelp', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'lensHelp')}"
                         width="100%"
                         selected="{_thingBinding.isLensHelp}"
                         change="{_thingBinding.isLensHelp = isLensHelpGroupCheckBox.selected;}">
@@ -4005,7 +4013,7 @@ THE SOFTWARE.
 
                     <!-- flags -->
                     <mg:GroupBox id="flagsGroupBox"
-                        label="@Resource(key='flags', bundle='strings')"
+                        label="{resourceManager.getString('strings', 'flags')}"
                         width="100%">
                         <mg:layout>
                             <s:HorizontalLayout padding="10"/>
@@ -4013,130 +4021,130 @@ THE SOFTWARE.
 
                         <s:VGroup id="flagsLeftColumn" width="100%" height="100%">
                             <s:RadioButton id="commonRadioButton"
-                                label="@Resource(key='isCommon', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'isCommon')}"
                                 group="{renderOrder}"/>
                             <s:RadioButton id="groundBorderRadioButton"
-                                label="@Resource(key='isGroundBorder', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'isGroundBorder')}"
                                 group="{renderOrder}"/>
                             <s:RadioButton id="onBottomRadioButton"
-                                label="@Resource(key='isOnBottom', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'isOnBottom')}"
                                 group="{renderOrder}"/>
                             <s:RadioButton id="onTopRadioButton"
-                                label="@Resource(key='isOnTop', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'isOnTop')}"
                                 group="{renderOrder}"/>
                             <s:CheckBox id="containerCheckBox"
-                                label="@Resource(key='container', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'container')}"
                                 selected="{_thingBinding.isContainer}"
                                 change="{_thingBinding.isContainer = containerCheckBox.selected;}"/>
                             <s:CheckBox id="stackableCheckBox"
-                                label="@Resource(key='stackable', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'stackable')}"
                                 selected="{_thingBinding.stackable}"
                                 change="{_thingBinding.stackable = stackableCheckBox.selected;}"/>
                             <s:CheckBox id="forceUseCheckBox"
-                                label="@Resource(key='forceUse', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'forceUse')}"
                                 selected="{_thingBinding.forceUse}"
                                 change="{_thingBinding.forceUse = forceUseCheckBox.selected;}"/>
                             <s:CheckBox id="multiUseCheckBox"
-                                label="@Resource(key='multiUse', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'multiUse')}"
                                 selected="{_thingBinding.multiUse}"
                                 change="{_thingBinding.multiUse = multiUseCheckBox.selected;}"/>
                             <s:CheckBox id="liquidContainerCheckBox"
-                                label="@Resource(key='fluidContainer', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'fluidContainer')}"
                                 selected="{_thingBinding.isFluidContainer}"
                                 change="{_thingBinding.isFluidContainer = liquidContainerCheckBox.selected;}"/>
                             <s:CheckBox id="liquidPoolCheckBox"
-                                label="@Resource(key='fluid', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'fluid')}"
                                 selected="{_thingBinding.isFluid}"
                                 change="{_thingBinding.isFluid = liquidPoolCheckBox.selected;}"/>
                             <s:CheckBox id="unpassableCheckBox"
-                                label="@Resource(key='unpassable', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'unpassable')}"
                                 selected="{_thingBinding.isUnpassable}"
                                 change="{_thingBinding.isUnpassable = unpassableCheckBox.selected;}"/>
                             <s:CheckBox id="unmovableCheckBox"
-                                label="@Resource(key='unmovable', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'unmovable')}"
                                 selected="{_thingBinding.isUnmoveable}"
                                 change="{_thingBinding.isUnmoveable = unmovableCheckBox.selected;}"/>
                             <s:CheckBox id="blockMissileCheckBox"
-                                label="@Resource(key='blockMissile', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'blockMissile')}"
                                 selected="{_thingBinding.blockMissile}"
                                 change="{_thingBinding.blockMissile = blockMissileCheckBox.selected;}"/>
                             <s:CheckBox id="blockPathfindCheckBox"
-                                label="@Resource(key='blockPathfinder', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'blockPathfinder')}"
                                 selected="{_thingBinding.blockPathfind}"
                                 change="{_thingBinding.blockPathfind = blockPathfindCheckBox.selected;}"/>
                         </s:VGroup>
 
                         <s:VGroup id="flagsRightColumn" width="100%" height="100%">
                             <s:CheckBox id="noMoveAnimationCheckBox"
-                                label="@Resource(key='noMoveAnimation', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'noMoveAnimation')}"
                                 selected="{_thingBinding.noMoveAnimation}"
                                 change="{_thingBinding.noMoveAnimation = noMoveAnimationCheckBox.selected;}"/>
                             <s:CheckBox id="pickupableCheckBox"
-                                label="@Resource(key='pickupable', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'pickupable')}"
                                 selected="{_thingBinding.pickupable}"
                                 change="{_thingBinding.pickupable = pickupableCheckBox.selected;}"/>
                             <s:CheckBox id="hangableCheckBox"
-                                label="@Resource(key='hangable', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'hangable')}"
                                 selected="{_thingBinding.hangable}"
                                 change="{_thingBinding.hangable = hangableCheckBox.selected;}"/>
                             <s:CheckBox id="horizontalCheckBox"
-                                label="@Resource(key='horizontalWall', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'horizontalWall')}"
                                 selected="{_thingBinding.isHorizontal}"
                                 change="{_thingBinding.isHorizontal = horizontalCheckBox.selected;}"/>
                             <s:CheckBox id="verticalCheckBox"
-                                label="@Resource(key='verticalWall', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'verticalWall')}"
                                 selected="{_thingBinding.isVertical}"
                                 change="{_thingBinding.isVertical = verticalCheckBox.selected;}"/>
                             <s:CheckBox id="rotatableCheckBox"
-                                label="@Resource(key='rotatable', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'rotatable')}"
                                 selected="{_thingBinding.rotatable}"
                                 change="{_thingBinding.rotatable = rotatableCheckBox.selected;}"/>
                             <s:CheckBox id="dontHideCheckBox"
-                                label="@Resource(key='dontHide', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'dontHide')}"
                                 selected="{_thingBinding.dontHide}"
                                 change="{_thingBinding.dontHide = dontHideCheckBox.selected;}"/>
                             <s:CheckBox id="translucentCheckBox"
-                                label="@Resource(key='translucent', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'translucent')}"
                                 selected="{_thingBinding.isTranslucent}"
                                 change="{_thingBinding.isTranslucent = translucentCheckBox.selected;}"/>
                             <s:CheckBox id="isLyingObjectCheckBox"
-                                label="@Resource(key='lyingObject', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'lyingObject')}"
                                 selected="{_thingBinding.isLyingObject}"
                                 change="{_thingBinding.isLyingObject = isLyingObjectCheckBox.selected;}"/>
                             <s:CheckBox id="animateAlwaysCheckBox"
-                                label="@Resource(key='animateAlways', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'animateAlways')}"
                                 selected="{_thingBinding.animateAlways}"
                                 change="{_thingBinding.animateAlways = animateAlwaysCheckBox.selected; updateAnimationControls();}"/>
                             <s:CheckBox id="fullGroundCheckBox"
-                                label="@Resource(key='fullGround', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'fullGround')}"
                                 selected="{_thingBinding.isFullGround}"
                                 change="{_thingBinding.isFullGround = fullGroundCheckBox.selected;}"/>
                             <s:CheckBox id="ignoreLookCheckBox"
-                                label="@Resource(key='ignoreLook', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'ignoreLook')}"
                                 selected="{_thingBinding.ignoreLook}"
                                 change="{_thingBinding.ignoreLook = ignoreLookCheckBox.selected;}"/>
                             <s:CheckBox id="usableCheckBox"
-                                label="@Resource(key='usable', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'usable')}"
                                 selected="{_thingBinding.usable}"
                                 change="{_thingBinding.usable = usableCheckBox.selected;}"/>
                             <s:CheckBox id="chargesCheckBox"
-                                label="@Resource(key='hasCharges', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'hasCharges')}"
                                 selected="{_thingBinding.hasCharges}"
                                 change="{_thingBinding.hasCharges = chargesCheckBox.selected;}"/>
                             <s:CheckBox id="floorChangeCheckBox"
-                                label="@Resource(key='floorChange', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'floorChange')}"
                                 selected="{_thingBinding.floorChange}"
                                 change="{_thingBinding.floorChange = floorChangeCheckBox.selected;}"/>
                             <s:CheckBox id="wrappableCheckBox"
-                                label="@Resource(key='wrappable', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'wrappable')}"
                                 selected="{_thingBinding.wrappable}"
                                 change="{_thingBinding.wrappable = wrappableCheckBox.selected;}"/>
                             <s:CheckBox id="unwrappableCheckBox"
-                                label="@Resource(key='unwrappable', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'unwrappable')}"
                                 selected="{_thingBinding.unwrappable}"
                                 change="{_thingBinding.unwrappable = unwrappableCheckBox.selected;}"/>
                             <s:CheckBox id="topEffectCheckBox"
-                                label="@Resource(key='topEffect', bundle='strings')"
+                                label="{resourceManager.getString('strings', 'topEffect')}"
                                 selected="{_thingBinding.topEffect}"
                                 change="{_thingBinding.topEffect = topEffectCheckBox.selected;}"/>
                         </s:VGroup>
@@ -4146,11 +4154,11 @@ THE SOFTWARE.
         </s:NavigatorContent>
 
         <!-- Attributes Tab (only for items, requires items.xml) -->
-        <s:NavigatorContent label="@Resource(key='attributes', bundle='strings')"
+        <s:NavigatorContent label="{resourceManager.getString('strings', 'attributes')}"
             width="100%" height="100%"
             enabled="{_thingData != null &amp;&amp; _thingData.category == ThingCategory.ITEM &amp;&amp; _filesInfo != null &amp;&amp; _filesInfo.otbLoaded}">
             <otlib:AttributesEditor id="attributesEditor"
-                width="100%" height="100%"
+                width="100%" height="100%" minHeight="0" minWidth="0"
                 thingData="{_thingData}"
                 settings="{_settings}"
                 change="onAttributesEditorChange(event)"/>

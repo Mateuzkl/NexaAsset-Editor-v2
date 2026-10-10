@@ -63,9 +63,9 @@ package com.mignari.animator.renders
 
         private var _hovered:Boolean = false;
 
-        private static const COLOR_NORMAL:uint = 0x535353;
-        private static const COLOR_HOVERED:uint = 0x3385B2; // Added hover color from ThingListRenderer
-        private static const COLOR_SELECTED:uint = 0x294867;
+        private static const COLOR_NORMAL:uint = 0x1B2937;
+        private static const COLOR_HOVERED:uint = 0x213143;
+        private static const COLOR_SELECTED:uint = 0x193D55;
 
         public function FrameListRenderer()
         {
@@ -85,7 +85,7 @@ package com.mignari.animator.renders
             _fill.top = 0;
             _fill.bottom = 0;
             _fill.fill = new SolidColor(COLOR_NORMAL);
-            _fill.stroke = new SolidColorStroke(0x333333, 0.1);
+            _fill.stroke = new SolidColorStroke(0x2C3C4D, 0.1);
             addElement(_fill);
 
             // 2. Image Background Group elements
@@ -93,16 +93,16 @@ package com.mignari.animator.renders
             // But wait, the image is in a VGroup with padding.
 
             _bgRect = new Rect();
-            _bgRect.fill = new SolidColor(0x636363);
-            _bgRect.stroke = new SolidColorStroke(0x707070);
+            _bgRect.fill = new SolidColor(0x101C29);
+            _bgRect.stroke = new SolidColorStroke(0x2C3C4D);
             addElement(_bgRect);
 
             _lineTop = new Line();
-            _lineTop.stroke = new SolidColorStroke(0x272727);
+            _lineTop.stroke = new SolidColorStroke(0x2C3C4D);
             addElement(_lineTop);
 
             _lineLeft = new Line();
-            _lineLeft.stroke = new SolidColorStroke(0x272727);
+            _lineLeft.stroke = new SolidColorStroke(0x2C3C4D);
             addElement(_lineLeft);
 
             _imageDisplay = new BitmapImage();

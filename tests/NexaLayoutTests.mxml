@@ -1,0 +1,406 @@
+<?xml version="1.0" encoding="utf-8"?>
+<local:ObjectBuilder xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:local="*">
+    <fx:Style source="../src/ObjectBuilder.css"/>
+    <fx:Script><![CDATA[
+        import flash.desktop.NativeApplication;
+        import flash.display.BitmapData;
+        import flash.display.PNGEncoderOptions;
+        import flash.events.InvokeEvent;
+        import flash.events.MouseEvent;
+        import flash.events.TimerEvent;
+        import flash.events.UncaughtErrorEvent;
+        import flash.filesystem.File;
+        import flash.filesystem.FileMode;
+        import flash.filesystem.FileStream;
+        import flash.utils.Timer;
+        import flash.utils.getTimer;
+        import flash.geom.Matrix;
+        import flash.system.System;
+        import mx.events.FlexEvent;
+        import ob.commands.files.LoadFilesCommand;
+        import ob.ui.NexaUiEvent;
+        import otlib.core.VersionStorage;
+        import otlib.things.ThingCategory;
+        import otlib.utils.ClientInfoLoader;
+        import otlib.resources.Resources;
+        import ob.components.OpenAssetsWindow;
+        import ob.components.CompileAssetsWindow;
+        import ob.components.PreferencesWindow;
+        import ob.components.AboutWindow;
+        import ob.components.ErrorWindow;
+        import ob.ui.skins.NexaTitleWindowSkin;
+        import flash.display.DisplayObject;
+        import flash.display.DisplayObjectContainer;
+        import spark.components.IItemRenderer;
+        import flash.geom.Point;
+        import com.mignari.workers.WorkerCommand;
+        import ob.commands.files.CompileCommand;
+        import ob.commands.things.UpdateThingCommand;
+        import ob.commands.things.ReplaceThingsCommand;
+        import otlib.components.renders.ThingListRenderer;
+        import otlib.utils.ThingListItem;
+        import otlib.things.ThingType;
+        import otlib.things.ThingData;
+        import nail.components.controls.Alert;
+        import spark.components.Button;
+        import spark.components.Label;
+
+        private var testTimer:Timer = new Timer(250);
+        private var testStart:int;
+        private var testPhase:int = 0;
+        private var testArgs:Array;
+        private var testRoot:File;
+        private var testLoader:ClientInfoLoader;
+        private var testLoadStart:int;
+        private var testSteps:Array = [
+            [1366, 768, "en_US", 1], [1920, 1080, "en_US", 1],
+            [1366, 768, "pt_BR", 1], [1600, 900, "es_ES", 1],
+            [1366, 768, "pt_BR", 1.25], [1366, 768, "pt_BR", 1.5],
+            [1366, 768, "pt_BR", 1, 1], [1366, 768, "pt_BR", 1, 2]
+        ];
+        private var testStep:int = 0;
+        private var dialogsChecked:Boolean;
+        private var dialogStep:int;
+        private var testDialog:Object;
+        private var reviewChecked:Boolean;
+        private var interceptCommands:Boolean;
+        private var intercepted:Array = [];
+        private var originalDeleteAfterPaste:Boolean;
+
+        override public function sendCommand(command:WorkerCommand):void {
+            if (interceptCommands) { intercepted.push(command); return; }
+            super.sendCommand(command);
+        }
+
+        override protected function applicationPreinitializeHandler(event:FlexEvent):void
+        {
+            if (systemManager && systemManager.loaderInfo)
+                systemManager.loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, testError);
+            super.applicationPreinitializeHandler(event);
+        }
+
+        override protected function applicationInvokeHandler(event:InvokeEvent):void
+        {
+            // Test arguments must never invoke the production file-open dialog.
+            testArgs = event.arguments;
+        }
+        override protected function applicationCompleteHandler(event:FlexEvent):void
+        {
+            super.applicationCompleteHandler(event);
+            testRoot = new File(File.applicationDirectory.nativePath).resolvePath("nexa-layout-" + new Date().time);
+            testRoot.createDirectory();
+            testStart = getTimer();
+            if (systemManager && systemManager.loaderInfo)
+                systemManager.loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, testError);
+            testTimer.addEventListener(TimerEvent.TIMER, testTick);
+            testTimer.start();
+        }
+        private function testError(event:UncaughtErrorEvent):void
+        {
+            event.preventDefault();
+            fail(event.error is Error ? Error(event.error).getStackTrace() : String(event.error));
+        }
+        private function testTick(event:TimerEvent):void
+        {
+            try {
+                if (getTimer() - testStart > 120000) throw new Error("Layout test timed out at phase " + testPhase);
+                if (testPhase == 0 && visible && running) {
+                    restore();
+                    logPanel.expanded = false;
+                    if (testArgs && testArgs.length > 0) {
+                        var folder:File = new File(testArgs[0]);
+                        var spr:File = folder.resolvePath("spr_index.dat");
+                        if (!spr.exists) spr = folder.resolvePath("Tibia.spr");
+                        testLoader = new ClientInfoLoader();
+                        testLoader.addEventListener(Event.COMPLETE, testLoad);
+                        testLoader.addEventListener(ErrorEvent.ERROR, function(e:ErrorEvent):void { fail(e.text); });
+                        testLoadStart = getTimer();
+                        testLoader.load(folder.resolvePath("Tibia.dat"), spr, true);
+                        testPhase = 1;
+                    } else {
+                        testPhase = 3;
+                    }
+                } else if (testPhase == 1 && clientLoaded && thingData) {
+                    trace("Measured load-to-first-selection: " + (getTimer() - testLoadStart) + " ms");
+                    var id:uint = clientInfo.maxItemId >= 54600 ? 54600 : clientInfo.minItemId;
+                    requestEditThing(id, ThingCategory.ITEM);
+                    testPhase = 2;
+                } else if (testPhase == 2 && thingTypeEditor.visible) {
+                    testPhase = 3;
+                } else if (testPhase == 3) {
+                    if (testStep >= testSteps.length) {
+                        if (!dialogsChecked) { testPhase = 5; return; }
+                        if (!reviewChecked && clientLoaded && thingData) { beginReviewTests(); testPhase = 7; return; }
+                        var selectedId:uint = thingData ? thingData.id : 0;
+                        var wasChanged:Boolean = clientChanged;
+                        for (var pass:int = 0; pass < 20; pass++) {
+                            nexaNavigation.homeButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+                            nexaNavigation.objectsButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+                            nexaNavigation.spritesButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+                        }
+                        if ((thingData ? thingData.id : 0) != selectedId || clientChanged != wasChanged)
+                            throw new Error("View navigation changed document/selection");
+                        nexaNavigation.toolsButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+                        if (!toobar.includeInLayout) throw new Error("Original utilities are inaccessible");
+                        if (nexaNavigation.active != "tools" || !nexaNavigation.toolsButton.selected)
+                            throw new Error("Navigation highlight does not follow the clicked button");
+                        trace("PASS: native shell, localized labels, four panels, retained utilities, navigation preserves document");
+                        trace("AS managed memory (not process RSS): " + Math.round(System.totalMemory / 1048576) + " MiB");
+                        trace("Screenshots: " + testRoot.nativePath);
+                        if (clientLoaded && thingData) {
+                            // Arm the actual debounce handler, then clear before its 150ms callback.
+                            interceptCommands = true; intercepted = [];
+                            thingStepperChangeHandler(new Event(Event.CHANGE));
+                            clear(); testPhase = 8;
+                        } else { testTimer.stop(); NativeApplication.nativeApplication.exit(0); }
+                        return;
+                    }
+                    var step:Array = testSteps[testStep];
+                    resourceManager.localeChain = [step[2]];
+                    Resources.locale = step[2];
+                    if (clientInfo) infoPanel.setFilesInfo(clientInfo);
+                    var tabKeys:Array = ["texture", "properties", "attributes"];
+                    for (var ti:int = 0; ti < thingTypeEditor.tabNavigator.numElements; ti++)
+                        Object(thingTypeEditor.tabNavigator.getElementAt(ti)).label = resourceManager.getString("strings", tabKeys[ti]);
+                    thingTypeEditor.tabNavigator.selectedIndex = step.length > 4 ? step[4] : 0;
+                    width = step[0]; height = step[1];
+                    // Render real controls at exact logical sizes even when the local monitor is smaller.
+                    nexaShell.right = undefined; nexaShell.bottom = undefined;
+                    nexaShell.width = step[0]; nexaShell.height = step[1];
+                    testPhase = 4;
+                } else if (testPhase == 4) {
+                    validateNow();
+                    if (nexaActions.width > nexaShell.width + 1 || nexaNavigation.width > nexaShell.width + 1)
+                        throw new Error("Shell overflows viewport");
+                    if (nexaActions.pasteButton.enabled && !nexaActions.hasClipboard)
+                        throw new Error("Paste enabled without an object clipboard");
+                    if (previewPanel.width < previewPanel.minWidth || thingsPanel.width < thingsPanel.minWidth ||
+                        spritesPanel.width < spritesPanel.minWidth) throw new Error("Panel below minimum width");
+                    if (countInstantiatedRenderers(thingList.dataGroup) > 128 || countInstantiatedRenderers(spritesList.dataGroup) > 128)
+                        throw new Error("List renderers are not bounded to the visible viewport");
+                    var scale:Number = testSteps[testStep][3];
+                    var bitmap:BitmapData = new BitmapData(Math.ceil(nexaShell.width * scale), Math.ceil(nexaShell.height * scale), false, 0x0B141E);
+                    bitmap.draw(nexaShell, new Matrix(scale, 0, 0, scale));
+                    var file:File = testRoot.resolvePath(testSteps[testStep].join("-") + ".png");
+                    var output:FileStream = new FileStream();
+                    output.open(file, FileMode.WRITE);
+                    try { output.writeBytes(bitmap.encode(bitmap.rect, new PNGEncoderOptions())); }
+                    finally { output.close(); bitmap.dispose(); }
+                    trace("PASS: captured real editor controls " + file.name + " logical viewport " + nexaShell.width + "x" + nexaShell.height);
+                    testStep++;
+                    testPhase = 3;
+                } else if (testPhase == 5) {
+                    openThemeDialog();
+                    testPhase = 6;
+                } else if (testPhase == 6) {
+                    verifyThemeDialog();
+                } else if (testPhase == 7) {
+                    finishReviewTests();
+                    reviewChecked = true; testPhase = 3;
+                } else if (testPhase == 8) {
+                    if (intercepted.length) throw new Error("Cleared document still received a delayed selection command");
+                    trace("PASS: clearing the document cancels pending selection callbacks");
+                    testTimer.stop(); NativeApplication.nativeApplication.exit(0);
+                }
+            } catch (error:Error) { fail(error.getStackTrace()); }
+        }
+        private function testLoad(event:Event):void
+        {
+            var info:otlib.utils.ClientInfo = testLoader.clientInfo;
+            var folder:File = new File(testArgs[0]);
+            var spr:File = folder.resolvePath("spr_index.dat");
+            if (!spr.exists) spr = folder.resolvePath("Tibia.spr");
+            sendCommand(new LoadFilesCommand(folder.resolvePath("Tibia.dat"), spr,
+                VersionStorage.getInstance().getBySignatures(info.datSignature, info.sprSignature), null, info.features));
+        }
+        private function openThemeDialog():void {
+            switch (dialogStep) {
+                case 0:
+                    thingTypeEditor.tabNavigator.selectedIndex = 0;
+                    logPanel.expanded = true; logPanel.height = 180;
+                    break;
+                case 1:
+                    testDialog = new OpenAssetsWindow(); testDialog.open(this); break;
+                case 2:
+                    var compile:CompileAssetsWindow = new CompileAssetsWindow();
+                    compile.filesName = "Tibia"; compile.directory = testRoot;
+                    compile.version = VersionStorage.getInstance().getBySignatures(0x4C2C7993, 0x4C220594);
+                    compile.multiSpr = true; compile.extendedItems = true;
+                    compile.improvedAnimations = true; compile.frameGroups = true;
+                    testDialog = compile; compile.open(this); break;
+                case 3:
+                case 4:
+                    var preferences:PreferencesWindow = new PreferencesWindow(); preferences.settings = settings;
+                    testDialog = preferences; preferences.open(this);
+                    if (dialogStep == 4) { preferences.validateNow(); preferences.viewStack.selectedIndex = 2; }
+                    break;
+                case 5: testDialog = new AboutWindow(); testDialog.open(); break;
+                case 6:
+                    var error:ErrorWindow = new ErrorWindow(); error.message = "Readable error details on the Nexa Dark surface.";
+                    testDialog = error; error.open(); break;
+            }
+        }
+        private function verifyThemeDialog():void {
+            var names:Array = ["expanded-log", "open-assets", "compile-assets", "preferences-general", "preferences-sprite-sheet", "about-jokecore", "error-details"];
+            validateNow();
+            if (dialogStep == 0) {
+                logPanel.validateNow();
+                if (uint(logPanel.logList.getStyle("contentBackgroundColor")) != 0x101C29)
+                    throw new Error("Expanded log still uses the legacy gray surface");
+                if (!logPanel.toggleButton.label)
+                    throw new Error("Localized log toggle caption is missing");
+                captureTheme(names[dialogStep], nexaShell, nexaShell.width, nexaShell.height);
+                logPanel.expanded = false;
+            } else {
+                testDialog.validateNow();
+                if (dialogStep <= 4) {
+                    if (!(testDialog.skin is NexaTitleWindowSkin) || !testDialog.skin.moveArea || !testDialog.skin.closeButton)
+                        throw new Error("Dialog drag/close skin contracts are missing");
+                    var action:Object = dialogStep == 1 ? testDialog.loadButton : testDialog.confirmButton;
+                    var bounds:Point = DisplayObject(action).localToGlobal(new Point());
+                    var origin:Point = DisplayObject(testDialog).localToGlobal(new Point());
+                    if (bounds.y + action.height > origin.y + testDialog.height + 1)
+                        throw new Error("Dialog action bar extends below the window");
+                } else if (dialogStep == 5) {
+                    if (testDialog.jokeCoreButton.label.indexOf("JokeCore") < 0 || !testDialog.copyrightDisplay.textFlow)
+                        throw new Error("About branding/upstream attribution is missing");
+                }
+                captureTheme(names[dialogStep], DisplayObject(testDialog), testDialog.width, testDialog.height);
+                if (dialogStep <= 4) {
+                    testDialog.skin.closeButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+                    if (!testDialog.closed) throw new Error("Dialog close button does not close the window");
+                } else testDialog.close();
+                testDialog = null;
+            }
+            trace("PASS: dark surface and real window controls " + names[dialogStep]);
+            dialogStep++;
+            if (dialogStep == names.length) { dialogsChecked = true; testPhase = 3; }
+            else testPhase = 5;
+        }
+        private function captureTheme(name:String, target:DisplayObject, w:Number, h:Number):void {
+            var bitmap:BitmapData = new BitmapData(Math.ceil(w), Math.ceil(h), false, 0x111D2A);
+            bitmap.draw(target);
+            var stream:FileStream = new FileStream(); stream.open(testRoot.resolvePath(name + ".png"), FileMode.WRITE);
+            try { stream.writeBytes(bitmap.encode(bitmap.rect, new PNGEncoderOptions())); }
+            finally { stream.close(); bitmap.dispose(); }
+        }
+        private function countInstantiatedRenderers(group:DisplayObjectContainer):int {
+            var count:int = 0;
+            for (var i:int = 0; i < group.numChildren; i++) {
+                if (group.getChildAt(i) is IItemRenderer) count++;
+            }
+            return count;
+        }
+        private function beginReviewTests():void {
+            var original:ThingData = thingTypeEditor.thingData;
+            var oldChanged:Boolean = clientInfo.changed;
+            var oldTemporary:Boolean = clientInfo.isTemporary;
+            var oldAutosave:Boolean = settings.autosaveThingChanges;
+            interceptCommands = true; intercepted = [];
+            try {
+                clientInfo.changed = false;
+                thingTypeEditor.thingData = original.clone();
+                updateNexaSaveState();
+                if (nexaActions.canSave) throw new Error("Clean document enables Save");
+                thingTypeEditor.bindableThingType.marketName = "Regression Test Name";
+                if (!thingTypeEditor.changed || !nexaActions.canSave) throw new Error("Local editor changes do not enable Save");
+                clientInfo.isTemporary = true; updateNexaSaveState();
+                if (nexaActions.canSave) throw new Error("Temporary document enables normal Save");
+                clientInfo.isTemporary = oldTemporary; updateNexaSaveState();
+                settings.autosaveThingChanges = true;
+                compileProject();
+                if (intercepted.length != 2 || !(intercepted[0] is UpdateThingCommand) || !(intercepted[1] is CompileCommand))
+                    throw new Error("Compile does not save local changes before compilation");
+                if (thingTypeEditor.changed || nexaActions.canSave) throw new Error("Saved editor retains stale Save state");
+                var renderer:ThingListRenderer = new ThingListRenderer();
+                nexaShell.addElement(renderer); renderer.validateNow();
+                try {
+                    var item:ThingListItem = new ThingListItem(); item.thing = thingData.thing.clone();
+                    item.thing.marketName = "Market Name"; item.serverId = 1234;
+                    renderer.data = item; renderer.validateNow();
+                    if (visibleLabels(renderer).indexOf("Market Name") < 0 || visibleLabels(renderer).indexOf("1234") < 0)
+                        throw new Error("Server ID hides the object name");
+                    item.thing.marketName = ""; item.thing.name = "Fallback Name"; renderer.data = item;
+                    if (visibleLabels(renderer).indexOf("Fallback Name") < 0) throw new Error("Fallback name missing");
+                    renderer.data = null;
+                    if (visibleLabels(renderer).length) throw new Error("Recycled renderer retains old labels");
+                } finally { nexaShell.removeElement(renderer); }
+                trace("PASS: editor Save state, temporary exclusion, save-before-compile, names with server IDs");
+            } finally {
+                thingTypeEditor.thingData = original;
+                clientInfo.changed = oldChanged; clientInfo.isTemporary = oldTemporary;
+                settings.autosaveThingChanges = oldAutosave;
+                updateNexaSaveState();
+            }
+            originalDeleteAfterPaste = settings.deleteAfterPaste;
+            settings.deleteAfterPaste = true;
+            intercepted = [];
+            copyThingToClipboard(thingData.thing);
+            if (!nexaActions.hasClipboard) throw new Error("Copy does not enable Paste");
+            pasteThingFromClipboard(new <ThingType>[thingData.thing]);
+        }
+        private function finishReviewTests():void {
+            var popup:Alert = findAlert(DisplayObjectContainer(systemManager));
+            if (!popup) throw new Error("Paste confirmation missing");
+            popup.validateNow();
+            var message:spark.components.RichEditableText = findMessage(popup);
+            if (!message || !message.text || message.text != resourceManager.getString("strings", "confirmPasteObject"))
+                throw new Error("Localized confirmation message is missing");
+            if (!(popup.skin is NexaTitleWindowSkin) || !popup.moveArea || !popup.closeButton)
+                throw new Error("Paste confirmation still uses the legacy gray skin");
+            captureTheme("paste-object-confirmation", popup, popup.width, popup.height);
+            var yes:Button = findYes(popup);
+            if (!yes) throw new Error("Confirmation Yes button missing");
+            yes.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+            validateNow();
+            if (intercepted.length != 1 || !(intercepted[0] is ReplaceThingsCommand)) throw new Error("Paste callback did not execute exactly once");
+            if (thingList.hasClipboardObject || thingGridList.hasClipboardObject || foundThingsList.hasClipboardObject || nexaActions.hasClipboard || nexaActions.pasteButton.enabled)
+                throw new Error("Delete-after-paste leaves a stale clipboard action");
+            interceptCommands = false;
+            settings.deleteAfterPaste = originalDeleteAfterPaste;
+            trace("PASS: dark Paste confirmation, actual Yes callback, all clipboard views reset");
+        }
+        private function visibleLabels(group:DisplayObjectContainer):String {
+            var text:String = "";
+            for (var i:int = 0; i < group.numChildren; i++) {
+                var child:DisplayObject = group.getChildAt(i);
+                if (child is Label) text += Label(child).text;
+                else if (child is DisplayObjectContainer) text += visibleLabels(DisplayObjectContainer(child));
+            }
+            return text;
+        }
+        private function findAlert(group:DisplayObjectContainer):Alert {
+            for (var i:int = 0; i < group.numChildren; i++) {
+                var child:DisplayObject = group.getChildAt(i);
+                if (child is Alert) return Alert(child);
+                if (child is DisplayObjectContainer) { var found:Alert = findAlert(DisplayObjectContainer(child)); if (found) return found; }
+            }
+            return null;
+        }
+        private function findYes(group:DisplayObjectContainer):Button {
+            for (var i:int = 0; i < group.numChildren; i++) {
+                var child:DisplayObject = group.getChildAt(i);
+                if (child is Button && ["Yes", "Sim", "Sí", "Si"].indexOf(Button(child).label) >= 0) return Button(child);
+                if (child is DisplayObjectContainer) { var found:Button = findYes(DisplayObjectContainer(child)); if (found) return found; }
+            }
+            return null;
+        }
+        private function findMessage(group:DisplayObjectContainer):spark.components.RichEditableText {
+            for (var i:int = 0; i < group.numChildren; i++) {
+                var child:Object = group.getChildAt(i);
+                if (child is spark.components.RichEditableText) return child as spark.components.RichEditableText;
+                if (child is DisplayObjectContainer) {
+                    var found:spark.components.RichEditableText = findMessage(DisplayObjectContainer(child));
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
+        private function fail(message:String):void
+        {
+            trace("FAIL: " + message);
+            if (testTimer) testTimer.stop();
+            NativeApplication.nativeApplication.exit(1);
+        }
+    ]]></fx:Script>
+</local:ObjectBuilder>

@@ -29,7 +29,7 @@ THE SOFTWARE.
     minWidth="750"
     maxWidth="750"
     minHeight="410"
-    backgroundColor="0x494949"
+    backgroundColor="0x0B141E"
     showStatusBar="false"
     fontSize="11"
     title="@Resource(key='find', bundle='strings')"

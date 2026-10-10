@@ -34,7 +34,7 @@ THE SOFTWARE.
           minimizable="false"
           maximizable="false"
           type="utility"
-          backgroundColor="0x494949"
+          backgroundColor="0x111D2A"
           fontSize="11"
           alwaysInFront="true"
           creationComplete="creationCompleteHandler(event)">
@@ -117,11 +117,11 @@ THE SOFTWARE.
             <s:LinearGradient id="gradient"
                               rotation="0">
                 <s:GradientEntry color="0xFFFFFF"/>
-                <s:GradientEntry color="0x272727"/>
+                <s:GradientEntry color="0x2C3C4D"/>
             </s:LinearGradient>
         </s:fill>
         <s:stroke>
-            <s:SolidColorStroke color="0x272727"/>
+            <s:SolidColorStroke color="0x2C3C4D"/>
         </s:stroke>
     </s:Rect>
 
@@ -129,45 +129,48 @@ THE SOFTWARE.
     <s:Rect left="1" right="1" top="1" bottom="1" alpha="0.7">
         <s:fill>
             <s:LinearGradient rotation="90">
-                <s:GradientEntry color="0x626262"/>
-                <s:GradientEntry color="0x4B4B4B"/>
+                <s:GradientEntry color="0x0D1926"/>
+                <s:GradientEntry color="0x16232F"/>
             </s:LinearGradient>
         </s:fill>
     </s:Rect>
 
     <s:Image id="image"
+             visible="false"
              source="{OBJECT_BUILDER_ICON}"
              horizontalCenter="0"
              top="55">
 
         <s:filters>
-            <s:DropShadowFilter color="0x636363"
+            <s:DropShadowFilter color="0x0B141E"
                                 distance="2"
                                 blurX="2"
                                 blurY="2"/>
         </s:filters>
     </s:Image>
+    <s:Label text="NexaAsset Editor v2" horizontalCenter="0" top="65"
+        fontSize="23" fontWeight="bold" color="0xF0F5FB"/>
 
     <nail:ShadowLabel id="versionDisplay"
                       right="55"
                       top="115"
-                      color="0xCCCCCC"
-                      shadowColor="0x535353"
+                      color="0xADC0D4"
+                      shadowColor="0x0B141E"
                       fontSize="12"
                       fontWeight="bold"/>
 
     <nail:ShadowLabel id="infernoDisplay"
                       right="55"
                       top="130"
-                      color="0xCCCCCC"
-                      shadowColor="0x535353"
+                      color="0xADC0D4"
+                      shadowColor="0x0B141E"
                       fontSize="12"
-                      text="dbko-inferno.pl"/>
+                      text="JokeCore · NexaMap"/>
 
     <nail:ShadowLabel id="statusDisplay"
                       left="10"
                       top="170"
-                      shadowColor="0x272727"
+                      shadowColor="0x2C3C4D"
                       text="{status}"/>
 
     <mx:ProgressBar id="progressBar"
@@ -187,14 +190,14 @@ THE SOFTWARE.
                 paddingLeft="20"
                 paddingRight="20"
                 focusEnabled="false"
-                backgroundColor="0x353535"
+                backgroundColor="0x111D2A"
                 textAlign="justify"
                 verticalAlign="middle"/>
 
     <!-- border -->
     <s:Rect left="0" right="0" top="0" bottom="0">
         <s:stroke>
-            <s:SolidColorStroke color="0x272727"/>
+            <s:SolidColorStroke color="0x2C3C4D"/>
         </s:stroke>
     </s:Rect>
 </s:Window>

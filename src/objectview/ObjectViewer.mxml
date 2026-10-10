@@ -31,7 +31,7 @@ THE SOFTWARE.
     minHeight="400"
     fontSize="11"
     showStatusBar="false"
-    backgroundColor="0x494949"
+    backgroundColor="0x111D2A"
     title="@Resource(key='objectViewer', bundle='strings')"
     creationComplete="creationCompleteHandler(event)"
     closing="closingHandler(event)">
@@ -550,14 +550,14 @@ THE SOFTWARE.
         <!-- highlight -->
         <s:Rect left="-1" right="-1" top="1" bottom="0">
             <s:stroke>
-                <s:SolidColorStroke color="0x636363"/>
+                <s:SolidColorStroke color="0x3B5368"/>
             </s:stroke>
         </s:Rect>
 
         <!-- border -->
         <s:Rect left="-1" right="-1" top="0" bottom="0">
             <s:stroke>
-                <s:SolidColorStroke color="0x272727"/>
+                <s:SolidColorStroke color="0x2C3C4D"/>
             </s:stroke>
         </s:Rect>
 

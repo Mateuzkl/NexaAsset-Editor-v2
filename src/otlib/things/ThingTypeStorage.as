@@ -452,7 +452,9 @@ package otlib.things
                 writer.close();
                 if (done)
                 {
+                    var stagedPath:File = new File(tmpFile.nativePath);
                     tmpFile.moveTo(file, true);
+                    if (stagedPath.exists || !file.exists) throw new Error("DAT output could not be replaced: " + file.nativePath);
                     if (!_exporting && (!_file || FileUtil.equals(_file, file)))
                     {
                         _file = file;
@@ -475,8 +477,11 @@ package otlib.things
                 if (tmpFile.exists) tmpFile.deleteFile();
             }
 
-            dispatchEvent(new StorageEvent(StorageEvent.COMPILE));
-            dispatchEvent(new StorageEvent(StorageEvent.CHANGE));
+            if (done)
+            {
+                dispatchEvent(new StorageEvent(StorageEvent.COMPILE));
+                dispatchEvent(new StorageEvent(StorageEvent.CHANGE));
+            }
 
             return done;
         }

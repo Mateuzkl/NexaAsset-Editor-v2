@@ -1,178 +1,65 @@
 <?xml version="1.0" encoding="utf-8"?>
+<s:Window xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark" xmlns:mx="library://ns.adobe.com/flex/mx"
+    width="620" height="620" backgroundColor="0x111D2A" showStatusBar="false" systemChrome="standard"
+    resizable="false" minimizable="false" maximizable="false" type="utility" creationComplete="creationCompleteHandler(event)">
+    <fx:Metadata>[ResourceBundle("strings")]</fx:Metadata>
+    <fx:Script><![CDATA[
+        import mx.events.FlexEvent;
+        import nail.utils.Descriptor;
+        import ob.ui.NexaIcons;
+        import flashx.textLayout.conversion.TextConverter;
+        import flashx.textLayout.elements.LinkElement;
+        import flashx.textLayout.formats.TextDecoration;
 
-<s:Window xmlns:fx="http://ns.adobe.com/mxml/2009"
-    xmlns:s="library://ns.adobe.com/flex/spark"
-    xmlns:mx="library://ns.adobe.com/flex/mx"
-    xmlns:ns="library://ns.nail.com/naillib"
-    width="400"
-    height="410"
-    backgroundColor="0x494949"
-    showStatusBar="false"
-    systemChrome="standard"
-    resizable="false"
-    minimizable="false"
-    maximizable="false"
-    type="utility"
-    creationComplete="creationCompleteHandler(event)">
-
-    <fx:Script>
-        <![CDATA[
-            import mx.events.FlexEvent;
-            
-            import flashx.textLayout.conversion.TextConverter;
-            import flashx.textLayout.elements.LinkElement;
-            import flashx.textLayout.formats.TextDecoration;
-            
-            import nail.utils.Descriptor;
-            import nail.utils.StringUtil;
-            
-            // --------------------------------------------------------------------------
-            // METHODS
-            // --------------------------------------------------------------------------
-            
-            // --------------------------------------
-            // Event Handlers
-            // --------------------------------------
-            
-            protected function creationCompleteHandler(event:FlexEvent):void
-            {
-                focusManager.setFocus(closeButton);
-                focusManager.showFocus();
-            
-                var bounds:Rectangle = Screen.mainScreen.bounds;
-                var px:Number = ((bounds.width - this.width) * 0.5) + bounds.x;
-                var py:Number = ((bounds.height - this.height) * 0.5) + bounds.y;
-                this.nativeWindow.x = px;
-                this.nativeWindow.y = py;
-            
-                this.versionDisplay.text = Descriptor.getVersionLabel();
-                this.title = resourceManager.getString("strings", "about") + " " + Descriptor.getName();
-                this.appNameLabel.text = Descriptor.getName();
-                this.licenceDisplay.text = resourceManager.getString("strings", "licence");
-            
-                var file:File = File.applicationDirectory.resolvePath("icon/splash/" + StringUtil.removeWhitespaces(Descriptor.getName()) + ".png");
-                if (!file.exists)
-                    return;
-            
-                this.image.source = file.url;
-                this.appNameLabel.text = "";
-            
-                var linkNormal:LinkElement = new LinkElement();
-                linkNormal.color = 0xDFDFDF;
-                linkNormal.textDecoration = TextDecoration.UNDERLINE;
-                var linkHover:LinkElement = new LinkElement();
-                linkHover.color = 0xFFFFFF;
-                linkHover.textDecoration = TextDecoration.UNDERLINE;
-                copyrightDisplay.textFlow = TextConverter.importToFlow(Descriptor.getCopyright(), TextConverter.TEXT_FIELD_HTML_FORMAT);
-                copyrightDisplay.textFlow.linkNormalFormat = linkNormal;
-                copyrightDisplay.textFlow.linkHoverFormat = linkHover;
-            }
-            
-            protected function closeButtonClickHandler(event:MouseEvent):void
-            {
-                this.close();
-            }
-            
-            protected function dbrButtonClickHandler(event:MouseEvent):void
-            {
-                // Please, dont remove or change it.
-                navigateToURL(new URLRequest("https://dbko-inferno.pl/"));
-            }
-            
-            protected function otpButtonClickHandler(event:MouseEvent):void
-            {
-                // Please, dont remove or change it.
-                navigateToURL(new URLRequest("https://otpokemon.com/"));
-            }
-        ]]>
-    </fx:Script>
-
-    <s:Rect left="0" right="0" top="0" bottom="0">
-        <s:stroke>
-            <s:SolidColorStroke color="0x272727"/>
-        </s:stroke>
-    </s:Rect>
-
-    <s:Label id="appNameLabel"
-        horizontalCenter="0"
-        top="40"
-        fontSize="30"
-        fontWeight="bold"
-        color="0xDFDFDF">
-        <s:filters>
-            <s:DropShadowFilter color="0x272727"/>
-        </s:filters>
-    </s:Label>
-
-    <s:Image id="image"/>
-
-    <s:RichEditableText id="versionDisplay"
-        right="30"
-        top="90"
-        bottom="20"
-        fontSize="12"
-        color="0xDFDFDF"
-        editable="false"
-        focusEnabled="false"
-        selectable="false"/>
-
-    <s:RichEditableText id="copyrightDisplay"
-        left="30"
-        top="120"
-        bottom="20"
-        fontSize="11"
-        color="0xDFDFDF"
-        editable="false"
-        focusEnabled="false"
-        selectable="true"/>
-
-    <s:RichEditableText id="licenceDisplay"
-        left="20"
-        right="20"
-        top="155"
-        bottom="35"
-        fontSize="8"
-        color="0xDFDFDF"
-        editable="false"
-        focusEnabled="false"
-        selectable="true"
-        textAlign="justify"/>
-
-    <ns:ShadowLine width="100%"/>
-
-    <s:VGroup width="100%" height="100%" top="249" padding="10">
-
-        <s:Label text="Supported By:"/>
-
-        <mx:LinkButton id="dbrButton"
-            label="dbko-inferno.pl"
-            fontWeight="bold"
-            fontSize="18"
-            color="0x03fcd7"
-            click="dbrButtonClickHandler(event)"/>
-
-        <mx:LinkButton id="otpButton"
-            label="otpokemon.com"
-            fontWeight="bold"
-            fontSize="18"
-            color="0xe3d10a"
-            click="otpButtonClickHandler(event)"/>
+        protected function creationCompleteHandler(event:FlexEvent):void {
+            focusManager.setFocus(closeButton);
+            focusManager.showFocus();
+            var bounds:Rectangle = Screen.mainScreen.visibleBounds;
+            nativeWindow.x = bounds.x + (bounds.width - width) * 0.5;
+            nativeWindow.y = bounds.y + (bounds.height - height) * 0.5;
+            title = resourceManager.getString("strings", "about") + " " + Descriptor.getName();
+            versionDisplay.text = resourceManager.getString("strings", "version") + ": " + Descriptor.getVersionLabel();
+            // Upstream attribution and the original license remain visible, without sponsor advertising.
+            copyrightDisplay.textFlow = TextConverter.importToFlow(Descriptor.getCopyright(), TextConverter.TEXT_FIELD_HTML_FORMAT);
+            var normal:LinkElement = new LinkElement();
+            normal.color = 0xADC0D4;
+            normal.textDecoration = TextDecoration.UNDERLINE;
+            copyrightDisplay.textFlow.linkNormalFormat = normal;
+            licenceDisplay.text = resourceManager.getString("strings", "licence");
+        }
+        protected function closeButtonClickHandler(event:MouseEvent):void { close(); }
+        protected function jokeCoreClickHandler(event:MouseEvent):void {
+            navigateToURL(new URLRequest("https://github.com/Mateuzkl"));
+        }
+    ]]></fx:Script>
+    <s:VGroup left="20" right="20" top="20" bottom="65" gap="14">
+        <s:HGroup width="100%" verticalAlign="middle" gap="14">
+            <s:Image source="{NexaIcons.LOGO}" width="64" height="64" smooth="true"/>
+            <s:VGroup width="100%" gap="7">
+                <s:Label text="NexaAsset Editor v2" fontSize="24" fontWeight="bold" color="0xF0F5FB"/>
+                <s:Label id="versionDisplay" color="0x8498AC"/>
+            </s:VGroup>
+        </s:HGroup>
+        <s:BorderContainer width="100%" backgroundColor="0x16232F" borderColor="0x2C3C4D">
+            <s:VGroup width="100%" padding="12" gap="8">
+                <s:Button id="jokeCoreButton" label="JokeCore — github.com/Mateuzkl" height="34" click="jokeCoreClickHandler(event)"
+                    toolTip="https://github.com/Mateuzkl"/>
+                <s:Label width="100%" text="{resourceManager.getString('strings', 'nexa.aboutAuthor')}"/>
+                <s:Label width="100%" text="{resourceManager.getString('strings', 'nexa.aboutBase')}"/>
+            </s:VGroup>
+        </s:BorderContainer>
+        <s:Label text="{resourceManager.getString('strings', 'nexa.aboutFeaturesTitle')}" fontWeight="bold" color="0x2BB7F5"/>
+        <s:Label width="100%" text="{resourceManager.getString('strings', 'nexa.aboutFeatures')}" color="0xADC0D4"/>
+        <s:Scroller width="100%" height="100%" minHeight="0" horizontalScrollPolicy="off">
+            <s:VGroup width="100%" gap="10">
+                <s:Label width="100%" text="{resourceManager.getString('strings', 'nexa.upstreamNotice')}" fontSize="11" color="0xADC0D4"/>
+                <s:RichEditableText id="copyrightDisplay" width="100%" fontSize="11" color="0x8498AC" editable="false" selectable="true"/>
+                <s:RichEditableText id="licenceDisplay" width="100%" fontSize="10" color="0x8498AC" editable="false" selectable="true"/>
+            </s:VGroup>
+        </s:Scroller>
     </s:VGroup>
-
-    <s:Group width="100%" height="50" bottom="0">
-        <s:Rect left="0" right="0" top="0" bottom="0">
-            <s:stroke>
-                <s:SolidColorStroke color="0x272727"/>
-            </s:stroke>
-        </s:Rect>
-
-        <ns:ShadowLine width="100%"/>
-
-        <s:Button id="closeButton"
-            label="@Resource(key='close', bundle='strings')"
-            minWidth="60"
-            right="20"
-            verticalCenter="0"
-            click="closeButtonClickHandler(event)"/>
-    </s:Group>
+    <s:BorderContainer left="0" right="0" bottom="0" height="50" backgroundColor="0x0D1926" borderColor="0x2C3C4D">
+        <s:Button id="closeButton" label="{resourceManager.getString('strings', 'close')}" minWidth="90" height="30"
+            right="16" verticalCenter="0" click="closeButtonClickHandler(event)"/>
+    </s:BorderContainer>
 </s:Window>

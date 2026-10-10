@@ -26,7 +26,7 @@ THE SOFTWARE.
     xmlns:mx="library://ns.adobe.com/flex/mx"
     xmlns:nail="library://ns.nail.com/naillib"
     xmlns:otlib="otlib.components.*"
-    backgroundColor="0x494949"
+    backgroundColor="0x111D2A"
     showStatusBar="false"
     fontSize="11"
     resizable="false"

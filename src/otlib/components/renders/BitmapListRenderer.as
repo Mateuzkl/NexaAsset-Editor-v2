@@ -42,13 +42,13 @@ package otlib.components.renders
         private var _border:Rect;
 
         // Colors (Matching SpriteListRenderer/ThingListRenderer)
-        private static const COLOR_NORMAL:uint = 0x535353; // Or default? Original MXML used autoDrawBackground default.
+        private static const COLOR_NORMAL:uint = 0x1B2937;
         // But for consistency we use SpriteListRenderer values if we go manual.
         // Wait, SpriteListRenderer uses 0x535353.
-        private static const COLOR_HOVERED:uint = 0x3385B2;
-        private static const COLOR_SELECTED:uint = 0x156692;
-        private static const COLOR_BORDER:uint = 0x272727;
-        private static const COLOR_IMAGE_BG:uint = 0x636363;
+        private static const COLOR_HOVERED:uint = 0x213143;
+        private static const COLOR_SELECTED:uint = 0x193D55;
+        private static const COLOR_BORDER:uint = 0x2C3C4D;
+        private static const COLOR_IMAGE_BG:uint = 0x101C29;
 
         public function BitmapListRenderer()
         {

@@ -194,8 +194,8 @@ THE SOFTWARE.
     <s:List id="logList"
         left="0" right="0" top="0" bottom="24"
         fontSize="11"
-        borderColor="0x272727"
-        contentBackgroundColor="0x494949"
+        borderColor="0x2C3C4D"
+        contentBackgroundColor="0x101C29"
         visible="{_expanded}"
         allowMultipleSelection="true"
         keyDown="logList_keyDownHandler(event)">
@@ -221,7 +221,7 @@ THE SOFTWARE.
     <!-- Bottom bar with Toggle/Save/Clear buttons -->
     <s:Group left="0" right="0" bottom="0" height="24">
         <s:Rect left="0" right="0" top="0" bottom="0">
-            <s:fill><s:SolidColor color="0x3a3a3a"/></s:fill>
+            <s:fill><s:SolidColor color="0x111D2A"/></s:fill>
         </s:Rect>
 
         <!-- Centered toggle button -->

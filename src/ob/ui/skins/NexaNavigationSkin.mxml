@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Skin xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark" mouseEnabled="false" mouseChildren="false"
+    minWidth="68" minHeight="62" alpha.disabledStates="0.45">
+    <fx:Metadata>[HostComponent("spark.components.ToggleButton")]</fx:Metadata>
+    <s:states>
+        <s:State name="up"/>
+        <s:State name="over" stateGroups="hoverStates"/>
+        <s:State name="down" stateGroups="hoverStates"/>
+        <s:State name="disabled" stateGroups="disabledStates"/>
+        <s:State name="upAndSelected" stateGroups="selectedStates"/>
+        <s:State name="overAndSelected" stateGroups="selectedStates"/>
+        <s:State name="downAndSelected" stateGroups="selectedStates"/>
+        <s:State name="disabledAndSelected" stateGroups="selectedStates,disabledStates"/>
+    </s:states>
+    <s:Rect left="0" right="0" top="0" bottom="0" radiusX="5">
+        <s:fill><s:SolidColor color="0x0D1926" color.hoverStates="0x213143" color.selectedStates="0x102A3D"/></s:fill>
+    </s:Rect>
+    <s:VGroup horizontalCenter="0" verticalCenter="0" horizontalAlign="center" gap="7">
+        <s:Image source="{getStyle('icon')}" width="24" height="24"/>
+        <s:Label id="labelDisplay" color="0xADC0D4" color.selectedStates="0x2BB7F5" fontSize="12" maxDisplayedLines="1"/>
+    </s:VGroup>
+    <s:Rect left="0" right="0" bottom="0" height="2" includeIn="selectedStates">
+        <s:fill><s:SolidColor color="0x2BB7F5"/></s:fill>
+    </s:Rect>
+</s:Skin>

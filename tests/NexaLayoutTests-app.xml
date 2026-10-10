@@ -1,0 +1,9 @@
+<application xmlns="http://ns.adobe.com/air/application/51.2">
+    <id>local.NexaLayoutTests</id>
+    <filename>NexaLayoutTests</filename>
+    <name>NexaAsset Editor v2</name>
+    <versionNumber>0.6.0</versionNumber>
+    <copyright>Copyright (c) 2014-2023 Object Builder contributors (MIT).</copyright>
+    <initialWindow><content>NexaLayoutTests.swf</content><visible>false</visible><width>1366</width><height>768</height></initialWindow>
+    <supportedProfiles>extendedDesktop</supportedProfiles>
+</application>

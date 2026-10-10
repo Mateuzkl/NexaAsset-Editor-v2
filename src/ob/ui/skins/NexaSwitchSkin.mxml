@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Skin xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark" mouseEnabled="false" mouseChildren="false"
+    minHeight="20" alpha.disabledStates="0.45">
+    <fx:Metadata>[HostComponent("spark.components.CheckBox")]</fx:Metadata>
+    <s:states>
+        <s:State name="up"/><s:State name="over"/><s:State name="down"/>
+        <s:State name="disabled" stateGroups="disabledStates"/>
+        <s:State name="upAndSelected" stateGroups="selectedStates"/>
+        <s:State name="overAndSelected" stateGroups="selectedStates"/>
+        <s:State name="downAndSelected" stateGroups="selectedStates"/>
+        <s:State name="disabledAndSelected" stateGroups="selectedStates,disabledStates"/>
+    </s:states>
+    <s:HGroup verticalCenter="0" gap="8" verticalAlign="middle">
+        <s:Group width="30" height="17">
+            <s:Rect width="30" height="17" radiusX="8">
+                <s:fill><s:SolidColor color="0x3B5368" color.selectedStates="0x2BB7F5"/></s:fill>
+            </s:Rect>
+            <s:Ellipse left="2" left.selectedStates="15" top="2" width="13" height="13">
+                <s:fill><s:SolidColor color="0xADC0D4" color.selectedStates="0xF0F5FB"/></s:fill>
+            </s:Ellipse>
+        </s:Group>
+        <s:Label id="labelDisplay" color="0xADC0D4" verticalAlign="middle" maxDisplayedLines="1"/>
+    </s:HGroup>
+</s:Skin>

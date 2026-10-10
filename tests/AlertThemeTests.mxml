@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark" creationComplete="runTest()" width="640" height="400">
+    <fx:Style source="../src/ObjectBuilder.css"/>
+    <fx:Script><![CDATA[
+        import flash.desktop.NativeApplication;
+        import flash.display.DisplayObjectContainer;
+        import flash.events.MouseEvent;
+        import flash.utils.setTimeout;
+        import mx.events.CloseEvent;
+        import nail.components.controls.Alert;
+        import ob.ui.skins.NexaTitleWindowSkin;
+        import spark.components.Button;
+        import spark.events.TextOperationEvent;
+        import otlib.components.FileTextInput;
+        import otlib.events.FileTextInputEvent;
+        import flash.filesystem.File;
+        private var popup:Alert;
+        private var callbacks:int;
+        private var answer:int;
+        private var phase:int;
+        private var fileCallbacks:int;
+        private function runTest():void {
+            popup = Alert.show("Replace existing object with copied object?", "Confirm", Alert.YES | Alert.NO, this, onAlertClosed);
+            setTimeout(check, 250);
+        }
+        private function onAlertClosed(event:CloseEvent):void { callbacks++; answer = event.detail; }
+        private function check():void {
+            try {
+                popup.validateNow();
+                if (!(popup.skin is NexaTitleWindowSkin) || !popup.closeButton || !popup.moveArea)
+                    throw new Error("Alert skin contracts missing");
+                if (!phase) {
+                    var no:Button = findNo(popup);
+                    if (!no) throw new Error("No button missing");
+                    no.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+                    if (callbacks != 1 || answer != Alert.NO) throw new Error("No callback changed");
+                    phase++; runTest();
+                } else {
+                    popup.closeButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+                    if (popup.parent) throw new Error("Close button did not remove Alert");
+                    if (callbacks != 2 || answer == Alert.YES) throw new Error("Close must not confirm replacement");
+                    trace("PASS: dark Alert, No and title-bar Close callbacks");
+                    checkFileInputs();
+                }
+            } catch (error:Error) { trace("FAIL: " + error.getStackTrace()); NativeApplication.nativeApplication.exit(1); }
+        }
+        private function findNo(group:DisplayObjectContainer):Button {
+            for (var i:int = 0; i < group.numChildren; i++) {
+                var child:Object = group.getChildAt(i);
+                if (child is Button && ["No", "Não"].indexOf(Button(child).label) >= 0) return Button(child);
+                if (child is DisplayObjectContainer) { var found:Button = findNo(DisplayObjectContainer(child)); if (found) return found; }
+            }
+            return null;
+        }
+        private function checkFileInputs():void {
+            var selected:FileTextInput = new FileTextInput();
+            var removed:FileTextInput = new FileTextInput();
+            addElement(selected); addElement(removed); validateNow();
+            selected.addEventListener(FileTextInputEvent.FILE_CHANGE, fileChanged);
+            removed.addEventListener(FileTextInputEvent.FILE_CHANGE, fileChanged);
+            selected.text = File.applicationDirectory.nativePath;
+            selected.dispatchEvent(new TextOperationEvent(TextOperationEvent.CHANGING));
+            selected.file = File.applicationDirectory;
+            removed.text = File.applicationDirectory.nativePath;
+            removed.dispatchEvent(new TextOperationEvent(TextOperationEvent.CHANGING));
+            removeElement(removed);
+            setTimeout(function():void {
+                if (fileCallbacks != 1) { trace("FAIL: stale file-input callback"); NativeApplication.nativeApplication.exit(1); return; }
+                trace("PASS: file-input debounce canceled after programmatic selection and dialog removal");
+                NativeApplication.nativeApplication.exit(0);
+            }, 1200);
+        }
+        private function fileChanged(event:FileTextInputEvent):void { fileCallbacks++; }
+    ]]></fx:Script>
+</s:WindowedApplication>

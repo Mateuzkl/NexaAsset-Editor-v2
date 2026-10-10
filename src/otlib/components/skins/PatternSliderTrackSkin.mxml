@@ -43,14 +43,14 @@ THE SOFTWARE.
     <!-- fill -->
     <s:Rect left="1" right="1" top="1" bottom="1">
         <s:fill>
-            <s:SolidColor color="0x353535"/>
+            <s:SolidColor color="0x101C29"/>
         </s:fill>
     </s:Rect>
 
     <!-- border -->
     <s:Rect left="0" right="0" top="0" bottom="0">
         <s:stroke>
-            <s:SolidColorStroke color="0x272727"/>
+            <s:SolidColorStroke color="0x2C3C4D"/>
         </s:stroke>
     </s:Rect>
 
