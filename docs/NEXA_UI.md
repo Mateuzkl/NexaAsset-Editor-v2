@@ -1,5 +1,7 @@
 # NexaAsset Editor v2 — presentation update
 
+The later reliability follow-up is documented in [the 10 October 2026 audit](AUDIT_2026-10-10.md). It adds the dark paste confirmation, localized confirmation text, Save/clipboard synchronization fixes and independently verified asset/resource safeguards. The layout-only scope below describes the original presentation update, not that later follow-up.
+
 ## Scope
 
 This branch adapts the supplied Nexa Dark reference to the existing AIR/Flex application. It changes branding, component skins, typography, spacing, icons, preview presentation and panel layout. It does not replace the editor or remove its original implementation.

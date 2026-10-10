@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<application xmlns="http://ns.adobe.com/air/application/51.0">
+    <id>com.jokecore.tests.AlertTheme</id><versionNumber>1.0.0</versionNumber><filename>AlertThemeTests</filename>
+    <initialWindow><content>AlertThemeTests.swf</content><visible>true</visible><width>640</width><height>400</height></initialWindow>
+</application>

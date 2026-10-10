@@ -50,6 +50,7 @@ package otlib.utils
 
     [Event(name="progress", type="otlib.events.ProgressEvent")]
     [Event(name="complete", type="flash.events.Event")]
+    [Event(name="error", type="flash.events.ErrorEvent")]
 
     public class ClientMerger extends EventDispatcher
     {
@@ -149,6 +150,7 @@ package otlib.utils
 
             var loader:StorageQueueLoader = new StorageQueueLoader();
             loader.addEventListener(Event.COMPLETE, completeHandler);
+            loader.addEventListener(ErrorEvent.ERROR, loadErrorHandler);
             loader.add(m_objects, m_objects.load, datFile, version, features);
             loader.add(m_sprites, m_sprites.load, sprFile, version, features);
             loader.start();
@@ -156,11 +158,27 @@ package otlib.utils
             function completeHandler(event:Event):void
             {
                 loader.removeEventListener(Event.COMPLETE, completeHandler);
+                loader.removeEventListener(ErrorEvent.ERROR, loadErrorHandler);
 
-                if (optimizeSprites)
-                    startOptimizeSprites();
-                else
-                    startMerge();
+                try
+                {
+                    if (optimizeSprites) startOptimizeSprites();
+                    else startMerge();
+                }
+                catch (error:Error)
+                {
+                    cleanup();
+                    m_currentObjects.invalidate();
+                    m_currentSprites.invalidate();
+                    dispatchEvent(new ErrorEvent(ErrorEvent.ERROR, false, false, error.message, error.errorID));
+                }
+            }
+            function loadErrorHandler(event:ErrorEvent):void
+            {
+                loader.removeEventListener(Event.COMPLETE, completeHandler);
+                loader.removeEventListener(ErrorEvent.ERROR, loadErrorHandler);
+                cleanup();
+                dispatchEvent(event.clone());
             }
         }
 
@@ -182,7 +200,16 @@ package otlib.utils
 
             function completeHandler(event:Event):void
             {
-                startMerge();
+                optimizer.removeEventListener(ProgressEvent.PROGRESS, progressHandler);
+                optimizer.removeEventListener(Event.COMPLETE, completeHandler);
+                try { startMerge(); }
+                catch (error:Error)
+                {
+                    cleanup();
+                    m_currentObjects.invalidate();
+                    m_currentSprites.invalidate();
+                    dispatchEvent(new ErrorEvent(ErrorEvent.ERROR, false, false, error.message, error.errorID));
+                }
             }
         }
 
@@ -218,20 +245,28 @@ package otlib.utils
             m_spritesCount = m_currentSprites.spritesCount - oldSpritesCount;
 
             // Cleanup temporary storages to prevent memory leak
+            cleanup();
+
+            if (hasEventListener(Event.COMPLETE))
+                dispatchEvent(new Event(Event.COMPLETE));
+        }
+
+        private function cleanup():void
+        {
             if (m_objects)
             {
+                m_objects.removeEventListener(ErrorEvent.ERROR, errorHandler);
                 m_objects.unload();
                 m_objects = null;
             }
             if (m_sprites)
             {
+                m_sprites.removeEventListener(ErrorEvent.ERROR, errorHandler);
                 m_sprites.unload();
                 m_sprites = null;
             }
             m_spriteIds = null;
 
-            if (hasEventListener(Event.COMPLETE))
-                dispatchEvent(new Event(Event.COMPLETE));
         }
 
         private function mergeSpriteList(min:int, max:uint):void
@@ -248,9 +283,11 @@ package otlib.utils
                 }
                 else
                 {
-                    var pixels:ByteArray = m_sprites.getPixels(id);
+                    var pixels:ByteArray = m_sprites.getPixelsStrict(id);
                     m_currentSprites.internalAddSprite(pixels, result);
-                    m_spriteIds[id] = m_currentSprites.spritesCount;
+                    if (!result.done || !result.list || !result.list.length)
+                        throw new Error("Sprite import failed at " + id + ": " + result.message);
+                    m_spriteIds[id] = result.list[0].id;
                 }
             }
         }
@@ -282,7 +319,7 @@ package otlib.utils
                             if (m_spriteIds[sid] !== undefined)
                                 spriteIds[k] = m_spriteIds[sid];
                             else
-                                spriteIds[k] = 0;
+                                throw new Error("Missing sprite mapping: " + sid);
                         }
                     }
                 }

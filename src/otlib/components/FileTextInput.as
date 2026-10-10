@@ -23,6 +23,7 @@
 package otlib.components
 {
     import flash.events.TimerEvent;
+    import flash.events.Event;
     import flash.filesystem.File;
     import flash.utils.Timer;
 
@@ -54,6 +55,7 @@ package otlib.components
         }
         public function set file(value:File):void
         {
+            if (_timer) _timer.reset();
             _file = value;
             _fileChanged = true;
             invalidateProperties();
@@ -85,6 +87,7 @@ package otlib.components
             _timer = new Timer(1000, 1);
             _timer.addEventListener(TimerEvent.TIMER_COMPLETE, timerCompleteHandler);
             this.addEventListener(TextOperationEvent.CHANGING, textChangingHandler);
+            this.addEventListener(Event.REMOVED_FROM_STAGE, removedFromStageHandler);
         }
 
         // --------------------------------------------------------------------------
@@ -140,6 +143,10 @@ package otlib.components
             }
 
             this.file = file;
+        }
+        private function removedFromStageHandler(event:Event):void
+        {
+            _timer.reset();
         }
     }
 }

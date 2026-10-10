@@ -16,6 +16,7 @@ package
     import otlib.core.ClientFeatures;
     import otlib.core.Version;
     import otlib.core.VersionStorage;
+    import otlib.sprites.SpriteRecordComparison;
     import otlib.events.ProgressEvent;
     import otlib.resources.Resources;
     import otlib.sprites.SpriteReader;
@@ -31,6 +32,10 @@ package
     import otlib.things.MetadataWriter;
     import otlib.things.ThingType;
     import otlib.things.ThingCategory;
+    import otlib.utils.ThingSpriteMap;
+    import otlib.utils.ClientMerger;
+    import otlib.utils.SpritesOptimizer;
+    import otlib.storages.StorageQueueLoader;
 
     [ResourceBundle("strings")]
     public class AssetIoTests extends Sprite
@@ -65,6 +70,8 @@ package
                 testFeatureWarnings();
                 testTransaction();
                 testExtendedItems();
+                testImportFailures();
+                testQueueFailures();
                 if (event.arguments.length > 1) testReal(new File(event.arguments[1]), new File(event.arguments[2]));
                 note("PASS: all tests (" + ((getTimer() - started) / 1000).toFixed(1) + "s)");
             }
@@ -161,6 +168,12 @@ package
             sparseReader.closeSpriteFile();
             var unified:File = testRoot.resolvePath("extended.spr");
             check(storage.compile(unified, version(), f), "32-bit compile: " + errorText);
+            var lock:FileStream = new FileStream(); lock.open(unified, FileMode.READ);
+            lastProgress = 0;
+            compileEvents = 0; storage.addEventListener(StorageEvent.COMPILE, compiled);
+            try { check(!storage.compile(unified, version(), f), "Locked SPR must not report success."); }
+            finally { lock.close(); storage.removeEventListener(StorageEvent.COMPILE, compiled); }
+            check(compileEvents == 0, "Locked SPR emits no success event.");
             check(progressCount >= 2 && lastProgress == 65536, "Actual SPR progress events.");
             check(!progressError, progressError);
             var alpha:ClientFeatures = new ClientFeatures(true, true);
@@ -183,6 +196,16 @@ package
             reader.openSpriteFile(multiRoot.resolvePath("spr_index.dat"));
             check(reader.readSpriteCount() == 65536, "Multi-SPR logical count.");
             check(reader.readSprite(65535).getPixels()[1] == 10 && reader.readSprite(65536).getPixels()[1] == 90, "Part boundary pixels.");
+            // Reusing the same reader must replace both its format state and file handle.
+            reader.openSpriteFile(source);
+            reader.openSpriteFile(multiRoot.resolvePath("spr_index.dat"));
+            var movedSource:File = testRoot.resolvePath("source-renamed.spr");
+            new File(source.nativePath).moveTo(movedSource);
+            check(movedSource.exists && !source.exists, "Switching to multi-SPR releases the old standard handle.");
+            movedSource.moveTo(source);
+            reader.openSpriteFile(testRoot.resolvePath("all-empty.spr"));
+            check(reader.readSpriteCount() == 1 && reader.readSprite(1) == null, "Switching back removes the old multi-SPR reader.");
+            reader.closeSpriteFile();
             reader.closeSpriteFile();
             var part:File = multiRoot.resolvePath("FileParts/part_2.spr");
             var renamed:File = multiRoot.resolvePath("FileParts/part_2.closed");
@@ -361,8 +384,17 @@ package
             storage.addEventListener(ErrorEvent.ERROR, capture);
             storage.load(source, version(), f);
             check(storage.loaded && storage.itemsCount == 65536, "32-bit DAT item count/load.");
+            storage.addEventListener(StorageEvent.COMPILE, compiled);
+            compileEvents = 0;
             check(!storage.compile(testRoot.resolvePath("rejected-items.dat"), version(), new ClientFeatures(true)), "Reject item-count truncation.");
+            check(compileEvents == 0, "Rejected DAT compile must not emit success.");
             check(storage.compile(testRoot.resolvePath("extended-items-out.dat"), version(), f), "32-bit DAT item output.");
+            var lock:FileStream = new FileStream();
+            lock.open(testRoot.resolvePath("extended-items-out.dat"), FileMode.READ);
+            compileEvents = 0;
+            try { check(!storage.compile(testRoot.resolvePath("extended-items-out.dat"), version(), f), "Locked DAT must not report success."); }
+            finally { lock.close(); }
+            check(compileEvents == 0, "Locked DAT emits no success event.");
             storage.unload();
             storage.load(testRoot.resolvePath("extended-items-out.dat"), version(), f);
             check(storage.loaded && storage.itemsCount == 65536, "Extended item count round-trip."); storage.unload();
@@ -372,12 +404,83 @@ package
             note("PASS: 65,536 DAT items, reject truncation, round-trip, worker feature serialization");
         }
 
+        private function testQueueFailures():void
+        {
+            var queue:StorageQueueLoader = new StorageQueueLoader();
+            queue.start(); check(queue.loaded && !queue.running, "Empty queue completes.");
+            var storage:SpriteStorage = new SpriteStorage();
+            var next:SpriteStorage = new SpriteStorage();
+            queue = new StorageQueueLoader();
+            var failures:uint = 0, calls:uint = 0;
+            queue.addEventListener(ErrorEvent.ERROR, function(e:ErrorEvent):void { failures++; });
+            queue.add(storage, function():void { storage.dispatchEvent(new ErrorEvent(ErrorEvent.ERROR, false, false, "fixture failure")); });
+            queue.add(next, function():void { calls++; });
+            queue.start(); storage.dispatchEvent(new StorageEvent(StorageEvent.LOAD));
+            check(failures == 1 && calls == 0 && !queue.running && !queue.loaded, "Failed queue stops and ignores stale completions.");
+            queue = new StorageQueueLoader();
+            queue.addEventListener(ErrorEvent.ERROR, function(e:ErrorEvent):void { failures++; });
+            queue.add(storage, function():void { throw new Error("fixture exception"); });
+            queue.start(); check(failures == 2 && !queue.running, "Thrown load also terminates the queue.");
+            queue = new StorageQueueLoader(); calls = 0;
+            queue.add(storage, function():void { calls++; storage.dispatchEvent(new StorageEvent(StorageEvent.LOAD)); });
+            queue.start(); queue.start();
+            check(queue.loaded && calls == 2, "Completed queue can be reused without duplicate callbacks.");
+            note("PASS: empty, failed, thrown, stale and reused storage queues");
+        }
+
+        private function testImportFailures():void
+        {
+            var f:ClientFeatures = new ClientFeatures(true);
+            var source:File = testRoot.resolvePath("strict-source.spr"); featureFixture(source, true, false);
+            var sprites:SpriteStorage = new SpriteStorage(); sprites.load(source, version(), f);
+            check(sprites.getPixelsStrict(1)[1] == 10, "Strict read of valid RGB.");
+            check(!sprites.changed && sprites.replaceSprite(1, sprites.getPixelsStrict(1)).done && sprites.changed,
+                "Sprite mutations update dirty state without requiring an event listener.");
+            var thing:ThingType = ThingType.create(100, ThingCategory.ITEM, false, 100);
+            thing.getFrameGroup(0).spriteIndex[0] = 1;
+            var mapped:ThingType = ThingSpriteMap.remap(thing, {"1": 42});
+            check(mapped.getFrameGroup(0).spriteIndex[0] == 42 && thing.getFrameGroup(0).spriteIndex[0] == 1, "Remapping preserves source.");
+            var rejected:Boolean = false;
+            try { ThingSpriteMap.remap(thing, {}); } catch (e:Error) { rejected = true; }
+            check(rejected, "Missing mappings must reject, not retain foreign sprite IDs.");
+            var settings:ObjectBuilderSettings = new ObjectBuilderSettings();
+            var things:ThingTypeStorage = new ThingTypeStorage(settings); things.createNew(version(), f);
+            things.replaceThing(thing, ThingCategory.ITEM, 100);
+            var dat:File = testRoot.resolvePath("merge-source.dat");
+            check(things.compile(dat, version(), f), "Merge DAT fixture.");
+            var full:SpriteStorage = new SpriteStorage();
+            full.load(testRoot.resolvePath("legacy.spr"), version(), new ClientFeatures(false));
+            var merger:ClientMerger = new ClientMerger(things, full, settings);
+            var failures:uint = 0, completions:uint = 0;
+            merger.addEventListener(ErrorEvent.ERROR, function(e:ErrorEvent):void { failures++; });
+            merger.addEventListener(Event.COMPLETE, function(e:Event):void { completions++; });
+            merger.start(dat, source, version(), f, false);
+            check(failures == 1 && completions == 0 && things.itemsCount == 100 && full.spritesCount == 65535,
+                "Capacity failure must not create objects with incorrect sprite IDs.");
+            full.unload(); sprites.unload();
+            var edit:FileStream = new FileStream();
+            try { edit.open(source, FileMode.UPDATE); edit.endian = Endian.LITTLE_ENDIAN; edit.position = 8 + 96 * 4 + 7; edit.writeShort(2000); }
+            finally { edit.close(); }
+            sprites.load(source, version(), f); rejected = false;
+            try { sprites.getPixelsStrict(1); } catch (e:Error) { rejected = true; }
+            check(rejected, "Corrupt RLE must not be imported as a preview placeholder.");
+            thing.getFrameGroup(0).spriteIndex[0] = 999;
+            things.replaceThing(thing, ThingCategory.ITEM, 100); rejected = false;
+            try { new SpritesOptimizer(things, sprites).start(); } catch (e:Error) { rejected = true; }
+            check(rejected && things.getThingType(100, ThingCategory.ITEM).getFrameGroup(0).spriteIndex[0] == 999,
+                "Optimizer rejects invalid references before modifying the document.");
+            sprites.unload(); things.unload();
+            note("PASS: strict RLE import, missing mapping, full legacy merge, optimizer reference preflight");
+        }
+
         private function testReal(source:File, config:File):void
         {
             VersionStorage.getInstance().load(config.resolvePath("versions.xml"));
             var probe:ClientInfoLoader = new ClientInfoLoader();
             probe.addEventListener(ErrorEvent.ERROR, capture);
-            probe.load(source.resolvePath("Tibia.dat"), source.resolvePath("spr_index.dat"), true);
+            var inputSpr:File = source.resolvePath("spr_index.dat");
+            if (!inputSpr.exists) inputSpr = source.resolvePath("Tibia.spr");
+            probe.load(source.resolvePath("Tibia.dat"), inputSpr, true);
             check(probe.clientInfo != null, "Real file probe: " + errorText);
             var v:Version = VersionStorage.getInstance().getFromClientInfo(probe.clientInfo);
             var f:ClientFeatures = probe.clientInfo.features;
@@ -390,7 +493,7 @@ package
             var out:File = testRoot.resolvePath("real-standard"); out.createDirectory();
             check(things.compile(out.resolvePath("Tibia.dat"), v, f), "Real DAT compile: " + errorText);
             var sprites:SpriteStorage = new SpriteStorage(); sprites.addEventListener(ErrorEvent.ERROR, capture);
-            sprites.load(source.resolvePath("spr_index.dat"), v, f);
+            sprites.load(inputSpr, v, f);
             note("Real SPR loaded: " + sprites.spritesCount + " sprites; compiling standard SPR...");
             var compileStarted:int = getTimer();
             check(sprites.compile(out.resolvePath("Tibia.spr"), v, f), "Real SPR merge: " + errorText);
@@ -402,6 +505,17 @@ package
             for (var id:uint = 1; id <= sprites.spritesCount; id += 4093)
                 check(samePixels(sprites.getPixels(id), reopened.getPixels(id)), "Real sprite pixels differ at " + id);
             check(samePixels(sprites.getPixels(sprites.spritesCount), reopened.getPixels(sprites.spritesCount)), "Real last sprite.");
+            var before:SpriteReader = new SpriteReader(f), after:SpriteReader = new SpriteReader(f);
+            before.openSpriteFile(inputSpr); after.openSpriteFile(out.resolvePath("Tibia.spr"));
+            try {
+                for (id = 1; id <= sprites.spritesCount; id++) {
+                    var a:otlib.sprites.Sprite = before.readSprite(id), b:otlib.sprites.Sprite = after.readSprite(id);
+                    try {
+                        check(SpriteRecordComparison.equal(a, b), "Real compressed sprite record changed: " + id);
+                    } finally { if (a) a.dispose(); if (b) b.dispose(); }
+                }
+            } finally { before.closeSpriteFile(); after.closeSpriteFile(); }
+            note("PASS: all " + sprites.spritesCount + " real SPR records validated and preserved byte-for-byte");
             reopened.unload(); sprites.unload(); things.unload();
             var datReload:ThingTypeStorage = new ThingTypeStorage(new ObjectBuilderSettings());
             datReload.addEventListener(ErrorEvent.ERROR, capture); datReload.load(out.resolvePath("Tibia.dat"), v, f);
@@ -409,7 +523,7 @@ package
             check(datReload.itemsCount == probe.clientInfo.maxItemId && datReload.outfitsCount == probe.clientInfo.maxOutfitId,
                 "Real DAT counts preserved.");
             datReload.unload();
-            note("PASS: real multi-SPR -> standard DAT/SPR compile, sampled pixels, reopen and close");
+            note("PASS: real DAT/SPR compile, sampled pixels, reopen and close");
         }
 
         private function samePixels(a:ByteArray, b:ByteArray):Boolean

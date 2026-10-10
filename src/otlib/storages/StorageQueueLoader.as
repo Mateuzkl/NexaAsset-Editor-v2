@@ -26,10 +26,12 @@ package otlib.storages
 
     import flash.events.Event;
     import flash.events.EventDispatcher;
+    import flash.events.ErrorEvent;
 
     import otlib.storages.events.StorageEvent;
 
     [Event(name="complete", type="flash.events.Event")]
+    [Event(name="error", type="flash.events.ErrorEvent")]
 
     public class StorageQueueLoader extends EventDispatcher
     {
@@ -94,7 +96,6 @@ package otlib.storages
                 }
             }
 
-            addHandlers(storage);
             m_storages[m_storages.length] = new StorageData(storage, callback, args);
         }
 
@@ -119,11 +120,13 @@ package otlib.storages
         protected function addHandlers(storage:IStorage):void
         {
             storage.addEventListener(StorageEvent.LOAD, storageHandler);
+            storage.addEventListener(ErrorEvent.ERROR, storageErrorHandler);
         }
 
         protected function removeHandlers(storage:IStorage):void
         {
             storage.removeEventListener(StorageEvent.LOAD, storageHandler);
+            storage.removeEventListener(ErrorEvent.ERROR, storageErrorHandler);
         }
 
         // --------------------------------------
@@ -133,7 +136,7 @@ package otlib.storages
         private function loadNext():void
         {
             m_index++;
-            if (m_index >= m_storages.length)
+            if (!m_storages || m_index >= m_storages.length)
             {
                 m_running = false;
                 m_loaded = true;
@@ -141,7 +144,9 @@ package otlib.storages
             }
             else
             {
-                m_storages[m_index].perform();
+                addHandlers(m_storages[m_index].storage);
+                try { m_storages[m_index].perform(); }
+                catch (error:Error) { storageErrorHandler(new ErrorEvent(ErrorEvent.ERROR, false, false, error.message, error.errorID)); }
             }
         }
 
@@ -151,8 +156,17 @@ package otlib.storages
 
         protected function storageHandler(event:StorageEvent):void
         {
+            if (!m_running || event.target != m_storages[m_index].storage) return;
             removeHandlers(IStorage(event.target));
             loadNext();
+        }
+        protected function storageErrorHandler(event:ErrorEvent):void
+        {
+            if (!m_running) return;
+            removeHandlers(m_storages[m_index].storage);
+            m_running = false;
+            m_loaded = false;
+            dispatchEvent(event.clone());
         }
     }
 }

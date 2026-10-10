@@ -677,6 +677,7 @@ THE SOFTWARE.
                         var knownAttrs:Array = _attributeRegistry.getAttributeKeysInOrder();
             
                         // Close any active object editor
+                        cancelPendingThingRequest();
                         editThing(null);
 
                         // Drop stale search results from the previously loaded client.
@@ -1280,6 +1281,7 @@ THE SOFTWARE.
             
             public function clear():void
             {
+                cancelPendingThingRequest();
                 _thingData = null;
                 _thingDataChanged = false;
                 _clientInfo = null;
@@ -1290,6 +1292,7 @@ THE SOFTWARE.
                 thingGridList.removeAll();
                 foundThingsList.removeAll();
                 spritesList.removeAll();
+                spritesGridList.removeAll();
 
                 editThing(null);
                 thingView.thingData = null;
@@ -1298,6 +1301,7 @@ THE SOFTWARE.
                 categoryDropDownList.selectedIndex = 0;
                 thingStepper.value = 0;
                 _logs.removeAll();
+                updateNexaSaveState();
             }
 
             private function clearFoundResults():void
@@ -1637,7 +1641,7 @@ THE SOFTWARE.
                 _otbLoaded = info.otbLoaded;
                 nexaNavigation.loaded = info.loaded;
                 nexaActions.loaded = info.loaded;
-                nexaActions.canSave = (info.changed && !info.isTemporary);
+                updateNexaSaveState();
                 if (!info.loaded) nexaActions.hasSelection = false;
                 thingList.otbLoaded = _otbLoaded;
                 thingGridList.otbLoaded = _otbLoaded;
@@ -1697,6 +1701,7 @@ THE SOFTWARE.
                     _ignoringPropertyChange = false;
 
                     confirmButton.enabled = false;
+                    updateNexaSaveState();
                     updateTitle(OtlibUtils.toLocale(thing.category) + " " + thing.id);
                 }
             }
@@ -2692,16 +2697,10 @@ THE SOFTWARE.
             
             private function requestThingWithDebounce(thingId:uint, category:String):void
             {
+                cancelPendingThingRequest();
                 // Store pending request
                 _pendingThingId = thingId;
                 _pendingThingCategory = category;
-            
-                // Cancel previous timer
-                if (_thingSelectionDebounceTimer)
-                {
-                    _thingSelectionDebounceTimer.stop();
-                    _thingSelectionDebounceTimer.removeEventListener(TimerEvent.TIMER, onThingSelectionDebounce);
-                }
             
                 // Start new debounce timer (150ms delay)
                 _thingSelectionDebounceTimer = new Timer(150, 1);
@@ -2711,13 +2710,24 @@ THE SOFTWARE.
             
             private function onThingSelectionDebounce(event:TimerEvent):void
             {
-                _thingSelectionDebounceTimer.removeEventListener(TimerEvent.TIMER, onThingSelectionDebounce);
-                _thingSelectionDebounceTimer = null;
-            
-                if (_pendingThingId != 0 && _pendingThingCategory)
+                var id:uint = _pendingThingId;
+                var category:String = _pendingThingCategory;
+                cancelPendingThingRequest();
+                if (_clientInfo && _clientInfo.loaded && id != 0 && category)
                 {
-                    sendCommand(new GetThingCommand(_pendingThingId, _pendingThingCategory));
+                    sendCommand(new GetThingCommand(id, category));
                 }
+            }
+            private function cancelPendingThingRequest():void
+            {
+                if (_thingSelectionDebounceTimer)
+                {
+                    _thingSelectionDebounceTimer.stop();
+                    _thingSelectionDebounceTimer.removeEventListener(TimerEvent.TIMER, onThingSelectionDebounce);
+                    _thingSelectionDebounceTimer = null;
+                }
+                _pendingThingId = 0;
+                _pendingThingCategory = null;
             }
             protected function categoryDropDownListChangeHandler(event:IndexChangeEvent):void
             {
@@ -2748,6 +2758,7 @@ THE SOFTWARE.
             
                 updateTitle(title);
                 confirmButton.enabled = false;
+                updateNexaSaveState();
             }
             
             protected function thingPropertyChangedHandler(event:ThingEditorEvent):void
@@ -2760,6 +2771,7 @@ THE SOFTWARE.
                 }
             
                 updateTitle(title, !thingTypeEditor.changed);
+                updateNexaSaveState();
             
                 // Only enable button if not ignoring property changes from worker
                 if (!_ignoringPropertyChange)
@@ -4085,6 +4097,13 @@ THE SOFTWARE.
                 if (flag == "hasClipboardObject") nexaActions.hasClipboard = value;
             }
 
+            /** Include unsaved editor changes, not only the last worker snapshot. */
+            protected function updateNexaSaveState():void
+            {
+                nexaActions.canSave = _clientInfo != null && _clientInfo.loaded && !_clientInfo.isTemporary &&
+                        (_clientInfo.changed || thingTypeEditor.changed);
+            }
+
             /** Presentation-only shortcuts. All mutations still use the original handlers. */
             protected function nexaActionHandler(event:NexaUiEvent):void
             {
@@ -4259,8 +4278,7 @@ THE SOFTWARE.
                         if (_settings.deleteAfterPaste)
                         {
                             _copiedThingData = null;
-                            if (thingList)
-                                thingList.hasClipboardObject = false;
+                            setClipboardFlag("hasClipboardObject", false);
                         }
             
                         appendLog(StringUtil.format(resourceManager.getString('strings', 'objectPasted'), resourceManager.getString('strings', sourceCategory), _copiedSourceId, targets.length > 1 ? targets.length + " items" : targets[0].id));

@@ -107,6 +107,10 @@ package otlib.utils
             if (m_finished)
                 return;
 
+            validateReferences(m_objects.items);
+            validateReferences(m_objects.outfits);
+            validateReferences(m_objects.effects);
+            validateReferences(m_objects.missiles);
             var length:uint = m_sprites.spritesCount + 1;
             var steps:uint = 9;
             var step:uint = 0;
@@ -123,7 +127,7 @@ package otlib.utils
             dispatchProgress(step++, steps, Resources.getString("hasingSprites"));
             for (var id:uint = 1; id < length; id++)
             {
-                m_oldIDs[id] = m_sprites.getSprite(id);
+                m_oldIDs[id] = m_sprites.getSpriteStrict(id);
                 m_newIDs[id] = id;
 
                 var hash:String = m_oldIDs[id].getHash();
@@ -269,6 +273,20 @@ package otlib.utils
                     var spriteIDs:Vector.<uint> = frameGroup.spriteIndex;
                     for (var i:int = spriteIDs.length - 1; i >= 0; i--)
                         usedList[spriteIDs[i]] = true;
+                }
+            }
+        }
+
+        private function validateReferences(list:Dictionary):void
+        {
+            for each (var thing:ThingType in list)
+            {
+                for (var type:uint = FrameGroupType.DEFAULT; type <= FrameGroupType.WALKING; type++)
+                {
+                    var group:FrameGroup = thing.getFrameGroup(type);
+                    if (!group) continue;
+                    for each (var id:uint in group.spriteIndex)
+                        if (id > m_sprites.spritesCount) throw new Error("Invalid sprite reference: " + id);
                 }
             }
         }

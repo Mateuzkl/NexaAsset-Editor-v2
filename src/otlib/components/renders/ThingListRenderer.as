@@ -223,7 +223,7 @@ package otlib.components.renders
                     displayText = thing.id + " - " + thing.name;
 
                 toolTip = displayText + (item.serverId > 0 ? " (Server Id: " + item.serverId + ")" : "");
-                _labelDisplay.text = thing.id.toString();
+                _labelDisplay.text = item.serverId > 0 ? displayText : thing.id.toString();
 
                 // Line 2: Server Id
                 if (item.serverId > 0)
@@ -238,6 +238,7 @@ package otlib.components.renders
                 }
                 catch (error:Error)
                 {
+                    _imageDisplay.source = null;
                     Log.error(error.message, error.getStackTrace(), error.errorID);
                 }
             }

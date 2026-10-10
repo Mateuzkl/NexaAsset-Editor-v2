@@ -12,7 +12,7 @@ New-Item -ItemType Directory -Path $output -Force | Out-Null
 Push-Location -LiteralPath $project
 try {
     & $java -Xmx2g ('-Dapplication.home=' + $sdk) -jar (Join-Path $sdk 'lib/mxmlc.jar') '+configname=air' `
-        '-source-path=src' '-library-path+=libs' '-locale=en_US' '-source-path+=locale/{locale}' `
+        '-source-path=src' '-source-path+=tests' '-library-path+=libs' '-locale=en_US' '-source-path+=locale/{locale}' `
         '-debug=true' ('-output=' + (Join-Path $output 'AssetIoTests.swf')) 'tests/AssetIoTests.as'
     if ($LASTEXITCODE -ne 0) { throw 'Asset test compilation failed.' }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AssetIoTests-app.xml') -Destination $output
@@ -38,4 +38,11 @@ try {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AssetWindowTests-app.xml') -Destination $output
     & (Join-Path $sdk 'bin/adl.exe') -nodebug (Join-Path $output 'AssetWindowTests-app.xml')
     if ($LASTEXITCODE -ne 0) { throw 'Asset window tests failed.' }
+    & $java -Xmx2g ('-Dapplication.home=' + $sdk) -jar (Join-Path $sdk 'lib/mxmlc.jar') '+configname=air' `
+        '-source-path=src' '-library-path+=libs' '-locale=en_US,es_ES,pt_BR' '-source-path+=locale/{locale}' `
+        '-debug=true' '-warnings=false' ('-output=' + (Join-Path $output 'AlertThemeTests.swf')) 'tests/AlertThemeTests.mxml'
+    if ($LASTEXITCODE -ne 0) { throw 'Alert theme test compilation failed.' }
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AlertThemeTests-app.xml') -Destination $output
+    & (Join-Path $sdk 'bin/adl.exe') -nodebug (Join-Path $output 'AlertThemeTests-app.xml')
+    if ($LASTEXITCODE -ne 0) { throw 'Alert theme tests failed.' }
 } finally { Pop-Location }
