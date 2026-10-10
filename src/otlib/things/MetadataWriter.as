@@ -134,6 +134,8 @@ package otlib.things
                 for (i = 0; i < length; i++)
                 {
                     // Write sprite index
+                    if (!extended && spriteIndex[i] > 65535)
+                        throw new Error("Sprite reference exceeds 16-bit DAT capacity. Select 32-bit output.");
                     if (extended)
                         writeUnsignedInt(spriteIndex[i]);
                     else

@@ -222,6 +222,7 @@ package otlib.components
             _time = 0;
 
             addEventListener(Event.ADDED_TO_STAGE, addedToStageHandler);
+            addEventListener(Event.REMOVED_FROM_STAGE, removedFromStageHandler);
         }
 
         // --------------------------------------------------------------------------
@@ -347,7 +348,14 @@ package otlib.components
 
                 updateScale();
 
-                var durations:Vector.<FrameDuration> = _activeFrameGroup.frameDurations;
+                // Preview timing must not modify the loaded/exported animation data.
+                var durations:Vector.<FrameDuration> = null;
+                if (_activeFrameGroup.frameDurations)
+                {
+                    durations = new Vector.<FrameDuration>();
+                    for each (var sourceDuration:FrameDuration in _activeFrameGroup.frameDurations)
+                        durations.push(sourceDuration ? new FrameDuration(sourceDuration.minimum, sourceDuration.maximum) : null);
+                }
                 if (durations && _activeFrameGroup.type == FrameGroupType.WALKING && _activeFrameGroup.frames > 2)
                 {
                     var duration:uint = 1000 / _activeFrameGroup.frames;
@@ -374,6 +382,8 @@ package otlib.components
             else
             {
                 _textureIndex = null;
+                if (_spriteSheet) _spriteSheet.dispose();
+                if (_bitmap) _bitmap.dispose();
                 _spriteSheet = null;
                 _animator = null;
                 _bitmap = null;
@@ -476,8 +486,12 @@ package otlib.components
 
         protected function addedToStageHandler(event:Event):void
         {
-            removeEventListener(Event.ADDED_TO_STAGE, addedToStageHandler);
             addEventListener(Event.ENTER_FRAME, enterFramehandler);
+        }
+
+        protected function removedFromStageHandler(event:Event):void
+        {
+            removeEventListener(Event.ENTER_FRAME, enterFramehandler);
         }
 
         protected function enterFramehandler(event:Event):void

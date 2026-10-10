@@ -131,6 +131,64 @@ package otlib.sprites
             return uncompressPixels(target);
         }
 
+        internal function validateCompressedPixels():void
+        {
+            _compressedPixels.position = 0;
+            var pixels:Number = 0;
+            var channels:uint = _transparent ? 4 : 3;
+            while (_compressedPixels.bytesAvailable)
+            {
+                if (_compressedPixels.bytesAvailable < 4) throw new Error("Truncated SPR RLE header.");
+                pixels += _compressedPixels.readUnsignedShort();
+                var colored:uint = _compressedPixels.readUnsignedShort();
+                pixels += colored;
+                var bytes:Number = Number(colored) * channels;
+                if (pixels > SpriteExtent.DEFAULT_DATA_SIZE / 4 || bytes > _compressedPixels.bytesAvailable)
+                    throw new Error("Invalid SPR RLE run length for sprite " + _id +
+                        " (pixels=" + pixels + ", colored=" + colored + ", channels=" + channels +
+                        ", remaining=" + _compressedPixels.bytesAvailable + ").");
+                _compressedPixels.position += bytes;
+            }
+            _compressedPixels.position = 0;
+        }
+
+        /** Convert only colored RLE runs; do not inflate/recompress 1,024 pixels. */
+        internal function withTransparency(value:Boolean):Sprite
+        {
+            validateCompressedPixels();
+            var result:Sprite = new Sprite(_id, value);
+            // Preserve the historical handling of fully transparent black pixels
+            // when removing alpha; RGB -> RGBA can keep all RLE runs verbatim.
+            if (_transparent && !value)
+            {
+                result.setPixels(getPixels());
+                return result;
+            }
+            var source:ByteArray = _compressedPixels, target:ByteArray = result.compressedPixels;
+            source.position = 0;
+            while (source.bytesAvailable)
+            {
+                target.writeShort(source.readUnsignedShort());
+                var colored:uint = source.readUnsignedShort();
+                target.writeShort(colored);
+                if (value == _transparent)
+                {
+                    var bytes:uint = colored * (value ? 4 : 3);
+                    if (bytes) target.writeBytes(source, source.position, bytes);
+                    source.position += bytes;
+                }
+                else for (var i:uint = 0; i < colored; i++)
+                {
+                    // Both buffers use little endian: emit R,G,B,255 in one write.
+                    var rgba:uint = source.readUnsignedByte() | (source.readUnsignedByte() << 8) |
+                        (source.readUnsignedByte() << 16) | 0xFF000000;
+                    target.writeUnsignedInt(rgba);
+                }
+            }
+            source.position = 0;
+            return result;
+        }
+
         /**
          * Gets RGB data like ItemEditor's GetRGBData().
          * Returns 3072 bytes (32*32*3), with 0x11 for transparent pixels.
@@ -170,6 +228,9 @@ package otlib.sprites
                 coloredPixels = _compressedPixels.readUnsignedShort();
 
                 // Advance read counter (headers + data)
+                if (write + Number(transparentPixels + coloredPixels) * 3 > RGB_SIZE ||
+                        _compressedPixels.bytesAvailable < Number(coloredPixels) * bitPerPixel)
+                    throw new Error("Invalid SPR RLE run length.");
                 read += 4 + (coloredPixels * bitPerPixel);
 
                 // Write transparent pixels (filled with 0x11)
@@ -219,6 +280,7 @@ package otlib.sprites
                 throw new Error("Invalid sprite pixels length");
 
             _hash = null;
+            if (_bitmap) { _bitmap.dispose(); _bitmap = null; }
             return compressPixels(pixels);
         }
 
@@ -249,7 +311,9 @@ package otlib.sprites
                 return false;
 
             _hash = null;
-            _bitmap = bitmap.clone();
+            var copy:BitmapData = bitmap.clone();
+            if (_bitmap) _bitmap.dispose();
+            _bitmap = copy;
             return true;
         }
 
@@ -271,7 +335,7 @@ package otlib.sprites
             _compressedPixels.position = 0;
             _compressedPixels.readBytes(sprite._compressedPixels);
 
-            sprite._bitmap = _bitmap;
+            sprite._bitmap = _bitmap ? _bitmap.clone() : null;
             return sprite;
         }
 
@@ -282,6 +346,7 @@ package otlib.sprites
 
             if (_bitmap)
                 _bitmap.fillRect(_rect, 0x00FF00FF);
+            _hash = null;
         }
 
         public function dispose():void
@@ -398,6 +463,9 @@ package otlib.sprites
                 transparentPixels = _compressedPixels.readUnsignedShort();
                 coloredPixels = _compressedPixels.readUnsignedShort();
 
+                if (write + Number(transparentPixels + coloredPixels) * 4 > SpriteExtent.DEFAULT_DATA_SIZE ||
+                        _compressedPixels.bytesAvailable < Number(coloredPixels) * channels)
+                    throw new Error("Invalid SPR RLE run length.");
                 for (i = 0; i < transparentPixels; i++)
                 {
                     pixels[write++] = 0x00; // Alpha

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009"
+    xmlns:s="library://ns.adobe.com/flex/spark" width="1000" height="600"
+    creationComplete="startTest()">
+    <fx:Style source="../src/ObjectBuilder.css"/>
+    <fx:Script><![CDATA[
+        import ob.components.ReadableProgressWidget;
+        import mx.controls.ProgressBar;
+        import mx.core.UITextField;
+        private var widget:ReadableProgressWidget;
+        private var step:int;
+        private var labels:Array = [
+            "Saving SPR  3%  (16283 / 485804)  ~96s remaining",
+            "Saving SPR  99%  (4294967294 / 4294967295)  ~999999s remaining",
+            "Saving SPR  100%  (485804 / 485804)  Finalizing..."
+        ];
+        private function startTest():void
+        {
+            widget = new ReadableProgressWidget();
+            widget.open(this);
+            showLabel();
+        }
+        private function showLabel():void
+        {
+            widget.progress("layout", 3, 100, labels[step]);
+            widget.fitLabelText();
+            callLater(verifyLabel);
+        }
+        private function verifyLabel():void
+        {
+            try
+            {
+                widget.validateNow();
+                var found:Boolean = false;
+                for (var i:int = 0; i < widget.numElements; i++)
+                {
+                    var bar:ProgressBar = widget.getElementAt(i) as ProgressBar;
+                    if (!bar) continue;
+                    bar.validateNow();
+                    if (bar.measureText(bar.label).width + 4 > bar.width)
+                        throw new Error("Label exceeds progress-bar width.");
+                    for (var j:int = 0; j < bar.numChildren; j++)
+                    {
+                        var field:UITextField = bar.getChildAt(j) as UITextField;
+                        if (!field || !field.text) continue;
+                        found = true;
+                        if (field.y < 0 || field.y + field.height > bar.height)
+                            throw new Error("Label exceeds progress-bar height.");
+                    }
+                }
+                if (!found) throw new Error("Progress label was not rendered.");
+                trace("PASS: unclipped progress label: " + labels[step]);
+                if (++step < labels.length) { showLabel(); return; }
+                widget.close();
+                trace("PASS: progress layout tests");
+                NativeApplication.nativeApplication.exit(0);
+            }
+            catch (error:Error)
+            {
+                trace("FAIL: " + error.message);
+                NativeApplication.nativeApplication.exit(1);
+            }
+        }
+    ]]></fx:Script>
+</s:WindowedApplication>

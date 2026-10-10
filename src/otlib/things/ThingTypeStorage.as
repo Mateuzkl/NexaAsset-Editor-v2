@@ -81,6 +81,11 @@ package otlib.things
         private var _thingsCount:uint;
         otlib_internal var _changed:Boolean;
         private var _loaded:Boolean;
+        private var _compileDone:uint;
+        private var _compileTotal:uint;
+        private var _loadDone:uint;
+        private var _loadTotal:uint;
+        private var _exporting:Boolean;
         private var _settings:ObjectBuilderSettings;
         private var _currentFeatures:ClientFeatures;
 
@@ -192,8 +197,9 @@ package otlib.things
             catch (error:Error)
             {
                 dispatchEvent(new ErrorEvent(ErrorEvent.ERROR, false, false, error.getStackTrace(), error.errorID));
-                // return;
+                return;
             }
+            finally { if (reader) { try { reader.close(); } catch (closeError:Error) {} } }
 
             _file = file;
             _changed = false;
@@ -399,12 +405,17 @@ package otlib.things
             var compileFeatures:ClientFeatures = features.clone();
             compileFeatures.applyVersionDefaults(version.value);
 
-            var tmpFile:File = FileUtil.getDirectory(file).resolvePath("tmp_" + file.name);
+            var tmpFile:File = file.parent.resolvePath(".ob-" + flash.utils.getTimer() + "-" + uint(Math.random() * uint.MAX_VALUE) + ".dat");
+            if (tmpFile.exists) throw new Error("DAT staging path already exists.");
             var done:Boolean = true;
 
             try
             {
                 _thingsCount = _itemsCount + _outfitsCount + _effectsCount + _missilesCount;
+                if ((!compileFeatures.extendedItems && _itemsCount > 65535) || _outfitsCount > 65535 || _effectsCount > 65535 || _missilesCount > 65535)
+                    throw new Error("DAT count exceeds 16-bit capacity. Enable 32-bit item IDs for items above 65,535.");
+                _compileDone = 0;
+                _compileTotal = Math.max(0, _itemsCount - MIN_ITEM_ID + 1) + _outfitsCount + _effectsCount + _missilesCount;
 
                 var writer:MetadataWriter = MetadataControllerStorage.getInstance().createWriter(compileFeatures.metadataController, version.value);
 
@@ -412,7 +423,8 @@ package otlib.things
                 writer.open(tmpFile, FileMode.WRITE);
                 writer.writeUnsignedInt(version.datSignature); // Write sprite signature
 
-                writer.writeShort(_itemsCount); // Write items count
+                if (compileFeatures.extendedItems) writer.writeUnsignedInt(_itemsCount);
+                else writer.writeShort(_itemsCount);
                 writer.writeShort(_outfitsCount); // Write outfits count
                 writer.writeShort(_effectsCount); // Write effects count
                 writer.writeShort(_missilesCount); // Write missiles count
@@ -438,6 +450,15 @@ package otlib.things
                 }
 
                 writer.close();
+                if (done)
+                {
+                    tmpFile.moveTo(file, true);
+                    if (!_exporting && (!_file || FileUtil.equals(_file, file)))
+                    {
+                        _file = file;
+                        _changed = false;
+                    }
+                }
             }
             catch (error:Error)
             {
@@ -448,28 +469,31 @@ package otlib.things
 
                 done = false;
             }
-
-            if (done)
+            finally
             {
-                var fileName:String = FileUtil.getName(file);
-
-                // Delete old file.
-                if (file.exists)
-                    file.deleteFile();
-
-                // Rename temporary file
-                _file = FileUtil.rename(tmpFile, fileName);
-                _changed = false;
-            }
-            else if (tmpFile.exists)
-            {
-                tmpFile.deleteFile();
+                if (writer) { try { writer.close(); } catch (closeWriterError:Error) {} }
+                if (tmpFile.exists) tmpFile.deleteFile();
             }
 
             dispatchEvent(new StorageEvent(StorageEvent.COMPILE));
             dispatchEvent(new StorageEvent(StorageEvent.CHANGE));
 
             return done;
+        }
+
+        public function compileToStaging(file:File, version:Version, features:ClientFeatures):Boolean
+        {
+            _exporting = true;
+            var result:Boolean;
+            try { result = compile(file, version, features); }
+            finally { _exporting = false; }
+            return result;
+        }
+
+        public function bindCompiledFile(file:File, version:Version, features:ClientFeatures):void
+        {
+            _file = file; _version = version; _signature = version.datSignature;
+            _currentFeatures = features.clone(); _changed = false;
         }
 
         public function hasThingType(category:String, id:uint):Boolean
@@ -1058,7 +1082,7 @@ package otlib.things
 
         protected function readBytes(reader:MetadataReader):void
         {
-            if (reader.bytesAvailable < 12)
+            if (reader.bytesAvailable < (_currentFeatures.extendedItems ? 14 : 12))
                 throw new ArgumentError("Not enough data.");
 
             _items = new Dictionary();
@@ -1071,6 +1095,10 @@ package otlib.things
             _effectsCount = reader.readEffectsCount();
             _missilesCount = reader.readMissilesCount();
             _thingsCount = _itemsCount + _outfitsCount + _effectsCount + _missilesCount;
+            _loadDone = 0;
+            _loadTotal = Math.max(0, _itemsCount - MIN_ITEM_ID + 1) + _outfitsCount + _effectsCount + _missilesCount;
+            if (_loadTotal > reader.bytesAvailable) throw new Error("DAT counts exceed the available records.");
+            loadProgress();
 
             // Load item list.
             if (!loadThingTypeList(reader, _items, MIN_ITEM_ID, _itemsCount, ThingCategory.ITEM))
@@ -1111,6 +1139,8 @@ package otlib.things
                     continue;
 
                 list[id] = thing;
+                _loadDone++;
+                if (_loadDone % 256 == 0 || _loadDone == _loadTotal) loadProgress();
             }
             return true;
         }
@@ -1137,6 +1167,7 @@ package otlib.things
                 {
                     writer.writeByte(ThingSerializer.LAST_FLAG); // Close flags
                 }
+                compileProgress();
             }
 
             return true;
@@ -1164,6 +1195,7 @@ package otlib.things
                 {
                     writer.writeByte(ThingSerializer.LAST_FLAG); // Close flags
                 }
+                compileProgress();
             }
 
             return true;
@@ -1178,5 +1210,20 @@ package otlib.things
         public static const MIN_EFFECT_ID:uint = 1;
         public static const MIN_MISSILE_ID:uint = 1;
         private static const CHANGE_RESULT_HELPER:ChangeResult = new ChangeResult();
+
+        private function compileProgress():void
+        {
+            _compileDone++;
+            if ((_compileDone % 256 == 0 || _compileDone == _compileTotal) && hasEventListener(ProgressEvent.PROGRESS))
+                dispatchEvent(new ProgressEvent(ProgressEvent.PROGRESS, ProgressBarID.METADATA,
+                    _compileDone, _compileTotal + 1, "Saving DAT"));
+        }
+
+        private function loadProgress():void
+        {
+            if (hasEventListener(ProgressEvent.PROGRESS))
+                dispatchEvent(new ProgressEvent(ProgressEvent.PROGRESS, ProgressBarID.METADATA,
+                    _loadDone, _loadTotal + 1, "Loading DAT"));
+        }
     }
 }

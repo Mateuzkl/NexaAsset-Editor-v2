@@ -84,24 +84,24 @@ package otlib.things
         public function readItemsCount():uint
         {
             position = MetadataFilePosition.ITEMS_COUNT;
-            return readUnsignedShort();
+            return _features && _features.extendedItems ? readUnsignedInt() : readUnsignedShort();
         }
 
         public function readOutfitsCount():uint
         {
-            position = MetadataFilePosition.OUTFITS_COUNT;
+            position = MetadataFilePosition.OUTFITS_COUNT + (_features && _features.extendedItems ? 2 : 0);
             return readUnsignedShort();
         }
 
         public function readEffectsCount():uint
         {
-            position = MetadataFilePosition.EFFECTS_COUNT;
+            position = MetadataFilePosition.EFFECTS_COUNT + (_features && _features.extendedItems ? 2 : 0);
             return readUnsignedShort();
         }
 
         public function readMissilesCount():uint
         {
-            position = MetadataFilePosition.MISSILES_COUNT;
+            position = MetadataFilePosition.MISSILES_COUNT + (_features && _features.extendedItems ? 2 : 0);
             return readUnsignedShort();
         }
 
@@ -171,8 +171,15 @@ package otlib.things
                 }
 
                 var totalSprites:uint = frameGroup.getTotalSprites();
-                if (totalSprites > SpriteExtent.DEFAULT_DATA_SIZE)
-                    throw new Error(StringUtil.format("A thing type has more than {0} sprites.", SpriteExtent.DEFAULT_DATA_SIZE));
+                // Pixel bytes per sprite are unrelated to the number of DAT references.
+                // Large 10.98 outfits legitimately reference more than 4,096 sprites.
+                var refs:Number = Number(frameGroup.width) * frameGroup.height * frameGroup.layers *
+                    frameGroup.patternX * frameGroup.patternY * frameGroup.patternZ * frameGroup.frames;
+                if (!refs || refs > 65536 || refs * (extended ? 4 : 2) > bytesAvailable)
+                    throw new Error("Too many sprite references in " + type.category + " " + type.id +
+                        " at byte " + position + ": " + frameGroup.width + "x" + frameGroup.height +
+                        ", layers=" + frameGroup.layers + ", patterns=" + frameGroup.patternX + "/" +
+                        frameGroup.patternY + "/" + frameGroup.patternZ + ", frames=" + frameGroup.frames);
 
                 frameGroup.spriteIndex = new Vector.<uint>(totalSprites);
                 for (i = 0; i < totalSprites; i++)

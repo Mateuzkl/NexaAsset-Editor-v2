@@ -123,6 +123,7 @@ package otlib.utils
             features.transparency = node.booleanAt("transparency");
             features.improvedAnimations = node.booleanAt("frame-durations");
             features.frameGroups = node.booleanAt("frame-groups");
+            features.extendedItems = node.booleanAt("extended-items");
 
             features.metadataController = node.valueAt("metadata-controller") || "default";
             features.attributeServer = node.valueAt("attribute-server") || "tfs1.4";
@@ -152,6 +153,7 @@ package otlib.utils
             node.writeAt("transparency", transparency);
             node.writeAt("frame-durations", improvedAnimations);
             node.writeAt("frame-groups", frameGroups);
+            node.writeAt("extended-items", features.extendedItems);
 
             node.writeAt("metadata-controller", metadataController);
             node.writeAt("attribute-server", attributeServer);
