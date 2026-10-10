@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark"
+    width="1000" height="700" creationComplete="startTest()">
+    <fx:Metadata>[ResourceBundle("strings")]</fx:Metadata>
+    <fx:Style source="../src/ObjectBuilder.css"/>
+    <fx:Script><![CDATA[
+        import flash.filesystem.File;
+        import flash.filesystem.FileStream;
+        import flash.filesystem.FileMode;
+        import flash.utils.ByteArray;
+        import flash.utils.Endian;
+        import mx.resources.ResourceManager;
+        import ob.components.OpenAssetsWindow;
+        import ob.components.CompileAssetsWindow;
+        import otlib.core.Version;
+        import otlib.core.VersionStorage;
+        import otlib.core.SpriteDimensionStorage;
+        import otlib.resources.Resources;
+        import otlib.items.ItemAttributeStorage;
+        private var fixtureRoot:File;
+        private var version:Version;
+        private var openWindow:OpenAssetsWindow;
+        private function startTest():void
+        {
+            try
+            {
+                Resources.manager = ResourceManager.getInstance();
+                var testDirectory:File = new File(File.applicationDirectory.nativePath);
+                var config:File = testDirectory.parent.resolvePath("src/config");
+                VersionStorage.getInstance().load(config.resolvePath("versions.xml"));
+                SpriteDimensionStorage.getInstance().load(config.resolvePath("sprites.xml"));
+                ItemAttributeStorage.getInstance().initialize(config.resolvePath("attributes").nativePath);
+                version = VersionStorage.getInstance().getBySignatures(0x4C2C7993, 0x4C220594);
+                if (!version) throw new Error("Missing 8.60 test version.");
+                fixtureRoot = testDirectory.resolvePath("windows-" + new Date().time);
+                fixtureRoot.createDirectory(); fixtureRoot.resolvePath("FileParts").createDirectory();
+                var bytes:ByteArray = buffer();
+                bytes.writeUnsignedInt(version.sprSignature); bytes.writeUnsignedInt(1); bytes.writeUnsignedInt(0);
+                write(fixtureRoot.resolvePath("FileParts/part_1.spr"), bytes);
+                bytes = buffer(); bytes.writeUTFBytes("SPMT"); bytes.writeUnsignedInt(1);
+                bytes.writeUnsignedInt(version.sprSignature); bytes.writeUnsignedInt(1); write(fixtureRoot.resolvePath("spr_parts.dat"), bytes);
+                bytes = buffer(); bytes.writeUTFBytes("SPIX"); bytes.writeUnsignedInt(1); bytes.writeUnsignedInt(1);
+                bytes.writeUnsignedInt(65537); write(fixtureRoot.resolvePath("spr_index.dat"), bytes);
+                openWindow = new OpenAssetsWindow(); openWindow.open(this);
+                openWindow.clientDirectory = fixtureRoot;
+                callLater(verifyMultiOnly);
+            }
+            catch (error:Error) { fail(error); }
+        }
+        private function verifyMultiOnly():void
+        {
+            try
+            {
+                openWindow.validateNow();
+                if (!openWindow.sprFile || openWindow.sprFile.name != "spr_index.dat" || openWindow.version != version)
+                    throw new Error("SPR-only multi-index selection/version failed.");
+                openWindow.close();
+                var bytes:ByteArray = buffer(); bytes.writeUnsignedInt(version.sprSignature); bytes.writeShort(1); bytes.writeUnsignedInt(0);
+                write(fixtureRoot.resolvePath("Tibia.spr"), bytes);
+                openWindow = new OpenAssetsWindow(); openWindow.open(this); openWindow.clientDirectory = fixtureRoot;
+                callLater(verifyPriority);
+            }
+            catch (error:Error) { fail(error); }
+        }
+        private function verifyPriority():void
+        {
+            try
+            {
+                openWindow.validateNow();
+                if (!openWindow.sprFile || openWindow.sprFile.name != "Tibia.spr")
+                    throw new Error("A regular SPR must not be silently overridden by multi-SPR.");
+                openWindow.close();
+                var compileWindow:CompileAssetsWindow = new CompileAssetsWindow();
+                compileWindow.version = version; compileWindow.filesName = "Tibia"; compileWindow.directory = fixtureRoot;
+                compileWindow.multiSpr = true; compileWindow.extendedItems = true; compileWindow.open(this); compileWindow.validateNow();
+                if (compileWindow.sprFile.name != "spr_index.dat" || !compileWindow.extended || !compileWindow.extendedItems)
+                    throw new Error("Multi-SPR output choice or extended items was not preserved.");
+                compileWindow.multiSpr = false; compileWindow.validateNow();
+                if (compileWindow.sprFile.name != "Tibia.spr") throw new Error("Standard output choice failed.");
+                compileWindow.close();
+                trace("PASS: SPR-only multi-index load, standard SPR priority, independent output selection");
+                NativeApplication.nativeApplication.exit(0);
+            }
+            catch (error:Error) { fail(error); }
+        }
+        private function buffer():ByteArray { var b:ByteArray = new ByteArray(); b.endian = Endian.LITTLE_ENDIAN; return b; }
+        private function write(file:File, bytes:ByteArray):void
+        {
+            var stream:FileStream = new FileStream();
+            try { stream.open(file, FileMode.WRITE); stream.writeBytes(bytes); } finally { stream.close(); }
+        }
+        private function fail(error:Error):void { trace("FAIL: " + error.getStackTrace()); NativeApplication.nativeApplication.exit(1); }
+    ]]></fx:Script>
+</s:WindowedApplication>

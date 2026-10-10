@@ -52,6 +52,7 @@ package otlib.sprites
     import otlib.utils.ChangeResult;
     import otlib.utils.SpriteUtils;
     import otlib.utils.SpriteExtent;
+    import otlib.utils.AssetOutputTransaction;
     import otlib.core.VersionStorage;
     import otlib.things.ThingType;
 
@@ -87,6 +88,7 @@ package otlib.sprites
         private var _loaded:Boolean;
         private var _currentFeatures:ClientFeatures;
         private var _rgbDataBuffer:ByteArray;
+        private var _exporting:Boolean;
 
         // --------------------------------------
         // Getters / Setters
@@ -596,15 +598,21 @@ package otlib.sprites
             {
                 validateOutput(compileFeatures);
                 if (file.name.toLowerCase() == "spr_index.dat")
-                    return compileMulti(file, version, compileFeatures);
-                tmpFile = file.parent.resolvePath(".ob-" + getTimer() + "-" + uint(Math.random() * uint.MAX_VALUE) + ".spr");
-                if (tmpFile.exists) throw new Error("SPR staging path already exists.");
-                writeSprFile(tmpFile, version, compileFeatures, 1, _spritesCount, 0);
-                if (equal && _reader) { _reader.closeSpriteFile(); readerClosed = true; }
-                // Do not delete the destination before a completed staging file exists.
-                tmpFile.moveTo(file, true);
-                if (equal || isTemporary) onLoad(file, version, compileFeatures, true);
-                done = true;
+                {
+                    done = compileMulti(file, version, compileFeatures);
+                    if (!_exporting && (equal || isTemporary)) onLoad(file, version, compileFeatures, true);
+                }
+                else
+                {
+                    tmpFile = file.parent.resolvePath(".ob-" + getTimer() + "-" + uint(Math.random() * uint.MAX_VALUE) + ".spr");
+                    if (tmpFile.exists) throw new Error("SPR staging path already exists.");
+                    writeSprFile(tmpFile, version, compileFeatures, 1, _spritesCount, 0);
+                    if (equal && _reader) { _reader.closeSpriteFile(); readerClosed = true; }
+                    // Do not delete the destination before a completed staging file exists.
+                    tmpFile.moveTo(file, true);
+                    if (!_exporting && (equal || isTemporary)) onLoad(file, version, compileFeatures, true);
+                    done = true;
+                }
             }
             catch (error:Error)
             {
@@ -626,6 +634,22 @@ package otlib.sprites
             return done;
         }
 
+        public function compileToStaging(file:File, version:Version, features:ClientFeatures):Boolean
+        {
+            _exporting = true;
+            var result:Boolean;
+            try { result = compile(file, version, features); }
+            finally { _exporting = false; }
+            return result;
+        }
+
+        public function closeReader():void { if (_reader) _reader.closeSpriteFile(); }
+        public function resumeReader():void { if (_reader && _file) _reader.openSpriteFile(_file); }
+        public function bindCompiledFile(file:File, version:Version, features:ClientFeatures):void
+        {
+            onLoad(file, version, features, true);
+        }
+
         public function validateOutput(features:ClientFeatures):void
         {
             if (!features.extended && _spritesCount > 65535)
@@ -636,6 +660,8 @@ package otlib.sprites
                 first:uint, count:uint, completed:uint):void
         {
             var stream:FileStream = new FileStream();
+            var addresses:ByteArray = new ByteArray(); addresses.endian = Endian.LITTLE_ENDIAN;
+            var records:ByteArray = new ByteArray(); records.endian = Endian.LITTLE_ENDIAN;
             var lastProgress:int = getTimer();
             reportProgress(completed, _spritesCount);
             try
@@ -648,6 +674,7 @@ package otlib.sprites
                 var header:uint = features.extended ? 8 : 6;
                 var offset:Number = header + Number(count) * 4;
                 if (offset > uint.MAX_VALUE) throw new Error("SPR address table exceeds the 4 GiB format limit.");
+                stream.position = offset;
                 for (var local:uint = 1; local <= count; local++)
                 {
                     var id:uint = first + local - 1;
@@ -658,23 +685,24 @@ package otlib.sprites
                     {
                         if (sprite && !sprite.isEmpty && sprite.transparent != features.transparency)
                         {
-                            converted = new Sprite(id, features.transparency);
-                            converted.setPixels(sprite.getPixels());
+                            converted = sprite.withTransparency(features.transparency);
                             sprite = converted;
                         }
-                        stream.position = header + Number(local - 1) * 4;
-                        if (!sprite || sprite.isEmpty) stream.writeUnsignedInt(0);
+                        if (!sprite || sprite.isEmpty) addresses.writeUnsignedInt(0);
                         else
                         {
                             if (sprite.length > 65535) throw new Error("SPR record length exceeds the 16-bit record-size limit.");
                             if (offset + 5 + sprite.length > uint.MAX_VALUE)
                                 throw new Error("SPR exceeds 4 GiB. Use multi-SPR instead.");
-                            stream.writeUnsignedInt(uint(offset));
-                            stream.position = offset;
-                            stream.writeByte(255); stream.writeByte(0); stream.writeByte(255);
-                            stream.writeShort(sprite.length);
-                            stream.writeBytes(sprite.compressedPixels, 0, sprite.length);
-                            offset = stream.position;
+                            addresses.writeUnsignedInt(uint(offset));
+                            records.writeByte(255); records.writeByte(0); records.writeByte(255);
+                            records.writeShort(sprite.length);
+                            records.writeBytes(sprite.compressedPixels, 0, sprite.length);
+                            offset += 5 + sprite.length;
+                            if (records.length >= 4 * 1024 * 1024)
+                            {
+                                stream.writeBytes(records); records.clear();
+                            }
                         }
                     }
                     finally { if (converted) converted.dispose(); }
@@ -684,8 +712,12 @@ package otlib.sprites
                         lastProgress = getTimer();
                     }
                 }
+                if (records.length) stream.writeBytes(records);
+                // Sparse files still need the complete address table when every sprite is empty.
+                stream.position = header;
+                if (addresses.length) stream.writeBytes(addresses);
             }
-            finally { try { stream.close(); } catch (error:Error) {} }
+            finally { try { stream.close(); } catch (error:Error) {} addresses.clear(); records.clear(); }
         }
 
         private function reportProgress(value:uint, total:uint):void
@@ -697,13 +729,9 @@ package otlib.sprites
         private function compileMulti(file:File, version:Version, features:ClientFeatures):Boolean
         {
             var root:File = file.parent;
-            // A multi-file archive cannot safely be replaced one part at a time.
-            // Require a fresh output folder rather than risk mixing old and new parts.
-            if (file.exists || root.resolvePath("spr_parts.dat").exists || root.resolvePath("FileParts").exists)
-                throw new Error("Multi-SPR output requires a new folder (existing archives are never overwritten).");
-            var stage:File = root.resolvePath(".ob-multi-" + getTimer() + "-" + uint(Math.random() * uint.MAX_VALUE));
-            if (stage.exists) throw new Error("Multi-SPR staging path already exists.");
-            stage.createDirectory();
+            var stage:File = AssetOutputTransaction.createStage(root);
+            var suspended:Boolean = false;
+            var success:Boolean = false;
             try
             {
                 var partsDir:File = stage.resolvePath("FileParts");
@@ -725,12 +753,16 @@ package otlib.sprites
                 }
                 writeBytesFile(stage.resolvePath("spr_parts.dat"), parts);
                 writeBytesFile(stage.resolvePath("spr_index.dat"), index);
-                partsDir.moveTo(root.resolvePath("FileParts"));
-                stage.resolvePath("spr_parts.dat").moveTo(root.resolvePath("spr_parts.dat"));
-                // Publish the entry point last; failures leave no valid-looking index.
-                stage.resolvePath("spr_index.dat").moveTo(file);
+                if (FileUtil.equals(_file, file)) { closeReader(); suspended = true; }
+                AssetOutputTransaction.publish(stage, root, ["FileParts", "spr_parts.dat", "spr_index.dat"]);
+                success = true;
             }
-            finally { if (stage.exists) stage.deleteDirectory(true); }
+            finally
+            {
+                if (suspended) resumeReader();
+                // Retain unpublished artifacts if publication/rollback failed.
+                if (success && stage.exists) stage.deleteDirectory(true);
+            }
             return true;
         }
 
@@ -975,7 +1007,7 @@ package otlib.sprites
             _currentFeatures.applyVersionDefaults(version.value);
             if (_reader) _reader.closeSpriteFile();
             _reader = new SpriteReader(_currentFeatures);
-            _reader.openSpriteFile(file);
+            _reader.openSpriteFile(file, reloading ? null : loadProgress);
             _signature = _reader.readSignature();
             _spritesCount = _reader.readSpriteCount();
             _headerSize = _currentFeatures.extended ? SpriteFileSize.HEADER_U32 : SpriteFileSize.HEADER_U16;
@@ -1000,6 +1032,12 @@ package otlib.sprites
             sprite.setPixels(bitmap.getPixels(bitmap.rect));
             // SpriteUtils owns the shared alert bitmap; do not dispose it here.
             return sprite;
+        }
+
+        private function loadProgress(done:uint, total:uint, label:String):void
+        {
+            if (hasEventListener(ProgressEvent.PROGRESS))
+                dispatchEvent(new ProgressEvent(ProgressEvent.PROGRESS, ProgressBarID.SPRITES, done, total, label));
         }
 
         // --------------------------------------------------------------------------

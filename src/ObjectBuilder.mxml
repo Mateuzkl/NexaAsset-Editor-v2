@@ -639,7 +639,7 @@ THE SOFTWARE.
                         _settings.setLastDirectory(mainFile);
                         _settings.setServerItemsDirectory(window.serverItemsDirectory);
                         _settings.lastAttributeServer = window.attributeServer;
-                        _filesName = FileUtil.getName(mainFile);
+                        _filesName = mainFile.name.toLowerCase() == "spr_index.dat" ? "Tibia" : FileUtil.getName(mainFile);
             
                         // Build server items path: check for OTB, then tibia.dat, then assets.dat
                         var serverItemsPath:String = null;
@@ -694,7 +694,7 @@ THE SOFTWARE.
                 if (!clientLoaded)
                     return;
             
-                if (clientIsTemporary || _clientInfo.multiSpr)
+                if (clientIsTemporary)
                 {
                     compileProjectAs();
                     return;
@@ -720,6 +720,8 @@ THE SOFTWARE.
                 window.transparency = _clientInfo.transparency;
                 window.improvedAnimations = _clientInfo.improvedAnimations;
                 window.frameGroups = _clientInfo.frameGroups;
+                window.extendedItems = _clientInfo.features.extendedItems;
+                window.multiSpr = _clientInfo.multiSpr;
                 window.filesName = isNullOrEmpty(_filesName) ? "Tibia" : _filesName;
                 window.serverItemsLoaded = _otbLoaded;
                 window.serverItemsDirectory = _settings.getServerItemsDirectory();

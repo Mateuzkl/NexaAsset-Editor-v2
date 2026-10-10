@@ -27,7 +27,7 @@ THE SOFTWARE.
     xmlns:mg="library://ns.mignari.com/mg"
     xmlns:otlib="otlib.components.*"
     width="500"
-    height="480"
+    height="510"
     fontSize="11"
     title="@Resource(key='compileAssetFiles', bundle='strings')"
     creationComplete="creationCompleteHandler(event)">
@@ -65,6 +65,15 @@ THE SOFTWARE.
             private var m_extended:Boolean;
             private var m_extendedChanged:Boolean;
             private var m_multiSpr:Boolean;
+            [Bindable] public var extendedItems:Boolean;
+            public function get multiSpr():Boolean { return m_multiSpr; }
+            public function set multiSpr(value:Boolean):void
+            {
+                m_multiSpr = value;
+                if (value) m_extended = true;
+                m_extendedChanged = true;
+                invalidateProperties();
+            }
             private var m_transparency:Boolean;
             private var m_transparencyChanged:Boolean;
             private var m_improvedAnimations:Boolean;
@@ -330,9 +339,9 @@ THE SOFTWARE.
                 var done:Boolean = (m_datFile && m_sprFile && m_version);
                 if (done)
                 {
-                    m_extended = (m_extended || m_version.value >= 960);
+                    m_extended = (m_multiSpr || m_extended || m_version.value >= 960);
                     m_improvedAnimations = (m_improvedAnimations || m_version.value >= 1050);
-                    extendedCheckBox.enabled = (m_version.value < 960);
+                    extendedCheckBox.enabled = (!m_multiSpr && m_version.value < 960);
                     transparencyCheckBox.enabled = true;
                     improvedAnimationsCheckBox.enabled = (m_version.value < 1050);
                     frameGroupsCheckBox.enabled = true;
@@ -604,7 +613,7 @@ THE SOFTWARE.
                     <fx:String>DAT + multi-SPR — 32-bit (SPMT/SPIX, parts of 65,535)</fx:String>
                 </s:ArrayList></s:dataProvider>
             </s:DropDownList>
-            <s:Label width="100%" text="Multi-SPR requires a fresh output folder. To merge parts, open multi-SPR and choose standard 32-bit output. Clients must support the selected format; DAT object counts remain 16-bit."/>
+            <s:Label width="100%" text="Choose output independently of the input. Existing assets are replaced only after compilation succeeds; the previous files are retained in an .ob-backup folder. 32-bit item IDs require client support."/>
         </s:VGroup>
         <mg:GroupBox width="100%" label="@Resource(key='options', bundle='strings')">
             <mg:layout>
@@ -628,6 +637,9 @@ THE SOFTWARE.
             <s:CheckBox id="frameGroupsCheckBox"
                 label="@Resource(key='frameGroups', bundle='strings')"
                 change="frameGroupsCheckBoxChangeHandler(event)"/>
+            <s:CheckBox label="32-bit DAT item IDs (extended-items)"
+                selected="{extendedItems}" change="extendedItems = event.target.selected"
+                toolTip="Required by custom DAT files with item IDs above 65,535, including the provided 10.98 assets."/>
         </mg:GroupBox>
     </s:VGroup>
 

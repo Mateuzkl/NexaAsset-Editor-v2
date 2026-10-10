@@ -147,6 +147,7 @@ package
     import otlib.utils.FrameGroupsConverter;
     import otlib.core.SpriteDimensionStorage;
     import otlib.utils.SpriteExtent;
+    import otlib.utils.AssetOutputTransaction;
     import ob.commands.SetSpriteDimensionCommand;
     import ob.commands.things.ConvertFrameGroupsCommand;
     import ob.commands.things.ConvertFrameGroupsResultCommand;
@@ -543,6 +544,7 @@ package
             if (_datFile)
             {
                 _things.load(_datFile, _version, _features);
+                if (!_things || !_things.loaded) return;
             }
             else
             {
@@ -679,15 +681,21 @@ package
             if (spr.name.toLowerCase() == "spr_index.dat")
             {
                 features.extended = true;
-                if (spr.exists || spr.parent.resolvePath("spr_parts.dat").exists || spr.parent.resolvePath("FileParts").exists)
-                {
-                    Log.error("Select a new output folder for multi-SPR. Existing archives will not be overwritten.");
-                    return;
-                }
             }
             try { _sprites.validateOutput(features); }
             catch (capacityError:Error) { Log.error(capacityError.message); return; }
             var structureChanged:Boolean = _features.differs(features);
+            if (dat.name == spr.name || (spr.name.toLowerCase() == "spr_index.dat" && dat.name.toLowerCase() == "spr_parts.dat"))
+                throw new Error("DAT output name conflicts with the sprite archive.");
+            if (!FileUtil.equals(dat.parent, spr.parent)) throw new Error("DAT and SPR output must share a folder.");
+            var stage:File = AssetOutputTransaction.createStage(dat.parent);
+            var stagedDat:File = stage.resolvePath(dat.name);
+            var stagedSpr:File = stage.resolvePath(spr.name);
+            var publicationAttempted:Boolean = false;
+            var committed:Boolean = false;
+            var readerSuspended:Boolean = false;
+            try
+            {
 
             // Update attribute server in registry using the features passed to compile
             if (features.attributeServer)
@@ -697,14 +705,14 @@ package
 
             // 1/3 Saving DAT
             sendCommand(new ProgressCommand(ProgressBarID.METADATA, 0, 3, "Saving DAT"));
-            if (!_things.compile(dat, version, features))
+            if (!_things.compileToStaging(stagedDat, version, features))
             {
                 return;
             }
 
             // 2/3 Saving SPR
             sendCommand(new ProgressCommand(ProgressBarID.METADATA, 1, 3, "Saving SPR"));
-            if (!_sprites.compile(spr, version, features))
+            if (!_sprites.compileToStaging(stagedSpr, version, features))
             {
                 return;
             }
@@ -739,7 +747,7 @@ package
 
                     var peerFile:File = itemsDir.resolvePath(baseName + "." + peerExtension);
 
-                    if (!_items.save(peerFile, serverItemsBinaryPeer, dat))
+                    if (!_items.save(peerFile, serverItemsBinaryPeer, stagedDat))
                     {
                         Log.error("Failed to save/export binary peer: " + peerFile.nativePath);
                     }
@@ -748,25 +756,40 @@ package
 
             // Save .otfi file
             var dir:File = FileUtil.getDirectory(dat);
-            var otfiFile:File = dir.resolvePath(FileUtil.getName(dat) + ".otfi");
+            var otfiFile:File = stage.resolvePath(FileUtil.getName(dat) + ".otfi");
             var otfi:OTFI = new OTFI(features, dat.name, spr.name, SpriteExtent.DEFAULT_SIZE, SpriteExtent.DEFAULT_DATA_SIZE);
-            otfi.save(otfiFile);
+            if (!otfi.save(otfiFile)) throw new Error("Unable to write the staged OTFI descriptor.");
+            var names:Array = [dat.name];
+            if (spr.name.toLowerCase() == "spr_index.dat") names = names.concat(["FileParts", "spr_parts.dat", "spr_index.dat"]);
+            else names.push(spr.name);
+            names.push(otfiFile.name);
+            sendCommand(new ProgressCommand(ProgressBarID.METADATA, 2, 3, "Publishing assets"));
+            _sprites.closeReader(); readerSuspended = true;
+            publicationAttempted = true;
+            var backup:File = AssetOutputTransaction.publish(stage, dir, names);
+            committed = true;
+            _things.bindCompiledFile(dat, version, features);
+            _sprites.bindCompiledFile(spr, version, features);
+            readerSuspended = false;
+            _datFile = dat; _sprFile = spr; _version = version; _features = features.clone();
+            if (backup) Log.info("Previous assets retained at " + backup.nativePath);
 
             // Complete
             sendCommand(new ProgressCommand(ProgressBarID.METADATA, 3, 3, "Saving complete"));
 
             clientCompileComplete();
 
-            if (!_datFile || !_sprFile)
-            {
-                _datFile = dat;
-                _sprFile = spr;
-            }
-
             if (structureChanged)
                 sendCommand(new NeedToReloadCommand(features));
             else
                 sendClientInfo();
+            }
+            finally
+            {
+                if (readerSuspended) _sprites.resumeReader();
+                // Recovery artifacts are retained if publication did not finish.
+                if ((!publicationAttempted || committed) && stage.exists) stage.deleteDirectory(true);
+            }
         }
 
         private function unloadFilesCallback():void

@@ -144,10 +144,49 @@ package otlib.sprites
                 pixels += colored;
                 var bytes:Number = Number(colored) * channels;
                 if (pixels > SpriteExtent.DEFAULT_DATA_SIZE / 4 || bytes > _compressedPixels.bytesAvailable)
-                    throw new Error("Invalid SPR RLE run length.");
+                    throw new Error("Invalid SPR RLE run length for sprite " + _id +
+                        " (pixels=" + pixels + ", colored=" + colored + ", channels=" + channels +
+                        ", remaining=" + _compressedPixels.bytesAvailable + ").");
                 _compressedPixels.position += bytes;
             }
             _compressedPixels.position = 0;
+        }
+
+        /** Convert only colored RLE runs; do not inflate/recompress 1,024 pixels. */
+        internal function withTransparency(value:Boolean):Sprite
+        {
+            validateCompressedPixels();
+            var result:Sprite = new Sprite(_id, value);
+            // Preserve the historical handling of fully transparent black pixels
+            // when removing alpha; RGB -> RGBA can keep all RLE runs verbatim.
+            if (_transparent && !value)
+            {
+                result.setPixels(getPixels());
+                return result;
+            }
+            var source:ByteArray = _compressedPixels, target:ByteArray = result.compressedPixels;
+            source.position = 0;
+            while (source.bytesAvailable)
+            {
+                target.writeShort(source.readUnsignedShort());
+                var colored:uint = source.readUnsignedShort();
+                target.writeShort(colored);
+                if (value == _transparent)
+                {
+                    var bytes:uint = colored * (value ? 4 : 3);
+                    if (bytes) target.writeBytes(source, source.position, bytes);
+                    source.position += bytes;
+                }
+                else for (var i:uint = 0; i < colored; i++)
+                {
+                    // Both buffers use little endian: emit R,G,B,255 in one write.
+                    var rgba:uint = source.readUnsignedByte() | (source.readUnsignedByte() << 8) |
+                        (source.readUnsignedByte() << 16) | 0xFF000000;
+                    target.writeUnsignedInt(rgba);
+                }
+            }
+            source.position = 0;
+            return result;
         }
 
         /**

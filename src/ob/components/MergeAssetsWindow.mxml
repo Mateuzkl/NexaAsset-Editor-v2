@@ -52,6 +52,7 @@ THE SOFTWARE.
             import otlib.events.FileTextInputEvent;
             import otlib.utils.ClientInfo;
             import otlib.utils.ClientInfoLoader;
+            import otlib.utils.OTFI;
             import otlib.utils.OTFormat;
             
             // --------------------------------------------------------------------------
@@ -70,6 +71,7 @@ THE SOFTWARE.
             private var m_improvedAnimations:Boolean;
             private var m_improvedAnimationsChanged:Boolean;
             private var m_frameGroups:Boolean;
+            public var extendedItems:Boolean;
             private var m_frameGroupsChanged:Boolean;
             private var m_detail:uint;
             
@@ -245,8 +247,14 @@ THE SOFTWARE.
 
                 // Rust-compatible multi-SPR entry point (physical parts stay lazy).
                 var indexFile:File = directory.resolvePath("spr_index.dat");
-                if (indexFile.exists && directory.resolvePath("spr_parts.dat").exists)
+                if (!spr && indexFile.exists && directory.resolvePath("spr_parts.dat").exists)
                     spr = indexFile;
+                var descriptor:OTFI = new OTFI();
+                if (descriptor.load(directory.resolvePath("Tibia.otfi")) && descriptor.spritesFile)
+                {
+                    var preferred:File = directory.resolvePath(descriptor.spritesFile);
+                    if (preferred.exists && !preferred.isDirectory) spr = preferred;
+                }
             
                 // Searchs renamed spr/dat files on directory.
                 if (!spr || !dat)
@@ -294,6 +302,7 @@ THE SOFTWARE.
                     transparency = info.transparency;
                     improvedAnimations = info.improvedAnimations;
                     frameGroups = info.frameGroups;
+                    extendedItems = info.features.extendedItems;
                     clientVersionLabel.text = info.clientVersionStr;
                     datSignatureLabel.text = info.datSignature.toString(16).toUpperCase();
                     itemsCountLabel.text = info.maxItemId.toString();

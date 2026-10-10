@@ -40,6 +40,7 @@ package otlib.core
         public var transparency:Boolean;
         public var improvedAnimations:Boolean;
         public var frameGroups:Boolean;
+        public var extendedItems:Boolean;
         public var metadataController:String;
         public var attributeServer:String;
 
@@ -52,7 +53,8 @@ package otlib.core
                 improvedAnimations:Boolean = false,
                 frameGroups:Boolean = false,
                 metadataController:String = "default",
-                attributeServer:String = null)
+                attributeServer:String = null,
+                extendedItems:Boolean = false)
         {
             this.extended = extended;
             this.transparency = transparency;
@@ -60,6 +62,7 @@ package otlib.core
             this.frameGroups = frameGroups;
             this.metadataController = metadataController;
             this.attributeServer = attributeServer;
+            this.extendedItems = extendedItems;
         }
 
         // --------------------------------------------------------------------------
@@ -75,7 +78,7 @@ package otlib.core
          */
         public function clone():ClientFeatures
         {
-            return new ClientFeatures(extended, transparency, improvedAnimations, frameGroups, metadataController, attributeServer);
+            return new ClientFeatures(extended, transparency, improvedAnimations, frameGroups, metadataController, attributeServer, extendedItems);
         }
 
         /**
@@ -89,6 +92,7 @@ package otlib.core
                 this.transparency = other.transparency;
                 this.improvedAnimations = other.improvedAnimations;
                 this.frameGroups = other.frameGroups;
+                this.extendedItems = other.extendedItems;
                 this.metadataController = other.metadataController;
                 this.attributeServer = other.attributeServer;
             }
@@ -122,6 +126,7 @@ package otlib.core
                     transparency != other.transparency ||
                     improvedAnimations != other.improvedAnimations ||
                     frameGroups != other.frameGroups ||
+                    extendedItems != other.extendedItems ||
                     metadataController != other.metadataController ||
                     attributeServer != other.attributeServer);
         }
@@ -132,6 +137,7 @@ package otlib.core
                 ", transparency=" + transparency +
                 ", improvedAnimations=" + improvedAnimations +
                 ", frameGroups=" + frameGroups +
+                ", extendedItems=" + extendedItems +
                 ", metadataController=" + metadataController +
                 ", attributeServer=" + attributeServer + "]";
         }
@@ -148,6 +154,7 @@ package otlib.core
             output.writeBoolean(frameGroups);
             output.writeUTF(metadataController ? metadataController : "default");
             output.writeUTF(attributeServer ? attributeServer : "");
+            output.writeBoolean(extendedItems);
         }
 
         public function readExternal(input:IDataInput):void
@@ -161,12 +168,14 @@ package otlib.core
             {
                 metadataController = input.readUTF();
                 attributeServer = input.readUTF();
+                if (!attributeServer) attributeServer = null;
             }
             catch (e:Error)
             {
                 metadataController = "default";
                 attributeServer = null;
             }
+            extendedItems = input.bytesAvailable > 0 ? input.readBoolean() : false;
         }
 
         // --------------------------------------------------------------------------
@@ -200,7 +209,8 @@ package otlib.core
                     ("improvedAnimations" in window) ? window.improvedAnimations : false,
                     ("frameGroups" in window) ? window.frameGroups : false,
                     ("metadataController" in window) ? window.metadataController : "default",
-                    ("attributeServer" in window) ? window.attributeServer : null
+                    ("attributeServer" in window) ? window.attributeServer : null,
+                    ("extendedItems" in window) ? window.extendedItems : false
                 );
         }
     }

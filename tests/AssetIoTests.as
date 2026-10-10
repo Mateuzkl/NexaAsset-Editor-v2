@@ -4,6 +4,7 @@ package
     import flash.display.Sprite;
     import flash.events.InvokeEvent;
     import flash.events.ErrorEvent;
+    import flash.events.Event;
     import flash.filesystem.File;
     import flash.filesystem.FileMode;
     import flash.filesystem.FileStream;
@@ -22,6 +23,12 @@ package
     import otlib.things.ThingTypeStorage;
     import otlib.utils.ClientInfoLoader;
     import otlib.utils.OTFI;
+    import otlib.utils.AssetOutputTransaction;
+    import otlib.storages.events.StorageEvent;
+    import otlib.core.MetadataControllerStorage;
+    import otlib.things.MetadataWriter;
+    import otlib.things.ThingType;
+    import otlib.things.ThingCategory;
 
     [ResourceBundle("strings")]
     public class AssetIoTests extends Sprite
@@ -32,6 +39,9 @@ package
         private var started:int;
         private var progressCount:uint;
         private var lastProgress:uint;
+        private var progressError:String = "";
+        private var compileEvents:uint;
+        private var changeEvents:uint;
 
         public function AssetIoTests()
         {
@@ -50,6 +60,8 @@ package
                 testRoot.createDirectory();
                 testBitmaps();
                 testFormats();
+                testTransaction();
+                testExtendedItems();
                 if (event.arguments.length > 1) testReal(new File(event.arguments[1]), new File(event.arguments[2]));
                 note("PASS: all tests (" + ((getTimer() - started) / 1000).toFixed(1) + "s)");
             }
@@ -68,10 +80,14 @@ package
         private function capture(event:ErrorEvent):void { errorText = event.text; }
         private function progress(event:ProgressEvent):void
         {
-            check(event.loaded >= lastProgress, "SPR progress must be monotonic.");
+            if (event.label != "Saving SPR") return;
+            // Event-listener exceptions are swallowed by AIR; assert outside dispatch.
+            if (event.loaded < lastProgress) progressError = "SPR progress must be monotonic.";
             lastProgress = event.loaded;
             progressCount++;
         }
+        private function compiled(event:Event):void { compileEvents++; }
+        private function changed(event:Event):void { changeEvents++; }
 
         private function testBitmaps():void
         {
@@ -134,15 +150,28 @@ package
             var rejected:File = testRoot.resolvePath("must-not-truncate.spr");
             check(!storage.compile(rejected, version(), new ClientFeatures(false)), "Reject 65536 in 16-bit mode.");
             check(!rejected.exists, "Capacity failure must not create destination.");
+            var sparse:SpriteStorage = new SpriteStorage(); sparse.createNew(version(), f);
+            check(sparse.compile(testRoot.resolvePath("all-empty.spr"), version(), f), "All-empty sprite table.");
+            sparse.unload();
+            var sparseReader:SpriteReader = new SpriteReader(f); sparseReader.openSpriteFile(testRoot.resolvePath("all-empty.spr"));
+            check(sparseReader.readSpriteCount() == 1 && sparseReader.readSprite(1) == null, "All-empty table reopens.");
+            sparseReader.closeSpriteFile();
             var unified:File = testRoot.resolvePath("extended.spr");
             check(storage.compile(unified, version(), f), "32-bit compile: " + errorText);
             check(progressCount >= 2 && lastProgress == 65536, "Actual SPR progress events.");
+            check(!progressError, progressError);
             var alpha:ClientFeatures = new ClientFeatures(true, true);
             lastProgress = 0;
             check(storage.compile(testRoot.resolvePath("alpha.spr"), version(), alpha), "Transparency conversion.");
             check(!storage.getSprite(65536).transparent, "Export must not mutate cached source transparency.");
+            var alphaReader:SpriteReader = new SpriteReader(alpha); alphaReader.openSpriteFile(testRoot.resolvePath("alpha.spr"));
+            check(samePixels(original, alphaReader.readSprite(65536).getPixels()), "Direct RLE alpha conversion preserves opaque pixels.");
+            alphaReader.closeSpriteFile();
             var multiRoot:File = testRoot.resolvePath("multi"); multiRoot.createDirectory(); lastProgress = 0;
+            storage.addEventListener(StorageEvent.COMPILE, compiled);
+            storage.addEventListener(StorageEvent.CHANGE, changed);
             check(storage.compile(multiRoot.resolvePath("spr_index.dat"), version(), f), "Multi-SPR compile.");
+            check(compileEvents == 1 && changeEvents == 1, "Multi-SPR must emit both completion events exactly once.");
             check(multiRoot.resolvePath("FileParts/part_2.spr").exists, "Multi-SPR boundary split.");
             storage.unload();
             check(!storage.loaded && storage.spritesCount == 0, "Unload resets storage.");
@@ -161,6 +190,15 @@ package
                 reader.readSprite(65536); reader.closeSpriteFile();
             }
             storage.load(multiRoot.resolvePath("spr_index.dat"), version(), f); lastProgress = 0;
+            storage.replaceSprite(65536, original);
+            check(storage.compile(multiRoot.resolvePath("spr_index.dat"), version(), f), "Recompile multi-SPR in place: " + errorText);
+            check(!storage.changed && storage.getPixels(65536)[1] == 90, "In-place save rebinds storage without lost pixels.");
+            var backupFound:Boolean = false;
+            for each (var backup:File in multiRoot.getDirectoryListing())
+                if (backup.isDirectory && backup.name.indexOf(".ob-backup-") == 0)
+                    backupFound = backup.resolvePath("spr_index.dat").exists && backup.resolvePath("FileParts/part_2.spr").exists;
+            check(backupFound, "Previous complete multi-SPR generation is recoverable.");
+            lastProgress = 0;
             check(storage.compile(testRoot.resolvePath("merged.spr"), version(), f), "Multi-SPR -> standard SPR.");
             storage.unload();
             reader.openSpriteFile(testRoot.resolvePath("merged.spr"));
@@ -188,7 +226,73 @@ package
             reader = new SpriteReader(new ClientFeatures(false)); reader.openSpriteFile(testRoot.resolvePath("legacy.spr"));
             check(reader.readSpriteCount() == 65535 && reader.readSprite(65535).getPixels()[1] == 90, "No off-by-one/truncation at 65,535.");
             reader.closeSpriteFile();
+            var legacyInput:SpriteStorage = new SpriteStorage();
+            legacyInput.load(testRoot.resolvePath("legacy.spr"), version(), new ClientFeatures(false));
+            var legacyMulti:File = testRoot.resolvePath("legacy-to-multi/spr_index.dat"); legacyMulti.parent.createDirectory();
+            check(legacyInput.compile(legacyMulti, version(), f), "Legacy SPR -> multi-SPR."); legacyInput.unload();
+            check(!progressError, progressError);
             note("PASS: 16/32-bit boundaries, transparency, monotonic progress, multi-SPR, merge, 25 close cycles, invalid locator");
+        }
+
+        private function testTransaction():void
+        {
+            var root:File = testRoot.resolvePath("transaction"); root.createDirectory();
+            writeText(root.resolvePath("a.dat"), "old a"); writeText(root.resolvePath("b.spr"), "old b");
+            var stage:File = AssetOutputTransaction.createStage(root);
+            writeText(stage.resolvePath("a.dat"), "new a"); writeText(stage.resolvePath("b.spr"), "new b");
+            var lock:FileStream = new FileStream(); lock.open(root.resolvePath("b.spr"), FileMode.READ);
+            var failed:Boolean = false;
+            try { AssetOutputTransaction.publish(stage, root, ["a.dat", "b.spr"]); }
+            catch (error:Error) { failed = true; note("Expected publication failure: " + error.message); }
+            finally { lock.close(); }
+            check(failed && readText(root.resolvePath("a.dat")) == "old a" && readText(root.resolvePath("b.spr")) == "old b",
+                "Locked destination rolls back already moved files.");
+            var backup:File = AssetOutputTransaction.publish(stage, root, ["a.dat", "b.spr"]);
+            check(readText(root.resolvePath("a.dat")) == "new a" && readText(backup.resolvePath("b.spr")) == "old b", "Publish and retained backup.");
+            note("PASS: multi-file publication rollback and retained backups");
+        }
+
+        private function writeText(file:File, text:String):void
+        {
+            var stream:FileStream = new FileStream();
+            try { stream.open(file, FileMode.WRITE); stream.writeUTFBytes(text); } finally { stream.close(); }
+        }
+        private function readText(file:File):String
+        {
+            var stream:FileStream = new FileStream();
+            try { stream.open(file, FileMode.READ); return stream.readUTFBytes(stream.bytesAvailable); }
+            finally { stream.close(); }
+            return "";
+        }
+
+        private function testExtendedItems():void
+        {
+            var f:ClientFeatures = new ClientFeatures(true); f.extendedItems = true;
+            var source:File = testRoot.resolvePath("extended-items.dat");
+            var writer:MetadataWriter = MetadataControllerStorage.getInstance().createWriter("default", 860);
+            writer.features = f; writer.open(source, FileMode.WRITE);
+            writer.writeUnsignedInt(version().datSignature); writer.writeUnsignedInt(65536);
+            writer.writeShort(0); writer.writeShort(0); writer.writeShort(0);
+            var settings:ObjectBuilderSettings = new ObjectBuilderSettings();
+            for (var id:uint = 100; id <= 65536; id++)
+            {
+                var thing:ThingType = ThingType.create(id, ThingCategory.ITEM, false, settings.getDefaultDuration(ThingCategory.ITEM));
+                writer.writeItemProperties(thing); writer.writeTexturePatterns(thing);
+            }
+            writer.close();
+            var storage:ThingTypeStorage = new ThingTypeStorage(settings);
+            storage.addEventListener(ErrorEvent.ERROR, capture);
+            storage.load(source, version(), f);
+            check(storage.loaded && storage.itemsCount == 65536, "32-bit DAT item count/load.");
+            check(!storage.compile(testRoot.resolvePath("rejected-items.dat"), version(), new ClientFeatures(true)), "Reject item-count truncation.");
+            check(storage.compile(testRoot.resolvePath("extended-items-out.dat"), version(), f), "32-bit DAT item output.");
+            storage.unload();
+            storage.load(testRoot.resolvePath("extended-items-out.dat"), version(), f);
+            check(storage.loaded && storage.itemsCount == 65536, "Extended item count round-trip."); storage.unload();
+            var bytes:ByteArray = new ByteArray(); f.writeExternal(bytes); bytes.position = 0;
+            var copy:ClientFeatures = new ClientFeatures(); copy.readExternal(bytes);
+            check(copy.extendedItems && !copy.differs(f), "Worker feature serialization preserves extended-items.");
+            note("PASS: 65,536 DAT items, reject truncation, round-trip, worker feature serialization");
         }
 
         private function testReal(source:File, config:File):void
@@ -200,6 +304,7 @@ package
             check(probe.clientInfo != null, "Real file probe: " + errorText);
             var v:Version = VersionStorage.getInstance().getFromClientInfo(probe.clientInfo);
             var f:ClientFeatures = probe.clientInfo.features;
+            note("Real features: " + f);
             var things:ThingTypeStorage = new ThingTypeStorage(new ObjectBuilderSettings());
             things.addEventListener(ErrorEvent.ERROR, capture);
             things.load(source.resolvePath("Tibia.dat"), v, f);
@@ -210,7 +315,9 @@ package
             var sprites:SpriteStorage = new SpriteStorage(); sprites.addEventListener(ErrorEvent.ERROR, capture);
             sprites.load(source.resolvePath("spr_index.dat"), v, f);
             note("Real SPR loaded: " + sprites.spritesCount + " sprites; compiling standard SPR...");
+            var compileStarted:int = getTimer();
             check(sprites.compile(out.resolvePath("Tibia.spr"), v, f), "Real SPR merge: " + errorText);
+            note("Real standard SPR compile: " + ((getTimer() - compileStarted) / 1000).toFixed(2) + "s");
             new OTFI(f, "Tibia.dat", "Tibia.spr", 32, 4096).save(out.resolvePath("Tibia.otfi"));
             var reopened:SpriteStorage = new SpriteStorage(); reopened.load(out.resolvePath("Tibia.spr"), v, f);
             check(reopened.spritesCount == sprites.spritesCount, "Real logical sprite count preserved.");
@@ -221,7 +328,10 @@ package
             reopened.unload(); sprites.unload(); things.unload();
             var datReload:ThingTypeStorage = new ThingTypeStorage(new ObjectBuilderSettings());
             datReload.addEventListener(ErrorEvent.ERROR, capture); datReload.load(out.resolvePath("Tibia.dat"), v, f);
-            check(datReload.loaded, "Recompiled DAT reopen: " + errorText); datReload.unload();
+            check(datReload.loaded, "Recompiled DAT reopen: " + errorText);
+            check(datReload.itemsCount == probe.clientInfo.maxItemId && datReload.outfitsCount == probe.clientInfo.maxOutfitId,
+                "Real DAT counts preserved.");
+            datReload.unload();
             note("PASS: real multi-SPR -> standard DAT/SPR compile, sampled pixels, reopen and close");
         }
 

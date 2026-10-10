@@ -5,6 +5,7 @@ package otlib.sprites
     import flash.filesystem.FileStream;
     import flash.utils.ByteArray;
     import flash.utils.Endian;
+    import flash.utils.getTimer;
     import otlib.core.ClientFeatures;
 
     /** Rust-compatible SPMT/SPIX v1; global IDs never depend on physical ordering. */
@@ -21,7 +22,7 @@ package otlib.sprites
 
         public function MultiSpriteReader(transparent:Boolean) { _transparent = transparent; }
 
-        public function open(indexFile:File):void
+        public function open(indexFile:File, progress:Function = null):void
         {
             close();
             try
@@ -60,6 +61,8 @@ package otlib.sprites
                 count = _index.readUnsignedInt();
                 if (!count || count != total || _index.length != 12 + Number(count) * 4)
                     throw new Error("Multi-SPR logical count/index length mismatch.");
+                if (progress != null) progress(0, count, "Loading SPR index");
+                var lastProgress:int = getTimer();
                 for (var id:uint = 1; id <= count; id++)
                 {
                     var locator:uint = _index.readUnsignedInt();
@@ -67,12 +70,24 @@ package otlib.sprites
                     var local:uint = locator & 65535;
                     if (!part || part > num || !local || local > _counts[part - 1])
                         throw new Error("Invalid multi-SPR locator at logical sprite " + id);
+                    if (progress != null && (getTimer() - lastProgress >= 100 || id == count))
+                    {
+                        progress(id, count, "Loading SPR index");
+                        lastProgress = getTimer();
+                    }
                 }
             }
             catch (error:Error) { close(); throw error; }
         }
 
         public function readSprite(id:uint):Sprite
+        {
+            var sprite:Sprite = readSpriteRecord(id);
+            if (sprite) sprite.validateCompressedPixels();
+            return sprite;
+        }
+
+        internal function readSpriteRecord(id:uint):Sprite
         {
             if (!_index || !id || id > count) throw new RangeError("Invalid multi-SPR id: " + id);
             _index.position = 12 + Number(id - 1) * 4;
@@ -95,9 +110,16 @@ package otlib.sprites
             var at:int = _lru.indexOf(part);
             if (at >= 0) _lru.splice(at, 1);
             _lru.push(part);
-            var sprite:Sprite = reader.readSprite(locator & 65535);
+            var sprite:Sprite = reader.readSpriteRecord(locator & 65535);
             if (sprite) sprite.id = id;
             return sprite;
+        }
+
+        internal function setTransparency(value:Boolean):void
+        {
+            for each (var reader:SpriteReader in _readers) reader.closeSpriteFile();
+            _readers = {}; _lru = [];
+            _transparent = value;
         }
 
         public function close():void

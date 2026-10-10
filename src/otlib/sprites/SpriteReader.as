@@ -26,6 +26,7 @@ package otlib.sprites
     import flash.filesystem.File;
     import flash.filesystem.FileMode;
     import flash.utils.Endian;
+    import flash.utils.ByteArray;
     import otlib.core.ClientFeatures;
 
     public class SpriteReader extends FileStream implements ISpriteReader
@@ -40,6 +41,9 @@ package otlib.sprites
         private var m_fileSize:Number;
         private var m_count:uint;
         private var m_multi:MultiSpriteReader;
+        private var m_offsets:ByteArray;
+        private var m_window:ByteArray;
+        private var m_windowStart:Number = -1;
 
         // --------------------------------------------------------------------------
         // CONSTRUCTOR
@@ -62,12 +66,12 @@ package otlib.sprites
         // Public
         // --------------------------------------
 
-        public function openSpriteFile(file:File):void
+        public function openSpriteFile(file:File, progress:Function = null):void
         {
             if (file.name.toLowerCase() == "spr_index.dat")
             {
                 m_multi = new MultiSpriteReader(m_transparency);
-                m_multi.open(file);
+                m_multi.open(file, progress);
                 return;
             }
             try
@@ -79,6 +83,12 @@ package otlib.sprites
                 m_count = readSpriteCount();
                 if (m_headerSize + Number(m_count) * 4 > m_fileSize)
                     throw new Error("SPR address table exceeds file size: " + file.nativePath);
+                if (Number(m_count) * 4 > 0x7FFFFFFF) throw new Error("SPR address table is too large.");
+                m_offsets = new ByteArray(); m_offsets.endian = Endian.LITTLE_ENDIAN;
+                position = m_headerSize;
+                if (m_count) readBytes(m_offsets, 0, m_count * 4);
+                m_window = new ByteArray(); m_window.endian = Endian.LITTLE_ENDIAN;
+                if (progress != null) progress(m_count, m_count, "Loading SPR address table");
             }
             catch (error:Error)
             {
@@ -93,6 +103,9 @@ package otlib.sprites
             else { try { close(); } catch (error:Error) {} }
             m_count = 0;
             m_fileSize = 0;
+            if (m_offsets) m_offsets.clear();
+            if (m_window) m_window.clear();
+            m_offsets = null; m_window = null; m_windowStart = -1;
         }
 
         public function readSignature():uint
@@ -111,34 +124,79 @@ package otlib.sprites
 
         public function readSprite(id:uint):Sprite
         {
-            if (m_multi) return m_multi.readSprite(id);
-            if (id == 0 || id > m_count) throw new RangeError("Invalid SPR id: " + id);
-            position = ((id - 1) * SpriteFileSize.ADDRESS) + m_headerSize;
+            var sprite:Sprite = readSpriteRecord(id);
+            if (sprite) sprite.validateCompressedPixels();
+            return sprite;
+        }
 
-            var address:uint = readUnsignedInt();
+        internal function readSpriteRecord(id:uint):Sprite
+        {
+            if (m_multi) return m_multi.readSpriteRecord(id);
+            if (id == 0 || id > m_count) throw new RangeError("Invalid SPR id: " + id);
+            m_offsets.position = Number(id - 1) * 4;
+
+            var address:uint = m_offsets.readUnsignedInt();
             if (address == 0)
                 return null;
 
             if (address < m_headerSize + Number(m_count) * 4 || Number(address) + 5 > m_fileSize)
                 throw new Error("Invalid SPR offset for sprite " + id);
 
-            position = address;
-            readUnsignedByte(); // skip red color
-            readUnsignedByte(); // skip green color
-            readUnsignedByte(); // skip blue color
+            ensureWindow(address, 5);
+            m_window.position = address - m_windowStart + 3;
 
             var sprite:Sprite = new Sprite(id, m_transparency);
-            var length:uint = readUnsignedShort();
+            var length:uint = m_window.readUnsignedShort();
             if (Number(address) + 5 + length > m_fileSize)
                 throw new Error("Truncated SPR payload for sprite " + id);
 
             if (length != 0)
             {
-                readBytes(sprite.compressedPixels, 0, length);
+                ensureWindow(address, 5 + length);
+                sprite.compressedPixels.writeBytes(m_window, address - m_windowStart + 5, length);
             }
-            sprite.validateCompressedPixels();
 
             return sprite;
+        }
+
+        private function ensureWindow(address:Number, length:uint):void
+        {
+            if (m_windowStart >= 0 && address >= m_windowStart && address + length <= m_windowStart + m_window.length) return;
+            m_window.clear();
+            m_windowStart = address;
+            position = address;
+            readBytes(m_window, 0, Math.min(1024 * 1024, m_fileSize - address));
+        }
+
+        public function detectTransparency():Boolean
+        {
+            var preferred:uint = 0, opposite:uint = 0, sampled:uint = 0;
+            var count:uint = readSpriteCount();
+            for (var id:uint = 1; id <= Math.min(count, 4096) && sampled < 16; id++)
+            {
+                var sprite:Sprite = readSpriteRecord(id);
+                if (!sprite || sprite.isEmpty) continue;
+                sampled++;
+                var other:Sprite = new Sprite(id, !m_transparency);
+                other.compressedPixels.writeBytes(sprite.compressedPixels);
+                var firstValid:Boolean = validRle(sprite), secondValid:Boolean = validRle(other);
+                if (firstValid && !secondValid) preferred++;
+                if (!firstValid && secondValid) opposite++;
+                sprite.dispose(); other.dispose();
+            }
+            if (!preferred && opposite >= 3)
+            {
+                m_transparency = !m_transparency;
+                if (m_multi) m_multi.setTransparency(m_transparency);
+            }
+            return m_transparency;
+        }
+
+        private static function validRle(sprite:Sprite):Boolean
+        {
+            try { sprite.validateCompressedPixels(); return true; }
+            catch (error:Error) { return false; }
+            return false;
         }
 
         public function isEmptySprite(id:uint):Boolean

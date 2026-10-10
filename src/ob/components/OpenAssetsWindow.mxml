@@ -51,6 +51,9 @@ THE SOFTWARE.
             import otlib.events.FileTextInputEvent;
             import otlib.utils.ClientInfo;
             import otlib.utils.ClientInfoLoader;
+            import otlib.utils.OTFI;
+            import otlib.core.ClientFeatures;
+            import otlib.sprites.SpriteReader;
             import otlib.utils.OTFormat;
             import mx.collections.ArrayCollection;
             import otlib.core.SpriteDimensionStorage;
@@ -77,6 +80,7 @@ THE SOFTWARE.
             private var m_improvedAnimations:Boolean;
             private var m_improvedAnimationsChanged:Boolean;
             private var m_frameGroups:Boolean;
+            public var extendedItems:Boolean;
             private var m_frameGroupsChanged:Boolean;
             private var m_detail:uint;
             private var m_spriteDimension:SpriteDimension;
@@ -308,8 +312,14 @@ THE SOFTWARE.
 
                 // Rust-compatible multi-SPR entry point (physical parts stay lazy).
                 var indexFile:File = directory.resolvePath("spr_index.dat");
-                if (indexFile.exists && directory.resolvePath("spr_parts.dat").exists)
+                if (!spr && indexFile.exists && directory.resolvePath("spr_parts.dat").exists)
                     spr = indexFile;
+                var descriptor:OTFI = new OTFI();
+                if (descriptor.load(directory.resolvePath("Tibia.otfi")) && descriptor.spritesFile)
+                {
+                    var preferred:File = directory.resolvePath(descriptor.spritesFile);
+                    if (preferred.exists && !preferred.isDirectory) spr = preferred;
+                }
             
                 // Searchs renamed spr/dat files on directory.
                 if (!spr || !dat)
@@ -361,6 +371,7 @@ THE SOFTWARE.
                     transparency = info.transparency;
                     improvedAnimations = info.improvedAnimations;
                     frameGroups = info.frameGroups;
+                    extendedItems = info.features.extendedItems;
                     clientVersionLabel.text = info.clientVersionStr;
                     datSignatureLabel.text = info.datSignature.toString(16).toUpperCase();
                     itemsCountLabel.text = info.maxItemId.toString();
@@ -412,10 +423,18 @@ THE SOFTWARE.
                 var stream:FileStream = new FileStream();
                 var sprSignature:uint;
                 var spritesCount:uint;
+                var reader:SpriteReader;
                 try
                 {
-                    stream.open(spr, FileMode.READ);
+                    var multi:Boolean = spr.name.toLowerCase() == "spr_index.dat";
+                    stream.open(multi ? spr.parent.resolvePath("spr_parts.dat") : spr, FileMode.READ);
                     stream.endian = Endian.LITTLE_ENDIAN;
+                    if (multi)
+                    {
+                        if (stream.bytesAvailable < 16 || stream.readUTFBytes(4) != "SPMT")
+                            throw new Error("Invalid multi-SPR manifest.");
+                        stream.readUnsignedInt();
+                    }
                     sprSignature = stream.readUnsignedInt();
 
                     var version:Version = VersionStorage.getInstance().getBySprSignature(sprSignature);
@@ -427,8 +446,16 @@ THE SOFTWARE.
                         return;
                     }
 
-                    var isExtended:Boolean = (m_extended || version.value >= 960);
-                    if (isExtended)
+                    var isExtended:Boolean = (multi || m_extended || version.value >= 960);
+                    if (multi)
+                    {
+                        reader = new SpriteReader(new ClientFeatures(true, m_transparency));
+                        reader.openSpriteFile(spr);
+                        spritesCount = reader.readSpriteCount();
+                        transparency = reader.detectTransparency();
+                        extended = true;
+                    }
+                    else if (isExtended)
                         spritesCount = stream.readUnsignedInt();
                     else
                         spritesCount = stream.readUnsignedShort();
@@ -441,6 +468,11 @@ THE SOFTWARE.
                     setErrorText("Failed to read SPR file: " + error.message);
                     updateProperties();
                     return;
+                }
+                finally
+                {
+                    if (reader) reader.closeSpriteFile();
+                    try { stream.close(); } catch (closeError:Error) {}
                 }
 
                 m_sprFile = spr;

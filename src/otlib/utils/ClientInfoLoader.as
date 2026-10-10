@@ -64,9 +64,9 @@ package otlib.utils
                 {
                     stream.open(dat, FileMode.READ);
                     stream.endian = Endian.LITTLE_ENDIAN;
-                    if (dat.size < 12) throw new Error("Truncated DAT header.");
+                    if (dat.size < (info.features.extendedItems ? 14 : 12)) throw new Error("Truncated DAT header.");
                     info.datSignature = stream.readUnsignedInt();
-                    info.maxItemId = stream.readUnsignedShort();
+                    info.maxItemId = info.features.extendedItems ? stream.readUnsignedInt() : stream.readUnsignedShort();
                     info.maxOutfitId = stream.readUnsignedShort();
                     info.maxEffectId = stream.readUnsignedShort();
                     info.maxMissileId = stream.readUnsignedShort();
@@ -108,10 +108,15 @@ package otlib.utils
                     reader.openSpriteFile(spr);
                     info.sprSignature = reader.readSignature();
                     info.maxSpriteId = reader.readSpriteCount();
+                    // A folder may contain an older RGB archive and a newer RGBA export.
+                    // Only override a stale descriptor when sampled records unambiguously
+                    // validate in the opposite encoding; empty/ambiguous records do not vote.
+                    info.features.transparency = reader.detectTransparency();
                 }
                 finally { reader.closeSpriteFile(); }
                 info.clientVersion = version.value;
                 info.clientVersionStr = version.valueStr;
+                info.multiSpr = multi;
                 m_clientInfo = info;
             }
             catch (error:Error)
