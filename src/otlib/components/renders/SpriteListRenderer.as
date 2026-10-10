@@ -22,6 +22,7 @@
 
 package otlib.components.renders
 {
+    import ob.ui.NexaTheme;
     import flash.display.NativeMenuItem;
     import flash.events.ContextMenuEvent;
     import flash.events.Event;
@@ -61,17 +62,17 @@ package otlib.components.renders
         private var _imageBackground:Rect;
 
         // Colors
-        private static const COLOR_NORMAL:uint = 0x535353;
-        private static const COLOR_HOVERED:uint = 0x3385B2;
-        private static const COLOR_SELECTED:uint = 0x156692;
-        private static const COLOR_BORDER:uint = 0x272727;
-        private static const COLOR_IMAGE_BG:uint = 0x636363;
+        private static const COLOR_NORMAL:uint = NexaTheme.PANEL_ALT;
+        private static const COLOR_HOVERED:uint = NexaTheme.RAISED;
+        private static const COLOR_SELECTED:uint = NexaTheme.SELECTED;
+        private static const COLOR_BORDER:uint = NexaTheme.BORDER;
+        private static const COLOR_IMAGE_BG:uint = NexaTheme.INPUT;
 
         public function SpriteListRenderer()
         {
             super();
-            this.height = 41;
-            this.setStyle("fontSize", 11);
+            this.height = 44;
+            this.setStyle("fontSize", 12);
             this.autoDrawBackground = false;
         }
 
@@ -94,7 +95,7 @@ package otlib.components.renders
             _border.right = 1; // MXML had right=1
             _border.top = 0;
             _border.bottom = 0;
-            _border.stroke = new SolidColorStroke(COLOR_BORDER, 0.1);
+            _border.stroke = new SolidColorStroke(COLOR_BORDER, 1);
             addElement(_border);
 
             // 3. Image Background
@@ -175,6 +176,8 @@ package otlib.components.renders
             {
                 SolidColor(_fill.fill).color = color;
             }
+            if (_border && _border.stroke is SolidColorStroke)
+                SolidColorStroke(_border.stroke).color = selected ? NexaTheme.ACCENT : COLOR_BORDER;
 
             // Visibility based on dragging state
             if (isDragging)

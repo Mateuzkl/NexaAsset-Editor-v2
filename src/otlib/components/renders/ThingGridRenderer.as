@@ -22,6 +22,7 @@
 
 package otlib.components.renders
 {
+    import ob.ui.NexaTheme;
     import flash.display.GradientType;
     import flash.display.Graphics;
     import flash.events.ContextMenuEvent;
@@ -70,11 +71,11 @@ package otlib.components.renders
         private var _imageBackground:Rect;
 
         // Colors
-        private static const COLOR_NORMAL:uint = 0x535353;
-        private static const COLOR_HOVERED:uint = 0x3385B2;
-        private static const COLOR_SELECTED:uint = 0x156692;
-        private static const COLOR_BORDER:uint = 0x272727;
-        private static const COLOR_IMAGE_BG:uint = 0x636363;
+        private static const COLOR_NORMAL:uint = NexaTheme.PANEL_ALT;
+        private static const COLOR_HOVERED:uint = NexaTheme.RAISED;
+        private static const COLOR_SELECTED:uint = NexaTheme.SELECTED;
+        private static const COLOR_BORDER:uint = NexaTheme.BORDER;
+        private static const COLOR_IMAGE_BG:uint = NexaTheme.INPUT;
 
         // Layout: outer cell padding around icon (4px sides, 3px top + 12px label-area below)
         public static const OUTER_WIDTH_PADDING:uint = 10;
@@ -147,7 +148,7 @@ package otlib.components.renders
             _border.right = 1;
             _border.top = 0;
             _border.bottom = 0;
-            _border.stroke = new SolidColorStroke(COLOR_BORDER, 0.1);
+            _border.stroke = new SolidColorStroke(COLOR_BORDER, 1);
             addElement(_border);
 
             // 3. Image Background
@@ -233,6 +234,8 @@ package otlib.components.renders
             {
                 SolidColor(_fill.fill).color = color;
             }
+            if (_border && _border.stroke is SolidColorStroke)
+                SolidColorStroke(_border.stroke).color = selected ? NexaTheme.ACCENT : COLOR_BORDER;
         }
 
         override public function set data(value:Object):void

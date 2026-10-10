@@ -473,7 +473,7 @@ package otlib.components
 
                 _drawMatrix.identity();
                 _drawMatrix.scale(_scale, _scale);
-                graphics.beginBitmapFill(_bitmap, _drawMatrix, false, true);
+                graphics.beginBitmapFill(_bitmap, _drawMatrix, false, false);
                 graphics.drawRect(0, 0, _fillRect.width * _scale, _fillRect.height * _scale);
             }
 

@@ -22,6 +22,7 @@
 
 package otlib.components.renders
 {
+    import ob.ui.NexaTheme;
     import flash.display.GradientType;
     import flash.display.Graphics;
     import flash.events.ContextMenuEvent;
@@ -65,11 +66,11 @@ package otlib.components.renders
         private var _imageBackground:Rect;
 
         // Colors
-        private static const COLOR_NORMAL:uint = 0x535353;
-        private static const COLOR_HOVERED:uint = 0x3385B2;
-        private static const COLOR_SELECTED:uint = 0x156692;
-        private static const COLOR_BORDER:uint = 0x272727;
-        private static const COLOR_IMAGE_BG:uint = 0x636363;
+        private static const COLOR_NORMAL:uint = NexaTheme.PANEL_ALT;
+        private static const COLOR_HOVERED:uint = NexaTheme.RAISED;
+        private static const COLOR_SELECTED:uint = NexaTheme.SELECTED;
+        private static const COLOR_BORDER:uint = NexaTheme.BORDER;
+        private static const COLOR_IMAGE_BG:uint = NexaTheme.INPUT;
 
         // --------------------------------------------------------------------------
         // CONSTRUCTOR
@@ -78,7 +79,7 @@ package otlib.components.renders
         public function ThingListRenderer()
         {
             super();
-            this.height = 41;
+            this.height = 44;
             this.autoDrawBackground = false; // We draw our own background
         }
 
@@ -105,7 +106,7 @@ package otlib.components.renders
             _border.right = 1;
             _border.top = 0;
             _border.bottom = 0;
-            _border.stroke = new SolidColorStroke(COLOR_BORDER, 0.1);
+            _border.stroke = new SolidColorStroke(COLOR_BORDER, 1);
             addElement(_border);
 
             // 3. Image Background
@@ -140,8 +141,8 @@ package otlib.components.renders
             _serverIdLabel.left = 42;
             _serverIdLabel.right = 5;
             _serverIdLabel.bottom = 6;
-            _serverIdLabel.setStyle("fontSize", 9);
-            _serverIdLabel.setStyle("color", 0xAAAAAA);
+            _serverIdLabel.setStyle("fontSize", 11);
+            _serverIdLabel.setStyle("color", NexaTheme.MUTED);
             _serverIdLabel.mouseChildren = false;
             _serverIdLabel.mouseEnabled = false;
             addElement(_serverIdLabel);
@@ -198,6 +199,8 @@ package otlib.components.renders
             {
                 SolidColor(_fill.fill).color = color;
             }
+            if (_border && _border.stroke is SolidColorStroke)
+                SolidColorStroke(_border.stroke).color = selected ? NexaTheme.ACCENT : COLOR_BORDER;
 
             // Manual layout adjustments if needed, though constraints (left, right, etc.) handle most
         }
@@ -219,13 +222,14 @@ package otlib.components.renders
                 else if (!isNullOrEmpty(thing.name))
                     displayText = thing.id + " - " + thing.name;
 
-                _labelDisplay.text = displayText;
+                toolTip = displayText + (item.serverId > 0 ? " (Server Id: " + item.serverId + ")" : "");
+                _labelDisplay.text = thing.id.toString();
 
                 // Line 2: Server Id
                 if (item.serverId > 0)
                     _serverIdLabel.text = "Server Id: " + item.serverId;
                 else
-                    _serverIdLabel.text = "";
+                    _serverIdLabel.text = !isNullOrEmpty(thing.marketName) ? thing.marketName : thing.name;
 
                 // Image
                 try
@@ -242,6 +246,7 @@ package otlib.components.renders
                 _labelDisplay.text = "";
                 _serverIdLabel.text = "";
                 _imageDisplay.source = null;
+                toolTip = null;
             }
         }
 

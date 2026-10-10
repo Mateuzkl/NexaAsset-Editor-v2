@@ -1,0 +1,76 @@
+{
+  "themeName": "Nexa Dark",
+  "metadata": {
+    "source": "visual interpretation of approved target screenshot",
+    "note": "design proposals, not pixel-perfect measured colors"
+  },
+  "colors": {
+    "canvas": "#0B141E",
+    "titlebar": "#0A1520",
+    "navbar": "#0D1926",
+    "toolbar": "#111D2A",
+    "panel": "#16232F",
+    "panelAlt": "#1B2937",
+    "panelRaised": "#213143",
+    "input": "#101C29",
+    "canvasPreview": "#101B26",
+    "checkerDark": "#182633",
+    "checkerLight": "#202E3C",
+    "border": "#2C3C4D",
+    "borderStrong": "#3B5368",
+    "textPrimary": "#F0F5FB",
+    "textSecondary": "#ADC0D4",
+    "textMuted": "#8498AC",
+    "accent": "#2BB7F5",
+    "accentSubtle": "#193D55",
+    "accentHover": "#245471",
+    "iconDefault": "#B5C8DD",
+    "danger": "#F07676",
+    "warning": "#F4C06C",
+    "success": "#65C9A7"
+  },
+  "alternateTheme": {
+    "name": "Nexa Midnight",
+    "overrides": {
+      "canvas": "#09121F",
+      "navbar": "#0B1728",
+      "toolbar": "#0D1A2B",
+      "panel": "#122338",
+      "panelAlt": "#172B42",
+      "panelRaised": "#1D354F",
+      "input": "#0E2034",
+      "border": "#29425B",
+      "accent": "#35B7F4"
+    }
+  },
+  "dimensionsLogicalPx": {
+    "titlebar": 42,
+    "navbar": 70,
+    "toolbar": 55,
+    "statusbar": 26,
+    "mainGutter": 9,
+    "cardPadding": 12,
+    "cardRadius": 7,
+    "borderWidth": 1,
+    "toolbarButtonHeight": 38,
+    "searchInputHeight": 34,
+    "objectRowHeight": 44,
+    "spriteRowHeight": 45,
+    "navIcon": 24,
+    "toolbarIcon": 18,
+    "listThumbnail": 32
+  },
+  "layout": {
+    "leftInfoPercentHint": 17,
+    "objectsPercentHint": 22,
+    "spritesPercentHint": 15,
+    "center": "remaining and flexible",
+    "policy": "resizable splitters and useful min width, no hard coded pixel widths"
+  },
+  "ui": {
+    "font": "system default, prefer Segoe UI on Windows",
+    "pixelArtInterpolation": "nearest neighbor",
+    "hoverAnimations": "subtle/optional; prefer reduced motion",
+    "themeDefault": "Nexa Dark"
+  }
+}

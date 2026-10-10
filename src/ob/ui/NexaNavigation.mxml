@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:BorderContainer xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark"
+    height="72" backgroundColor="0x0D1926" borderColor="0x2C3C4D">
+    <fx:Metadata>[Event(name="nexaAction", type="ob.ui.NexaUiEvent")][ResourceBundle("strings")]</fx:Metadata>
+    <fx:Script><![CDATA[
+        import ob.ui.NexaIcons;
+        import ob.ui.NexaUiEvent;
+        [Bindable] public var active:String = "home";
+        [Bindable] public var loaded:Boolean = false;
+        private function navigate(action:String):void {
+            if (action != "settings") active = action;
+            // Clicking the active navigation item must not toggle its highlight off.
+            var buttons:Array = [homeButton, objectsButton, spritesButton, itemsButton, outfitsButton,
+                effectsButton, missilesButton, toolsButton, settingsButton];
+            var keys:Array = ["home", "objects", "sprites", "items", "outfits", "effects", "missiles", "tools", "settings"];
+            for (var i:int = 0; i < buttons.length; i++) buttons[i].selected = (keys[i] == active);
+            dispatchEvent(new NexaUiEvent(action));
+        }
+    ]]></fx:Script>
+    <s:HGroup left="14" right="10" top="4" bottom="4" verticalAlign="middle" gap="4">
+        <s:HGroup width="240" verticalAlign="middle" gap="10">
+            <s:Group width="26" height="26">
+                <s:Rect x="1" y="1" width="9" height="9" radiusX="2"><s:stroke><s:SolidColorStroke color="0x2BB7F5" weight="2"/></s:stroke></s:Rect>
+                <s:Rect x="15" y="1" width="9" height="9" radiusX="2"><s:stroke><s:SolidColorStroke color="0x2BB7F5" weight="2"/></s:stroke></s:Rect>
+                <s:Rect x="1" y="15" width="9" height="9" radiusX="2"><s:stroke><s:SolidColorStroke color="0x2BB7F5" weight="2"/></s:stroke></s:Rect>
+                <s:Rect x="15" y="15" width="9" height="9" radiusX="2"><s:stroke><s:SolidColorStroke color="0x2BB7F5" weight="2"/></s:stroke></s:Rect>
+            </s:Group>
+            <s:VGroup gap="4">
+                <s:Label text="NexaAsset Editor" fontSize="17" color="0xF0F5FB" fontWeight="bold"/>
+                <s:Label text="v2" fontSize="12" color="0x2BB7F5"/>
+            </s:VGroup>
+        </s:HGroup>
+        <s:ToggleButton id="homeButton" width="80" height="62" styleName="nexaNav"
+            label="{resourceManager.getString('strings','nexa.home')}" toolTip="{homeButton.label}"
+            selected="{active == 'home'}" icon="{active == 'home' ? NexaIcons.HOME_ACTIVE : NexaIcons.HOME}" click="navigate('home')"/>
+        <s:ToggleButton id="objectsButton" width="80" height="62" styleName="nexaNav"
+            label="{resourceManager.getString('strings','objects')}" toolTip="{objectsButton.label}"
+            selected="{active == 'objects'}" icon="{active == 'objects' ? NexaIcons.OBJECTS_ACTIVE : NexaIcons.OBJECTS}" click="navigate('objects')"/>
+        <s:ToggleButton id="spritesButton" width="80" height="62" styleName="nexaNav"
+            label="{resourceManager.getString('strings','sprites')}" toolTip="{spritesButton.label}"
+            selected="{active == 'sprites'}" icon="{active == 'sprites' ? NexaIcons.SPRITES_ACTIVE : NexaIcons.SPRITES}" click="navigate('sprites')"/>
+        <s:ToggleButton id="itemsButton" width="80" height="62" styleName="nexaNav" enabled="{loaded}"
+            label="{resourceManager.getString('strings','items')}" toolTip="{itemsButton.label}"
+            selected="{active == 'items'}" icon="{active == 'items' ? NexaIcons.ITEMS_ACTIVE : NexaIcons.ITEMS}" click="navigate('items')"/>
+        <s:ToggleButton id="outfitsButton" width="80" height="62" styleName="nexaNav" enabled="{loaded}"
+            label="{resourceManager.getString('strings','outfits')}" toolTip="{outfitsButton.label}"
+            selected="{active == 'outfits'}" icon="{active == 'outfits' ? NexaIcons.OUTFITS_ACTIVE : NexaIcons.OUTFITS}" click="navigate('outfits')"/>
+        <s:ToggleButton id="effectsButton" width="80" height="62" styleName="nexaNav" enabled="{loaded}"
+            label="{resourceManager.getString('strings','effects')}" toolTip="{effectsButton.label}"
+            selected="{active == 'effects'}" icon="{active == 'effects' ? NexaIcons.EFFECTS_ACTIVE : NexaIcons.EFFECTS}" click="navigate('effects')"/>
+        <s:ToggleButton id="missilesButton" width="80" height="62" styleName="nexaNav" enabled="{loaded}"
+            label="{resourceManager.getString('strings','missiles')}" toolTip="{missilesButton.label}"
+            selected="{active == 'missiles'}" icon="{active == 'missiles' ? NexaIcons.MISSILES_ACTIVE : NexaIcons.MISSILES}" click="navigate('missiles')"/>
+        <s:ToggleButton id="toolsButton" width="80" height="62" styleName="nexaNav"
+            label="{resourceManager.getString('strings','nexa.tools')}" toolTip="{toolsButton.label}"
+            selected="{active == 'tools'}" icon="{active == 'tools' ? NexaIcons.TOOLS_ACTIVE : NexaIcons.TOOLS}" click="navigate('tools')"/>
+        <s:ToggleButton id="settingsButton" width="90" height="62" styleName="nexaNav"
+            label="{resourceManager.getString('strings','menu.preferences')}" toolTip="{settingsButton.label}"
+            selected="false" icon="{NexaIcons.SETTINGS}" click="navigate('settings')"/>
+    </s:HGroup>
+</s:BorderContainer>

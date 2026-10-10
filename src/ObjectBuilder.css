@@ -25,19 +25,22 @@
 @namespace mg "library://ns.mignari.com/mg";
 @namespace otlib "otlib.components.*";
 @namespace ob "ob.components.*";
+@namespace nail "library://ns.nail.com/naillib";
 
 global {
-    chromeColor: #444444;
-    rollOverColor: #3385b2;
-    selectionColor: #156692;
-    color: #CBCBCB;
-    contentBackgroundColor: #444444;
-    focusedTextSelectionColor: #272727;
-    symbolColor: #DFDFDF;
-    fontFamily: verdana;
+    chromeColor: #1B2937;
+    rollOverColor: #213143;
+    selectionColor: #193D55;
+    color: #ADC0D4;
+    contentBackgroundColor: #16232F;
+    focusedTextSelectionColor: #193D55;
+    symbolColor: #B5C8DD;
+    focusColor: #2BB7F5;
+    fontFamily: "Segoe UI", Verdana, sans-serif;
+    fontSize: 12;
     modal-transparency-blur: 0;
     modal-transparency: 0.3;
-    modalTransparencyColor: #656565;
+    modalTransparencyColor: #0B141E;
 }
 
 /*
@@ -48,9 +51,11 @@ global {
 
 mx|HDividedBox {
     dividerSkin: ClassReference("nail.assets.NailAssets_DIVIDER");
-    dividerColor: #272727;
-    horizontalGap: 6;
+    dividerColor: #2C3C4D;
+    horizontalGap: 8;
 }
+
+mx|VDividedBox { dividerColor: #2C3C4D; verticalGap: 6; }
 
 mx|ProgressBar {
     barSkin: ClassReference("com.mignari.skins.ProgressBarSkin");
@@ -70,11 +75,11 @@ mx|ScrollBar {
 
 mx|ToolTip {
     backgroundAlpha: 1.0;
-    backgroundColor: #212121;
-    borderColor: #69BEEF;
-    color: #69BEEF;
-    cornerRadius: 0;
-    fontSize: 11;
+    backgroundColor: #16232F;
+    borderColor: #3B5368;
+    color: #F0F5FB;
+    cornerRadius: 4;
+    fontSize: 12;
 }
 
 /*
@@ -84,23 +89,24 @@ mx|ToolTip {
 */
 
 s|Application {
-    backgroundColor: #212F43;
+    backgroundColor: #0B141E;
     skinClass: ClassReference("spark.skins.spark.ApplicationSkin");
 }
 
 s|BorderContainer {
-    backgroundColor: #212F43;
+    backgroundColor: #16232F;
+    borderColor: #2C3C4D;
     borderStyle: "solid";
-    cornerRadius: 0;
+    cornerRadius: 6;
     skinClass: ClassReference("spark.skins.spark.BorderContainerSkin");
 }
 
 s|Button {
-    skinClass: ClassReference("com.mignari.skins.ButtonSkin");
+    skinClass: ClassReference("ob.ui.skins.NexaButtonSkin");
 }
 
 s|CheckBox {
-    skinClass: ClassReference("com.mignari.skins.SwitchSkin");
+    skinClass: ClassReference("ob.ui.skins.NexaSwitchSkin");
 }
 
 s|ComboBox {
@@ -112,11 +118,11 @@ s|ComboBox {
 }
 
 s|DropDownList {
-    skinClass: ClassReference("com.mignari.skins.DropDownListSkin");
+    skinClass: ClassReference("ob.ui.skins.NexaDropDownSkin");
 }
 
 s|HScrollBar {
-    skinClass: ClassReference("com.mignari.skins.HScrollBarSkin");
+    skinClass: ClassReference("spark.skins.spark.HScrollBarSkin");
 }
 
 s|HSlider {
@@ -124,7 +130,7 @@ s|HSlider {
 }
 
 s|NumericStepper {
-    skinClass: ClassReference("com.mignari.skins.NumericStepperSkin");
+    skinClass: ClassReference("ob.ui.skins.NexaNumericStepperSkin");
 }
 
 s|RadioButton {
@@ -133,7 +139,7 @@ s|RadioButton {
 
 s|SkinnableComponent {
     errorSkin: ClassReference("com.mignari.skins.ErrorSkin");
-    focusSkin: ClassReference("com.mignari.skins.FocusSkin");
+    focusSkin: ClassReference("spark.skins.spark.FocusSkin");
 }
 
 s|TextInput {
@@ -141,19 +147,19 @@ s|TextInput {
     paddingLeft: 3;
     paddingRight: 3;
     paddingTop: 5;
-    color: #272727;
-    borderColor: #272727;
-    contentBackgroundColor: #A2A2A2;
-    focusedTextSelectionColor: #CCCCCC;
-    skinClass: ClassReference("com.mignari.skins.TextInputSkin");
+    color: #F0F5FB;
+    borderColor: #2C3C4D;
+    contentBackgroundColor: #101C29;
+    focusedTextSelectionColor: #193D55;
+    skinClass: ClassReference("ob.ui.skins.NexaTextInputSkin");
 }
 
 s|ToggleButton {
-    skinClass: ClassReference("nail.components.skins.ToggleButtonSkin");
+    skinClass: ClassReference("ob.ui.skins.NexaButtonSkin");
 }
 
 s|VScrollBar {
-    skinClass: ClassReference("com.mignari.skins.VScrollBarSkin");
+    skinClass: ClassReference("spark.skins.spark.VScrollBarSkin");
 }
 
 s|VSlider {
@@ -167,17 +173,17 @@ s|VSlider {
 */
 
 mg|GroupBox {
-    backgroundColor: #494949;
-    borderColor: #272727;
-    shadowColor: #535353;
-    skinClass: ClassReference("com.mignari.skins.GroupBoxSkin");
+    backgroundColor: #16232F;
+    borderColor: #2C3C4D;
+    shadowColor: #16232F;
+    skinClass: ClassReference("ob.ui.skins.NexaGroupBoxSkin");
 }
 
 mg|GroupCheckBox {
-    backgroundColor: #494949;
-    borderColor: #272727;
-    shadowColor: #535353;
-    skinClass: ClassReference("com.mignari.skins.GroupSwitchSkin");
+    backgroundColor: #16232F;
+    borderColor: #2C3C4D;
+    shadowColor: #16232F;
+    skinClass: ClassReference("ob.ui.skins.NexaGroupCheckBoxSkin");
 }
 
 mg|ProgressBar {
@@ -223,3 +229,14 @@ otlib|PatternSlider {
 ob|Toolbar {
     skinClass: ClassReference("ob.components.skins.ToolbarSkin");
 }
+
+/* Nexa Dark. Keep these native Flex styles aligned with assets/nexa/theme-tokens.json. */
+nail|GroupBox { skinClass: ClassReference("ob.ui.skins.NexaGroupBoxSkin"); }
+nail|TabNavigator { skinClass: ClassReference("ob.ui.skins.NexaTabNavigatorSkin"); }
+nail|TabNavigatorButton { skinClass: ClassReference("ob.ui.skins.NexaTabButtonSkin"); fontSize: 12; }
+.nexaNav { skinClass: ClassReference("ob.ui.skins.NexaNavigationSkin"); }
+s|WindowedApplication { backgroundColor: #0B141E; }
+s|Window { backgroundColor: #0B141E; }
+s|List { contentBackgroundColor: #16232F; borderColor: #2C3C4D; }
+s|TextArea { color: #F0F5FB; contentBackgroundColor: #101C29; }
+otlib|CheckerBoard { cellColors: #182633, #202E3C; }

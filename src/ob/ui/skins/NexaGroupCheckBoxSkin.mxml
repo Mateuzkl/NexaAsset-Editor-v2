@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Skin xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark">
+    <fx:Metadata>[HostComponent("com.mignari.components.GroupCheckBox")]</fx:Metadata>
+    <fx:Script><![CDATA[
+        override protected function updateDisplayList(w:Number, h:Number):void {
+            super.updateDisplayList(w, h);
+            checkBoxDisplay.label = hostComponent.label;
+        }
+    ]]></fx:Script>
+    <s:states><s:State name="normal"/><s:State name="disabled"/></s:states>
+    <s:Rect left="0" right="0" top="0" bottom="0" radiusX="6">
+        <s:fill><s:SolidColor color="0x16232F"/></s:fill>
+        <s:stroke><s:SolidColorStroke color="0x2C3C4D"/></s:stroke>
+    </s:Rect>
+    <s:CheckBox id="checkBoxDisplay" left="12" right="10" top="7" fontWeight="bold" fontSize="12"/>
+    <s:Group id="contentGroup" left="1" right="1" top="34" bottom="1" minWidth="0" minHeight="0"/>
+</s:Skin>

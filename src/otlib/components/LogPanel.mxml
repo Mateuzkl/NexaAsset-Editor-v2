@@ -221,7 +221,7 @@ THE SOFTWARE.
     <!-- Bottom bar with Toggle/Save/Clear buttons -->
     <s:Group left="0" right="0" bottom="0" height="24">
         <s:Rect left="0" right="0" top="0" bottom="0">
-            <s:fill><s:SolidColor color="0x3a3a3a"/></s:fill>
+            <s:fill><s:SolidColor color="0x111D2A"/></s:fill>
         </s:Rect>
 
         <!-- Centered toggle button -->

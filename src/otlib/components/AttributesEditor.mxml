@@ -1274,14 +1274,15 @@
         <s:State name="bulk"/>
     </s:states>
 
-    <s:VGroup width="100%" height="100%" gap="8" paddingLeft="10" paddingTop="10" paddingRight="10" paddingBottom="10">
+    <s:Scroller id="attributeScroller" width="100%" height="100%" minHeight="0" minWidth="0" horizontalScrollPolicy="off">
+    <s:VGroup width="100%" height="{Math.max(700, attributeScroller.height - 20)}" gap="8" paddingLeft="10" paddingTop="10" paddingRight="10" paddingBottom="10">
 
-        <mg:GroupBox label="@Resource(key='basicInformation', bundle='strings')"
-            width="100%">
-            <s:VGroup width="100%" gap="8" paddingLeft="10" paddingTop="10" paddingRight="10" paddingBottom="10">
+        <mg:GroupBox label="{resourceManager.getString('strings', 'basicInformation')}"
+            width="100%" height="180">
+            <s:VGroup width="100%" height="100%" gap="8" paddingLeft="10" paddingTop="10" paddingRight="10" paddingBottom="10">
 
                 <s:HGroup width="100%" verticalAlign="middle" gap="8">
-                    <s:Label text="Article:" width="45"/>
+                    <s:Label text="{resourceManager.getString('strings', 'nexa.article')}" width="52"/>
                     <s:DropDownList id="articleInput" width="60" requireSelection="true"
                         change="onBasicAttributeChange(event)">
                         <s:dataProvider>
@@ -1293,17 +1294,17 @@
                         </s:dataProvider>
                     </s:DropDownList>
 
-                    <s:Label text="Name:" width="40"/>
+                    <s:Label text="{resourceManager.getString('strings', 'nexa.name')}" width="52"/>
                     <s:TextInput id="nameInput" width="100%"
                         focusOut="onBasicAttributeChange(event)"/>
 
-                    <s:Label text="Plural:" width="40"/>
+                    <s:Label text="{resourceManager.getString('strings', 'nexa.plural')}" width="45"/>
                     <s:TextInput id="pluralInput" width="100%"
                         focusOut="onBasicAttributeChange(event)"/>
                 </s:HGroup>
 
                 <s:VGroup width="100%" height="100%" gap="2">
-                    <s:Label text="Description:"/>
+                    <s:Label text="{resourceManager.getString('strings', 'nexa.description')}"/>
                     <s:TextArea id="descriptionInput" width="100%" height="100%" minHeight="40"
                         focusOut="onBasicAttributeChange(event)"/>
                 </s:VGroup>
@@ -1318,7 +1319,7 @@
                 <s:VerticalLayout gap="10"/>
             </s:layout.bulk>
 
-            <mg:GroupBox label="@Resource(key='itemAttributes', bundle='strings')"
+            <mg:GroupBox label="{resourceManager.getString('strings', 'itemAttributes')}"
                 width="65%" width.bulk="100%"
                 height="100%" height.bulk="60%"
                 minHeight="150">
@@ -1334,16 +1335,16 @@
                 </s:Scroller>
             </mg:GroupBox>
 
-            <mg:GroupBox label="@Resource(key='templates', bundle='strings')"
+            <mg:GroupBox label="{resourceManager.getString('strings', 'templates')}"
                 width="35%" width.bulk="100%"
                 height="100%" height.bulk="40%"
                 minHeight="120">
                 <s:VGroup width="100%" height="100%" gap="5" paddingLeft="10" paddingTop="10" paddingRight="10" paddingBottom="10">
-                    <s:HGroup width="100%" verticalAlign="middle">
-                        <s:Button id="createTemplateButton" label="Create Template"/>
-                        <s:Label text="(Save current selections)" color="#888888"/>
-                    </s:HGroup>
-                    <s:Label text="Available Templates:" fontWeight="bold"/>
+                    <s:VGroup width="100%" gap="3">
+                        <s:Button id="createTemplateButton" width="100%" height="28" label="{resourceManager.getString('strings', 'nexa.createTemplate')}"/>
+                        <s:Label text="{resourceManager.getString('strings', 'nexa.saveSelections')}" width="100%" maxDisplayedLines="2" color="#8498AC"/>
+                    </s:VGroup>
+                    <s:Label text="{resourceManager.getString('strings', 'nexa.availableTemplates')}" width="100%" maxDisplayedLines="2" fontWeight="bold"/>
                     <s:Scroller width="100%" height="100%">
                         <s:Group id="templatesGroup" width="100%">
                             <s:layout>
@@ -1359,9 +1360,9 @@
         </s:Group>
 
         <!-- 3. Add Attributes (takes remaining ~60% of space) -->
-        <mg:GroupBox label="@Resource(key='addAttributes', bundle='strings')" width="100%" height="65%" minHeight="200">
+        <mg:GroupBox label="{resourceManager.getString('strings', 'addAttributes')}" width="100%" height="65%" minHeight="200">
             <s:VGroup width="100%" height="100%" paddingLeft="10" paddingTop="10" paddingRight="10" paddingBottom="10" gap="8">
-                <s:TextInput id="attributeSearchInput" prompt="Search attributes..." width="100%"
+                <s:TextInput id="attributeSearchInput" prompt="{resourceManager.getString('strings', 'nexa.searchAttributes')}" width="100%"
                     change="onAttributeSearchChange(event)"/>
                 <s:Scroller width="100%" height="100%">
                     <s:Group id="attributeTileGroup" width="100%">
@@ -1375,5 +1376,6 @@
         </mg:GroupBox>
 
     </s:VGroup>
+    </s:Scroller>
 
 </s:Group>

@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<local:ObjectBuilder xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:local="*">
+    <fx:Style source="../src/ObjectBuilder.css"/>
+    <fx:Script><![CDATA[
+        import flash.desktop.NativeApplication;
+        import flash.display.BitmapData;
+        import flash.display.PNGEncoderOptions;
+        import flash.events.InvokeEvent;
+        import flash.events.MouseEvent;
+        import flash.events.TimerEvent;
+        import flash.events.UncaughtErrorEvent;
+        import flash.filesystem.File;
+        import flash.filesystem.FileMode;
+        import flash.filesystem.FileStream;
+        import flash.utils.Timer;
+        import flash.utils.getTimer;
+        import flash.geom.Matrix;
+        import flash.system.System;
+        import mx.events.FlexEvent;
+        import ob.commands.files.LoadFilesCommand;
+        import ob.ui.NexaUiEvent;
+        import otlib.core.VersionStorage;
+        import otlib.things.ThingCategory;
+        import otlib.utils.ClientInfoLoader;
+        import otlib.resources.Resources;
+
+        private var testTimer:Timer = new Timer(250);
+        private var testStart:int;
+        private var testPhase:int = 0;
+        private var testArgs:Array;
+        private var testRoot:File;
+        private var testLoader:ClientInfoLoader;
+        private var testLoadStart:int;
+        private var testSteps:Array = [
+            [1366, 768, "en_US", 1], [1920, 1080, "en_US", 1],
+            [1366, 768, "pt_BR", 1], [1600, 900, "es_ES", 1],
+            [1366, 768, "pt_BR", 1.25], [1366, 768, "pt_BR", 1.5],
+            [1366, 768, "pt_BR", 1, 1], [1366, 768, "pt_BR", 1, 2]
+        ];
+        private var testStep:int = 0;
+
+        override protected function applicationPreinitializeHandler(event:FlexEvent):void
+        {
+            if (systemManager && systemManager.loaderInfo)
+                systemManager.loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, testError);
+            super.applicationPreinitializeHandler(event);
+        }
+
+        override protected function applicationInvokeHandler(event:InvokeEvent):void
+        {
+            // Test arguments must never invoke the production file-open dialog.
+            testArgs = event.arguments;
+        }
+        override protected function applicationCompleteHandler(event:FlexEvent):void
+        {
+            super.applicationCompleteHandler(event);
+            testRoot = new File(File.applicationDirectory.nativePath).resolvePath("nexa-layout-" + new Date().time);
+            testRoot.createDirectory();
+            testStart = getTimer();
+            if (systemManager && systemManager.loaderInfo)
+                systemManager.loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, testError);
+            testTimer.addEventListener(TimerEvent.TIMER, testTick);
+            testTimer.start();
+        }
+        private function testError(event:UncaughtErrorEvent):void
+        {
+            event.preventDefault();
+            fail(event.error is Error ? Error(event.error).getStackTrace() : String(event.error));
+        }
+        private function testTick(event:TimerEvent):void
+        {
+            try {
+                if (getTimer() - testStart > 120000) throw new Error("Layout test timed out at phase " + testPhase);
+                if (testPhase == 0 && visible && running) {
+                    restore();
+                    logPanel.expanded = false;
+                    if (testArgs && testArgs.length > 0) {
+                        var folder:File = new File(testArgs[0]);
+                        var spr:File = folder.resolvePath("spr_index.dat");
+                        if (!spr.exists) spr = folder.resolvePath("Tibia.spr");
+                        testLoader = new ClientInfoLoader();
+                        testLoader.addEventListener(Event.COMPLETE, testLoad);
+                        testLoader.addEventListener(ErrorEvent.ERROR, function(e:ErrorEvent):void { fail(e.text); });
+                        testLoadStart = getTimer();
+                        testLoader.load(folder.resolvePath("Tibia.dat"), spr, true);
+                        testPhase = 1;
+                    } else {
+                        testPhase = 3;
+                    }
+                } else if (testPhase == 1 && clientLoaded && thingData) {
+                    trace("Measured load-to-first-selection: " + (getTimer() - testLoadStart) + " ms");
+                    var id:uint = clientInfo.maxItemId >= 54600 ? 54600 : clientInfo.minItemId;
+                    requestEditThing(id, ThingCategory.ITEM);
+                    testPhase = 2;
+                } else if (testPhase == 2 && thingTypeEditor.visible) {
+                    testPhase = 3;
+                } else if (testPhase == 3) {
+                    if (testStep >= testSteps.length) {
+                        var selectedId:uint = thingData ? thingData.id : 0;
+                        var wasChanged:Boolean = clientChanged;
+                        for (var pass:int = 0; pass < 20; pass++) {
+                            nexaNavigation.homeButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+                            nexaNavigation.objectsButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+                            nexaNavigation.spritesButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+                        }
+                        if ((thingData ? thingData.id : 0) != selectedId || clientChanged != wasChanged)
+                            throw new Error("View navigation changed document/selection");
+                        nexaNavigation.toolsButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+                        if (!toobar.includeInLayout) throw new Error("Original utilities are inaccessible");
+                        if (nexaNavigation.active != "tools" || !nexaNavigation.toolsButton.selected)
+                            throw new Error("Navigation highlight does not follow the clicked button");
+                        trace("PASS: native shell, localized labels, four panels, retained utilities, navigation preserves document");
+                        trace("AS managed memory (not process RSS): " + Math.round(System.totalMemory / 1048576) + " MiB");
+                        trace("Screenshots: " + testRoot.nativePath);
+                        testTimer.stop();
+                        NativeApplication.nativeApplication.exit(0);
+                        return;
+                    }
+                    var step:Array = testSteps[testStep];
+                    resourceManager.localeChain = [step[2]];
+                    Resources.locale = step[2];
+                    if (clientInfo) infoPanel.setFilesInfo(clientInfo);
+                    var tabKeys:Array = ["texture", "properties", "attributes"];
+                    for (var ti:int = 0; ti < thingTypeEditor.tabNavigator.numElements; ti++)
+                        Object(thingTypeEditor.tabNavigator.getElementAt(ti)).label = resourceManager.getString("strings", tabKeys[ti]);
+                    thingTypeEditor.tabNavigator.selectedIndex = step.length > 4 ? step[4] : 0;
+                    width = step[0]; height = step[1];
+                    // Render real controls at exact logical sizes even when the local monitor is smaller.
+                    nexaShell.right = undefined; nexaShell.bottom = undefined;
+                    nexaShell.width = step[0]; nexaShell.height = step[1];
+                    testPhase = 4;
+                } else if (testPhase == 4) {
+                    validateNow();
+                    if (nexaActions.width > nexaShell.width + 1 || nexaNavigation.width > nexaShell.width + 1)
+                        throw new Error("Shell overflows viewport");
+                    if (nexaActions.pasteButton.enabled && !nexaActions.hasClipboard)
+                        throw new Error("Paste enabled without an object clipboard");
+                    if (previewPanel.width < previewPanel.minWidth || thingsPanel.width < thingsPanel.minWidth ||
+                        spritesPanel.width < spritesPanel.minWidth) throw new Error("Panel below minimum width");
+                    if (thingList.dataGroup.numElements > 128 || spritesList.dataGroup.numElements > 128)
+                        throw new Error("List renderers are not bounded to the visible viewport");
+                    var scale:Number = testSteps[testStep][3];
+                    var bitmap:BitmapData = new BitmapData(Math.ceil(nexaShell.width * scale), Math.ceil(nexaShell.height * scale), false, 0x0B141E);
+                    bitmap.draw(nexaShell, new Matrix(scale, 0, 0, scale));
+                    var file:File = testRoot.resolvePath(testSteps[testStep].join("-") + ".png");
+                    var output:FileStream = new FileStream();
+                    output.open(file, FileMode.WRITE);
+                    try { output.writeBytes(bitmap.encode(bitmap.rect, new PNGEncoderOptions())); }
+                    finally { output.close(); bitmap.dispose(); }
+                    trace("PASS: captured real editor controls " + file.name + " logical viewport " + nexaShell.width + "x" + nexaShell.height);
+                    testStep++;
+                    testPhase = 3;
+                }
+            } catch (error:Error) { fail(error.getStackTrace()); }
+        }
+        private function testLoad(event:Event):void
+        {
+            var info:otlib.utils.ClientInfo = testLoader.clientInfo;
+            var folder:File = new File(testArgs[0]);
+            var spr:File = folder.resolvePath("spr_index.dat");
+            if (!spr.exists) spr = folder.resolvePath("Tibia.spr");
+            sendCommand(new LoadFilesCommand(folder.resolvePath("Tibia.dat"), spr,
+                VersionStorage.getInstance().getBySignatures(info.datSignature, info.sprSignature), null, info.features));
+        }
+        private function fail(message:String):void
+        {
+            trace("FAIL: " + message);
+            if (testTimer) testTimer.stop();
+            NativeApplication.nativeApplication.exit(1);
+        }
+    ]]></fx:Script>
+</local:ObjectBuilder>

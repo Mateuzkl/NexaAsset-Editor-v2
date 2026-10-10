@@ -31,7 +31,7 @@ THE SOFTWARE.
     maximizable="false"
     minimizable="false"
     resizable="false"
-    backgroundColor="0x494949"
+    backgroundColor="0x0B141E"
     fontSize="11"
     type="utility"
     title="@Resource(key='importObject', bundle='strings')"
