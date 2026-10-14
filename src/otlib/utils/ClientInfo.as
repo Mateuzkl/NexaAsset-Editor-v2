@@ -55,6 +55,8 @@ package otlib.utils
         public var spriteDataSize:uint;
         public var loadedFileName:String;
         public var multiSpr:Boolean;
+        public var nativeModern:Boolean;
+        public var nativeInventory:Object;
         // Local preflight evidence; not part of the DAT/SPR file format.
         public var extendedKnown:Boolean;
         public var transparencyKnown:Boolean;

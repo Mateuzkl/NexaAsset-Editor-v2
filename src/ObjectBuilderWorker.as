@@ -37,6 +37,7 @@ package
     import flash.geom.Rectangle;
     import flash.utils.ByteArray;
     import flash.utils.Dictionary;
+    import otlib.utils.ConvertedProjectHint;
 
     import mx.resources.ResourceManager;
 
@@ -84,6 +85,9 @@ package
     import ob.commands.sprites.SetSpriteListCommand;
     import ob.commands.things.DuplicateThingCommand;
     import ob.commands.things.ExportThingCommand;
+    import ob.commands.things.ExportNativeObjectCommand;
+    import ob.commands.things.NativeObjectExportResultCommand;
+    import ob.modern.NativeObjectExport;
     import ob.commands.things.FindThingCommand;
     import ob.commands.things.GetThingCommand;
     import ob.commands.things.GetThingListCommand;
@@ -380,6 +384,7 @@ package
             _communicator.registerCallback(ImportThingsCommand, importThingsCallback);
             _communicator.registerCallback(ImportThingsFromFilesCommand, importThingsFromFilesCallback);
             _communicator.registerCallback(ExportThingCommand, exportThingCallback);
+            _communicator.registerCallback(ExportNativeObjectCommand,exportNativeObjectCallback);
             _communicator.registerCallback(ReplaceThingsCommand, replaceThingsCallback);
             _communicator.registerCallback(ReplaceThingsFromFilesCommand, replaceThingsFromFilesCallback);
             _communicator.registerCallback(DuplicateThingCommand, duplicateThingCallback);
@@ -1244,6 +1249,14 @@ package
             {
                 exportThingsDirect(list, category, obdVersion, clientVersion, spriteSheetFlag, transparentBackground, jpegQuality);
             }
+        }
+
+        private function exportNativeObjectCallback(model:Object,path:String,source:String,obd:uint,version:uint,transparent:Boolean,quality:uint,job:uint):void
+        {
+            var success:Boolean=false,message:String;
+            try{NativeObjectExport.write(model,path,source,obd,version,transparent,quality,_settings);success=true;message="Exported native object: "+path;Log.info(message);}
+            catch(error:Error){message=error.message;Log.error("Native object export: "+message);}
+            finally{sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));sendCommand(new NativeObjectExportResultCommand(path,success,message,job));}
         }
 
         private function exportThingsDirect(list:Vector.<PathHelper>,
@@ -3171,9 +3184,11 @@ package
         {
             sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
             sendClientInfo();
-            sendThingList(Vector.<uint>([ThingTypeStorage.MIN_ITEM_ID]), ThingCategory.ITEM);
-            sendThingData(ThingTypeStorage.MIN_ITEM_ID, ThingCategory.ITEM);
-            sendSpriteList(Vector.<uint>([0]));
+            var hint:Object=_things.file ? ConvertedProjectHint.read(_things.file.parent,_things,_version.value,_sprites.signature) : null;
+            var id:uint=hint ? hint.id : ThingTypeStorage.MIN_ITEM_ID,category:String=hint ? hint.category : ThingCategory.ITEM;
+            sendThingData(id, category);
+            sendThingList(Vector.<uint>([id]), category);
+            sendSpriteList(Vector.<uint>([hint ? hint.sprite : 0]));
             Log.info(Resources.getString("loadComplete"));
         }
 

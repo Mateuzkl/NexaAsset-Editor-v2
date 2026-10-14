@@ -516,6 +516,25 @@ package
                 }
             } finally { before.closeSpriteFile(); after.closeSpriteFile(); }
             note("PASS: all " + sprites.spritesCount + " real SPR records validated and preserved byte-for-byte");
+            var edited:ByteArray=reopened.getPixelsStrict(1);edited[0]=255;edited[1]=17;edited[2]=31;edited[3]=59;
+            check(reopened.replaceSprite(1,edited).done,"Real legacy pixel edit");
+            var changedThing:ThingType=things.getThingType(100,ThingCategory.ITEM).clone();changedThing.isUnpassable=!changedThing.isUnpassable;
+            check(things.replaceThing(changedThing,ThingCategory.ITEM,100).done,"Real legacy property edit");
+            var editedDat:File=out.resolvePath("Edited.dat"),editedSpr:File=out.resolvePath("Edited.spr");
+            check(things.compile(editedDat,v,f) && reopened.compile(editedSpr,v,f),"Real edited DAT/SPR save");
+            var editedRead:SpriteStorage=new SpriteStorage();editedRead.load(editedSpr,v,f);check(samePixels(editedRead.getPixelsStrict(1),edited),"Edited standard SPR reopen");editedRead.unload();
+            var editedThings:ThingTypeStorage=new ThingTypeStorage(new ObjectBuilderSettings());editedThings.load(editedDat,v,f);
+            check(editedThings.loaded && editedThings.getThingType(100,ThingCategory.ITEM).isUnpassable==changedThing.isUnpassable,"Edited DAT property reopen");editedThings.unload();
+            var multiOut:File=testRoot.resolvePath("real-multi");multiOut.createDirectory();var multiFeatures:ClientFeatures=f.clone();
+            check(things.compile(multiOut.resolvePath("Tibia.dat"),v,multiFeatures),"Real multi DAT compile");
+            check(reopened.compile(multiOut.resolvePath("spr_index.dat"),v,multiFeatures),"Real edited multi-SPR compile");
+            var multiRead:SpriteStorage=new SpriteStorage();multiRead.load(multiOut.resolvePath("spr_index.dat"),v,multiFeatures);
+            check(multiRead.loaded && multiRead.spritesCount==sprites.spritesCount && samePixels(multiRead.getPixelsStrict(1),edited),"Real multi-SPR edit/reopen");
+            for each(var boundary:uint in Vector.<uint>([65535,65536,sprites.spritesCount]))if(boundary<=sprites.spritesCount)check(samePixels(multiRead.getPixelsStrict(boundary),sprites.getPixelsStrict(boundary)),"Real multi-SPR boundary "+boundary);
+            var back:File=testRoot.resolvePath("real-multi-back.spr");var standardFeatures:ClientFeatures=f.clone();
+            check(multiRead.compile(back,v,standardFeatures),"Real multi-SPR to standard compile");multiRead.unload();
+            var backRead:SpriteStorage=new SpriteStorage();backRead.load(back,v,standardFeatures);check(samePixels(backRead.getPixelsStrict(1),edited),"Real multi-SPR to standard edited-pixel reopen");backRead.unload();
+            edited.clear();note("PASS: real legacy sprite/property edit-save-reopen and full multi-SPR compile/reopen/standard round trip");
             reopened.unload(); sprites.unload(); things.unload();
             var datReload:ThingTypeStorage = new ThingTypeStorage(new ObjectBuilderSettings());
             datReload.addEventListener(ErrorEvent.ERROR, capture); datReload.load(out.resolvePath("Tibia.dat"), v, f);

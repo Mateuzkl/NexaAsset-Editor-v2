@@ -6,6 +6,11 @@ bin-release/
 bin-release-temp/
 bin-tests/
 workerswfs/
+**/obj/
+tools/modern-helper/bin/
+tools/modern-helper-tests/bin/
+modern-sessions/
+nexa-modern-sessions/
 
 # Other files and folders
 *.swf

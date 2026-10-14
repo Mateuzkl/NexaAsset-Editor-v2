@@ -31,7 +31,7 @@ THE SOFTWARE.
     width="500"
     fontSize="11"
     title="@Resource(key='openAssetFiles', bundle='strings')"
-    creationComplete="windowCreationCompleteHandler(event)">
+    creationComplete="windowCreationCompleteHandler(event)" removedFromStage="releaseModernProbe()">
 
     <fx:Metadata>
         [ResourceBundle("strings")]
@@ -63,6 +63,8 @@ THE SOFTWARE.
             import flash.filesystem.FileMode;
             import flash.filesystem.FileStream;
             import flash.utils.Endian;
+            import ob.modern.ModernAssetSession;
+            import ob.modern.ModernAssetEvent;
             import otlib.items.ItemAttributeStorage;
             
             // --------------------------------------------------------------------------
@@ -99,6 +101,11 @@ THE SOFTWARE.
             {
                 return m_sprFile;
             }
+            private var m_modernDirectory:File;
+            private var m_modernProbe:ModernAssetSession;
+            public var modernHelper:File;
+            private var m_modernReady:Boolean=false;
+            public function get modernDirectory():File { return m_modernDirectory; }
             public function get datFile():File
             {
                 return m_datFile;
@@ -300,6 +307,21 @@ THE SOFTWARE.
                 }
             
                 clientDirectoryTextInput.file = directory;
+                if (directory.resolvePath("catalog-content.json").exists)
+                {
+                    m_modernDirectory = directory;
+                    clientVersionLabel.text = "Analyzing native appearances and catalog…";
+                    nativeInfo.visible=nativeInfo.includeInLayout=true;
+                    legacySettings.visible=legacySettings.includeInLayout=false;
+                    legacyOptions.visible=legacyOptions.includeInLayout=false;
+                    m_modernProbe=new ModernAssetSession();
+                    m_modernProbe.addEventListener(ModernAssetEvent.MESSAGE,modernProbeMessage);
+                    try{m_modernProbe.open(directory,modernHelper||File.applicationDirectory.resolvePath("modern-helper/nexa-modern-helper.exe"),new File(File.applicationDirectory.nativePath).parent.resolvePath("nexa-modern-sessions"));}
+                    catch(error:Error){releaseModernProbe();setErrorText(error.message);}
+                    setErrorText(null);
+                    updateProperties();
+                    return;
+                }
             
                 var dat:File;
                 var spr:File;
@@ -509,6 +531,13 @@ THE SOFTWARE.
 
             private function resetInfo():void
             {
+                releaseModernProbe();m_modernReady=false;
+                nativeInfo.visible=nativeInfo.includeInLayout=false;
+                legacySettings.visible=legacySettings.includeInLayout=true;
+                datInfo.label="DAT";sprInfo.label="SPR";
+                legacyOptions.visible=legacyOptions.includeInLayout=true;
+                spriteDimensionsDropDownList.enabled=true;
+                m_modernDirectory = null;
                 var empty:String = "";
                 clientVersionLabel.text = empty;
                 sprSignatureLabel.text = empty;
@@ -545,6 +574,14 @@ THE SOFTWARE.
             
             private function updateProperties():void
             {
+                if (m_modernDirectory)
+                {
+                    extendedCheckBox.enabled = transparencyCheckBox.enabled = improvedAnimationsCheckBox.enabled = frameGroupsCheckBox.enabled = false;
+                    featureNotice.configure(null, null);
+                    spriteDimensionsDropDownList.enabled=false;
+                    loadButton.enabled = m_modernReady;
+                    return;
+                }
                 var done:Boolean = (m_sprFile != null && m_version != null);
             
                 spriteDimensionsDropDownList.selectedItem = spriteDimension;
@@ -574,6 +611,25 @@ THE SOFTWARE.
                 frameGroupsCheckBox.selected = m_frameGroups;
                 featureNotice.configure(m_expectedInfo, ClientFeatures.fromWindow(this));
                 loadButton.enabled = done && !featureNotice.blocksLoad;
+            }
+
+            private function releaseModernProbe():void {
+                if(m_modernProbe){m_modernProbe.removeEventListener(ModernAssetEvent.MESSAGE,modernProbeMessage);m_modernProbe.close();m_modernProbe=null;}
+            }
+            private function modernProbeMessage(event:ModernAssetEvent):void {
+                if(event.currentTarget!=m_modernProbe)return;
+                var m:Object=event.message;
+                if(m.type=="ready"){
+                    var inv:Object=m.native;
+                    clientVersionLabel.text="Native modern assets (Appearances) · release not declared in catalog";
+                    datSignatureLabel.text="Protobuf (no legacy DAT signature)";
+                    datInfo.label="Appearances";sprInfo.label="Spritesheets";
+                    itemsCountLabel.text=inv.categories.item.count.toString();outfitsCountLabel.text=inv.categories.outfit.count.toString();
+                    effectsCountLabel.text=inv.categories.effect.count.toString();missilesCountLabel.text=inv.categories.missile.count.toString();
+                    sprSignatureLabel.text="CIP LZMA spritesheets";spritesCountLabel.text=inv.spriteCount.toString();
+                    nativeInfo.text="Native dimensions: "+inv.dimensions.join(", ")+"\nSpritesheets: "+inv.sheetCount+" · Objects with multiple groups: "+inv.multipleGroups+"\nNative alpha and frame metadata are read from the source; legacy checkboxes do not apply.";
+                    m_modernReady=true;releaseModernProbe();setErrorText(null);updateProperties();
+                }else if(m.type=="error"){m_modernReady=false;setErrorText(m.message);releaseModernProbe();updateProperties();}
             }
 
             private function applyDetectedFeatures():void
@@ -831,12 +887,12 @@ THE SOFTWARE.
                 <s:HorizontalLayout gap="5" verticalAlign="middle" padding="10"/>
             </mg:layout>
 
-            <s:Label id="clientVersionLabel"/>
+            <s:Label id="clientVersionLabel" width="100%" maxDisplayedLines="3"/>
 
         </mg:GroupBox>
 
         <!-- settings grid -->
-        <mg:GroupBox width="100%" label="Settings">
+        <mg:GroupBox id="legacySettings" width="100%" label="Settings">
             <mg:layout>
                 <s:TileLayout requestedColumnCount="2" horizontalGap="20" verticalGap="10" padding="10" columnAlign="justifyUsingWidth"/>
             </mg:layout>
@@ -858,7 +914,8 @@ THE SOFTWARE.
         </mg:GroupBox>
 
         <!-- client options -->
-        <mg:GroupBox width="100%"
+        <s:TextArea id="nativeInfo" width="100%" height="100" visible="false" includeInLayout="false" editable="false"/>
+        <mg:GroupBox id="legacyOptions" width="100%"
             label="@Resource(key='options', bundle='strings')">
 
             <mg:layout>
@@ -884,7 +941,7 @@ THE SOFTWARE.
         </mg:GroupBox>
 
         <!-- dat -->
-        <mg:GroupBox width="100%" label="DAT">
+        <mg:GroupBox id="datInfo" width="100%" label="DAT">
 
             <mg:layout>
                 <s:TileLayout requestedColumnCount="2" padding="10" horizontalGap="10"/>
@@ -921,7 +978,7 @@ THE SOFTWARE.
         </mg:GroupBox>
 
         <!-- spr -->
-        <mg:GroupBox width="100%" label="SPR">
+        <mg:GroupBox id="sprInfo" width="100%" label="SPR">
             <mg:layout>
                 <s:TileLayout requestedColumnCount="2" padding="10" horizontalGap="10"/>
             </mg:layout>

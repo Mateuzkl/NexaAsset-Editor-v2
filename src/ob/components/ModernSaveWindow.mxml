@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mg:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark" xmlns:mg="library://ns.mignari.com/mg"
+    title="Save modern assets as" width="560" height="330" creationComplete="start()" removedFromStage="shutdown()">
+    <fx:Script><![CDATA[
+        import flash.events.Event;
+        import flash.filesystem.File;
+        import ob.modern.ModernNativeSource;
+        import ob.modern.ModernAssetEvent;
+        public var source:ModernNativeSource;
+        [Bindable] public var savedDirectory:File;
+        public var savedRevision:Number;
+        [Bindable] private var busy:Boolean=false;
+        [Bindable] private var message:String="Save a complete modern copy to a new folder. Definitions, spritesheets, catalog and required resources are retained. No DAT/SPR conversion is performed. Further Save commands will update this new project folder.";
+        private var picker:File;
+        private function start():void {source.addEventListener(ModernAssetEvent.MESSAGE,received);outputInput.text=source.directory.nativePath+"-copy";}
+        private function browse():void {
+            picker=new File(source.directory.parent.nativePath);picker.addEventListener(Event.SELECT,picked);picker.addEventListener(Event.CANCEL,cancelled);
+            try{picker.browseForDirectory("Select the parent directory for the modern copy");}catch(error:Error){message=error.message;releasePicker();}
+        }
+        private function picked(event:Event):void {outputInput.text=picker.resolvePath(source.directory.name+"-copy").nativePath;releasePicker();}
+        public function saveTo(target:File):void {
+            if(!source.ready||busy)return;busy=true;
+            try{source.request("native-save-as",{target:target.nativePath},function(result:Object):void {
+                busy=false;savedDirectory=new File(result.directory);savedRevision=result.revision;
+                message="Modern copy saved and validated: "+savedDirectory.nativePath;
+                dispatchEvent(new Event("nativeSaveCompleted"));
+                close();
+            });}catch(error:Error){busy=false;message=error.message;}
+        }
+        private function received(event:ModernAssetEvent):void {
+            var m:Object=event.message;
+            if(m.type=="error"){busy=false;message=m.message;}
+            else if(busy&&m.type=="progress")message=m.phase+" · "+m.processed+" / "+m.total;
+        }
+        private function cancelled(event:Event):void {releasePicker();}
+        private function releasePicker():void {if(picker){picker.removeEventListener(Event.SELECT,picked);picker.removeEventListener(Event.CANCEL,cancelled);picker=null;}}
+        public function shutdown():void {releasePicker();if(source)source.removeEventListener(ModernAssetEvent.MESSAGE,received);}
+    ]]></fx:Script>
+    <s:VGroup left="16" right="16" top="16" bottom="16" gap="14">
+        <s:Label text="New output folder:"/>
+        <s:HGroup width="100%"><s:TextInput id="outputInput" width="100%" enabled="{!busy}"/><s:Button label="Browse…" enabled="{!busy}" click="browse()"/></s:HGroup>
+        <s:TextArea width="100%" height="100%" editable="false" text="{message}"/>
+        <s:HGroup width="100%">
+            <s:Button label="Save As" enabled="{!busy &amp;&amp; outputInput.text.length>0}" click="saveTo(new File(outputInput.text))"/>
+            <s:Spacer width="100%"/>
+            <s:Button label="Cancel" enabled="{!busy}" click="close()"/>
+        </s:HGroup>
+    </s:VGroup>
+</mg:TitleWindow>

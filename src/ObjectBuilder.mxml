@@ -55,6 +55,11 @@ THE SOFTWARE.
             import ob.components.ReadableProgressWidget;
             import ob.ui.NexaUiEvent;
             import ob.ui.NexaIcons;
+            import ob.modern.ModernNativeSource;
+            import ob.modern.ModernThingData;
+            import ob.modern.ModernAssetEvent;
+            import ob.modern.ModernFlagEvent;
+            import mx.utils.Base64Encoder;
             import com.mignari.utils.DialogDetail;
             import com.mignari.workers.IWorkerCommunicator;
             import com.mignari.workers.WorkerCommand;
@@ -71,6 +76,7 @@ THE SOFTWARE.
             import flash.desktop.ClipboardFormats;
             
             import mx.core.UIComponent;
+            import mx.core.FlexGlobals;
             import mx.events.CloseEvent;
             import mx.events.FlexEvent;
 
@@ -537,6 +543,53 @@ THE SOFTWARE.
             
             public function sendCommand(command:WorkerCommand):void
             {
+                if (_nativeSource && !(command is ob.commands.things.ExportNativeObjectCommand))
+                {
+                    var source:ModernNativeSource = _nativeSource;
+                    if (command is GetThingListCommand)
+                    {
+                        var page:GetThingListCommand = GetThingListCommand(command);
+                        _nativeTargetId = page.targetId; _nativeTargetCategory = page.category;
+                        source.hideEmpty = hideEmptyObjectsCheckbox.selected;
+                        source.objects(page.targetId, page.category, function(result:Object, items:Vector.<ThingListItem>):Boolean {
+                            if (_nativeSource != source || currentCategory != page.category) return false;
+                            var selectedId:uint = result.selected;
+                            if (_nativeTargetCategory == page.category && _nativeTargetId != page.targetId)
+                            {
+                                var present:Boolean = false;
+                                for each (var row:ThingListItem in items) if (row.id == _nativeTargetId) { present = true; break; }
+                                if (!present) { sendCommand(new GetThingListCommand(_nativeTargetId, page.category)); return false; }
+                                selectedId = _nativeTargetId;
+                            }
+                            setThingListCallback(selectedId ? Vector.<uint>([selectedId]) : new Vector.<uint>(), items, true, result.previous, result.next, true);
+                            if (!result.selected) { thingData = null; editThing(null); }
+                            if (source.query.length) { foundThingsList.forceNextUpdate(); foundThingsList.setListObjects(items); foundThingsList.selectedIds = selectedId ? Vector.<uint>([selectedId]) : new Vector.<uint>(); }
+                            else foundThingsList.removeAll();
+                            statusLabel.text = "Modern project · " + result.total + " objects";
+                            return true;
+                        });
+                    }
+                    else if (command is GetThingCommand)
+                    {
+                        var selected:GetThingCommand = GetThingCommand(command);
+                        _nativeTargetId = selected.id; _nativeTargetCategory = selected.category;
+                        source.detail(selected.id, selected.category, function(data:ModernThingData):Boolean {
+                            if (_nativeSource != source || currentCategory != data.category || _nativeTargetId != data.id) return false;
+                            setThingDataCallback(data, true);
+                            // Reuse the standard inspector, not a separate modern browser.
+                            editThing(data);
+                            return true;
+                        });
+                    }
+                    else if (command is GetSpriteListCommand)
+                        source.sprites(GetSpriteListCommand(command).targetId, function(result:Object, sprites:Vector.<SpriteData>):void {
+                            if (_nativeSource == source) setSpriteListCallback(Vector.<uint>([result.selected]), sprites, true, true);
+                        });
+                    // Native source viewing is immutable. Never send legacy mutation commands
+                    // against a modern source or the previously loaded worker project.
+                    else if (!(command is SettingsCommand)) { statusLabel.text = "This legacy operation is not available in the native working copy. Use Convert DAT/SPR to continue in legacy format."; appendLog(statusLabel.text); }
+                    return;
+                }
                 _communicator.sendCommand(command);
             }
             
@@ -603,6 +656,7 @@ THE SOFTWARE.
                     if (window.detail == DialogDetail.OK)
                     {
                         // TODO: check if it's changed/compiled
+                        if (_nativeSource) clear();
             
                         setSpriteExtend(window.spriteDimension);
                         var features:ClientFeatures = ClientFeatures.fromWindow(window);
@@ -638,6 +692,8 @@ THE SOFTWARE.
             
                     if (window.detail == DialogDetail.OK)
                     {
+                        if (window.modernDirectory) { openNativeProject(window.modernDirectory); return; }
+                        if (_nativeSource) clear();
                         var mainFile:File = window.datFile || window.sprFile;
                         _settings.setLastDirectory(mainFile);
                         _settings.setServerItemsDirectory(window.serverItemsDirectory);
@@ -695,6 +751,7 @@ THE SOFTWARE.
             
             public function compileProject():void
             {
+                if (_nativeSource) { saveNativeProject(); return; }
                 if (!clientLoaded)
                     return;
             
@@ -712,6 +769,7 @@ THE SOFTWARE.
             
             public function compileProjectAs():void
             {
+                if (_nativeSource) { openNativeSave(); return; }
                 if (!clientLoaded || _locked)
                     return;
             
@@ -849,6 +907,7 @@ THE SOFTWARE.
             
             public function openFinder():void
             {
+                if (_nativeSource) { nativeSearch.visible = nativeSearch.includeInLayout = true; nativeSearchInput.setFocus(); return; }
                 if (!clientLoaded)
                     return;
             
@@ -992,7 +1051,7 @@ THE SOFTWARE.
                     {
                         var list:Vector.<ThingData> = new Vector.<ThingData>(1, true);
                         list[0] = event.data;
-                        _communicator.sendCommand(new ImportThingsCommand(list));
+                        sendCommand(new ImportThingsCommand(list));
                     }
                 }
             }
@@ -1001,6 +1060,249 @@ THE SOFTWARE.
             {
                 if (_assetStoreWindow && !_assetStoreWindow.closed)
                     _assetStoreWindow.close();
+            }
+
+            private var _modernWindow:ob.components.ModernConversionWindow;
+            private var _nativeSource:ModernNativeSource;
+            private var _nativeTargetId:uint;
+            private var _nativeTargetCategory:String;
+            private var _nativeExportedRevision:Number=0;
+            private var _nativeObjectExportCallback:Function;
+            private var _nativeObjectExportPath:String;
+            private var _nativeObjectExportJob:uint=0;
+            public function get nativeSource():ModernNativeSource { return _nativeSource; }
+            private var _nativeSaveWindow:ob.components.ModernSaveWindow;
+            private var _nativeSaving:Boolean=false;
+            private var _nativeCloseAfterSave:Boolean=false;
+            private static const NATIVE_SPRITE_CLIPBOARD:String="nexa.native.sprite.argb.v1";
+            public function get nativeSaving():Boolean {return _nativeSaving;}
+            private function saveNativeProject():void {
+                if(!_nativeSource||_nativeSaving)return;
+                if(!_nativeSource.ready){statusLabel.text="Native save unavailable: the helper stopped. Reopen the last valid asset generation.";appendLog(statusLabel.text);return;}
+                var source:ModernNativeSource=_nativeSource;_nativeSaving=true;statusLabel.text="Saving native assets…";
+                try{source.request("native-save",{},function(result:Object):void {
+                    if(_nativeSource!=source)return;_nativeSaving=false;
+                    nativeSaved(source,result.directory,result.revision);
+                    if(_nativeCloseAfterSave && !clientChanged){_nativeCloseAfterSave=false;clear();exit();}
+                });}catch(error:Error){_nativeSaving=false;statusLabel.text="Native save failed: "+error.message;appendLog(statusLabel.text);}
+            }
+            private function nativeSaved(source:ModernNativeSource,path:String,revision:Number):void {
+                if(_nativeSource!=source)return;source.directory=new File(path);_settings.setLastDirectory(source.directory);
+                _nativeExportedRevision=revision;_clientInfo.changed=_clientChanged=source.revision>revision;updateNexaSaveState();
+                statusLabel.text="Native assets saved: "+path;appendLog(statusLabel.text);
+            }
+            private function openNativeSave():void {
+                if(!_nativeSource||!_nativeSource.ready||_nativeSaveWindow)return;
+                var window:ob.components.ModernSaveWindow=new ob.components.ModernSaveWindow();_nativeSaveWindow=window;window.source=_nativeSource;
+                window.addEventListener("nativeSaveCompleted",saved);
+                window.addEventListener(Event.CLOSE,closed);window.open(this);
+                function saved(event:Event):void {nativeSaved(window.source,window.savedDirectory.nativePath,window.savedRevision);}
+                function closed(event:Event):void {window.removeEventListener("nativeSaveCompleted",saved);window.removeEventListener(Event.CLOSE,closed);window.shutdown();if(_nativeSaveWindow==window)_nativeSaveWindow=null;}
+            }
+            public function openModernAssets():void
+            {
+                openProject();
+            }
+            public function openNativeProject(directory:File, helper:File = null):void
+            {
+                if (clientChanged || thingTypeEditor.changed)
+                {
+                    Alert.show("Save or close the current project before opening another asset folder.", "NexaAsset Editor v2", Alert.OK, this);
+                    return;
+                }
+                clear();
+                _communicator.sendCommand(new UnloadFilesCommand());
+                setSpriteExtend(SpriteDimensionStorage.getInstance().getBySizes(32, 4096));
+                _nativeSource = new ModernNativeSource();
+                _nativeSource.addEventListener(ModernAssetEvent.MESSAGE, nativeMessage);
+                nexaActions.readOnly = false;
+                nexaActions.nativeModern=true;
+                thingTypeEditor.addEventListener(ModernFlagEvent.CHANGE, nativeFlagChanged);
+                nativeSearch.visible = nativeSearch.includeInLayout = true;
+                nativeSearchInput.text = "";
+                statusLabel.text = "Loading native appearances…";
+                try { _nativeSource.open(directory, helper); }
+                catch (error:Error) { clear(); appendLog(error.message); statusLabel.text = error.message; }
+            }
+            private function nativeMessage(event:ModernAssetEvent):void
+            {
+                if (!_nativeSource || event.currentTarget != _nativeSource) return;
+                var message:Object = event.message;
+                if (message.type == "ready" || message.type == "inventory")
+                {
+                    var inv:Object = _nativeSource.inventory;
+                    var info:ClientInfo = new ClientInfo();
+                    info.nativeModern = true; info.nativeInventory = inv; info.loaded = true; info.changed = _nativeSource.revision > _nativeExportedRevision;
+                    info.clientVersionStr = "Modern assets"; info.spriteSize = 32; info.spriteDataSize = 4096;
+                    // UI capability ceiling, not a detected client version.
+                    // The file-info panel displays "Modern (Appearances)".
+                    info.clientVersion = 1525;
+                    info.features = new ClientFeatures(); info.features.extended = true; info.features.transparency = true;
+                    info.features.improvedAnimations = true; info.features.frameGroups = true;
+                    info.minItemId = inv.categories.item.first; info.maxItemId = inv.categories.item.last;
+                    info.minOutfitId = inv.categories.outfit.first; info.maxOutfitId = inv.categories.outfit.last;
+                    info.minEffectId = inv.categories.effect.first; info.maxEffectId = inv.categories.effect.last;
+                    info.minMissileId = inv.categories.missile.first; info.maxMissileId = inv.categories.missile.last;
+                    info.minSpriteId = inv.firstSprite; info.maxSpriteId = inv.lastSprite;
+                    setClientInfoCallback(info, true);
+                    if (message.type == "ready") {
+                        currentCategory = ThingCategory.ITEM;
+                        sendCommand(new GetThingListCommand(info.minItemId, ThingCategory.ITEM));
+                        sendCommand(new GetSpriteListCommand(info.minSpriteId));
+                    }
+                }
+                else if (message.type == "error") {
+                    if(message.command=="native-save" || !_nativeSource.ready){_nativeSaving=false;_nativeCloseAfterSave=false;}
+                    if(!_nativeSource.ready){if(!clientLoaded)clear();else{nexaActions.readOnly=true;nexaActions.canSave=false;}}
+                    statusLabel.text="Native assets: "+message.message;appendLog(statusLabel.text);
+                }
+                else if (message.type == "progress") statusLabel.text = (message.phase||"Loading native assets")+" · "+message.processed+" / "+message.total;
+            }
+            public function searchNativeObjects():void
+            {
+                if (!_nativeSource) return;
+                _nativeSource.query = nativeSearchInput.text.substr(0,256);
+                sendCommand(new GetThingListCommand(getMinThingId(), currentCategory));
+            }
+            private function openNativeConversion():void
+            {
+                if (_modernWindow) return;
+                _modernWindow = new ob.components.ModernConversionWindow();
+                _modernWindow.source = _nativeSource;
+                _modernWindow.category = currentCategory;
+                _modernWindow.selection = nativeIds(getActiveThingList().selectedIds);
+                _modernWindow.addEventListener(Event.CLOSE, modernWindowClosed);
+                _modernWindow.addEventListener("openConvertedLegacy", modernOpenConverted);
+                _modernWindow.addEventListener("nativeExportCompleted", nativeExportCompleted);
+                _modernWindow.open(this);
+            }
+            private function modernWindowClosed(event:Event):void
+            {
+                _modernWindow.removeEventListener(Event.CLOSE, modernWindowClosed);
+                _modernWindow.removeEventListener("openConvertedLegacy", modernOpenConverted);
+                _modernWindow.removeEventListener("nativeExportCompleted", nativeExportCompleted);
+                _modernWindow.shutdown(); _modernWindow = null;
+            }
+            private function modernOpenConverted(event:Event):void
+            {
+                var directory:File = _modernWindow.convertedDirectory;
+                if (!directory || _locked) return;
+                if (clientChanged || (thingTypeEditor && thingTypeEditor.changed))
+                {
+                    Alert.show("Save or close the current project before opening the converted assets.", "NexaAsset Editor v2", Alert.OK, this);
+                    return;
+                }
+                _modernWindow.close(); openProject(directory);
+            }
+            private function nativeExportCompleted(event:Event):void
+            {
+                if (_modernWindow.selectedOnly.selected) return;
+                _nativeExportedRevision = _nativeSource.revision;
+                _clientInfo.changed = _clientChanged = false; updateNexaSaveState();
+            }
+            private function nativeIds(ids:Vector.<uint>):Array {var list:Array=[];for each(var id:uint in ids)list.push(id);return list;}
+            public function nativeMutation(command:String, fields:Object):void
+            {
+                if (!_nativeSource || !_nativeSource.ready) return;
+                var source:ModernNativeSource = _nativeSource;
+                if (!fields.category) fields.category = currentCategory;
+                try { source.request(command, fields, function(result:Object):void {
+                    if (_nativeSource != source) return;
+                    source.query = ""; nativeSearchInput.text = "";
+                    if (result.clipboard !== undefined) setClipboardFlag("hasClipboardObject", result.clipboard);
+                    sendCommand(new GetThingListCommand(result.selected || (thingData ? thingData.id : getMinThingId()), fields.category));
+                    sendCommand(new GetSpriteListCommand(result.sprite !== undefined ? result.sprite : spriteStepper.value));
+                    if (thingData && command!="native-remove") sendCommand(new GetThingCommand(result.selected || thingData.id, fields.category));
+                }); } catch(error:Error) { appendLog(error.message); statusLabel.text = error.message; }
+            }
+            private function nativeFlagChanged(event:ModernFlagEvent):void
+            {
+                if (_nativeSource && thingTypeEditor.thingData)
+                    nativeMutation(event.instances ? "native-edit-flag" : "native-flag", {category:thingTypeEditor.thingData.category, appearanceId:thingTypeEditor.thingData.id, number:event.number, enabled:event.enabled,instances:event.instances});
+            }
+            private function nativeExport(sprite:Boolean=false):void
+            {
+                if (!_nativeSource || (!sprite && !thingData)) return;
+                if(!sprite){nativeLegacyExport();return;}
+                var window:ob.components.ModernExportWindow = new ob.components.ModernExportWindow();
+                window.source = _nativeSource; window.category = currentCategory; window.sprite = sprite;
+                window.appearanceId = sprite ? activeSpriteList.selectedId : thingData.id;
+                window.selection = nativeIds(sprite ? activeSpriteList.selectedIds : getActiveThingList().selectedIds);
+                window.group = sprite ? 0 : thingTypeEditor.frameGroupSlider.value;
+                window.frame = sprite ? 0 : thingTypeEditor.animationSlider.value;
+                if (!sprite) {
+                    var selectedPattern:Object = thingTypeEditor.nativeSelection();
+                    window.patternX = selectedPattern.patternX; window.patternY = selectedPattern.patternY; window.patternZ = selectedPattern.patternZ;
+                }
+                window.open(this);
+            }
+            private function nativeLegacyExport():void {
+                if(!_nativeSource||!_nativeSource.ready||_locked||_nativeObjectExportCallback!=null)return;
+                var source:ModernNativeSource=_nativeSource,category:String=currentCategory,ids:Array=nativeIds(getActiveThingList().selectedIds);
+                if(!ids.length)return;
+                var window:ExportWindow=new ExportWindow();window.enableObdFormat=true;window.fileName=category;window.directory=_settings.getIODirectory()||source.directory.parent;
+                window.format=_settings.getLastExportThingFormat()||"png";window.version=_settings.getLastExportThingVersion()||_versionStorage.getByValueString("10.98");
+                window.obdV3=category==ThingCategory.OUTFIT;window.transparentBackground=true;window.jpegQuality=_settings.jpegQuality;
+                window.enableNativePackage=true;window.addEventListener("exportNativePackage",packageSelected);
+                _locked=true;window.addEventListener(Event.CLOSE,closed);window.open(this);
+                function packageSelected(event:Event):void {window.close();nativeExportPackage();}
+                function closed(event:Event):void {
+                    window.removeEventListener(Event.CLOSE,closed);window.removeEventListener("exportNativePackage",packageSelected);_locked=false;
+                    if(window.detail!=DialogDetail.OK||_nativeSource!=source)return;
+                    _settings.setIODirectory(window.directory);_settings.setLastExportThingFormat(window.format);_settings.setLastExportThingVersion(window.version);
+                    var version:Version=window.format=="obd" ? window.version : _versionStorage.getByValueString("10.98");
+                    source.request("preflight",{selection:ids,category:category,version:version.value,datSignature:version.datSignature,sprSignature:version.sprSignature,transparency:true},function(result:Object):void {
+                        if(_nativeSource!=source)return;
+                        var notices:Array=result.summary.losses,notice:String="OBD contains legacy properties and 32-pixel tiles, not all modern-only fields. Keep the native project or .nexaobject packages to preserve those fields.";
+                        for each(var row:Object in notices)notice+="\n"+row.field+" ("+row.count+"): "+row.reason;
+                        if(category==ThingCategory.OUTFIT && window.obdVersion<300)notice+="\nOBD v1/v2 retain only the moving outfit group.";
+                        if(window.format=="obd" && (notices.length||category==ThingCategory.OUTFIT&&window.obdVersion<300))
+                            Alert.show(notice.substr(0,5000)+"\n\nContinue exporting?","OBD compatibility",Alert.YES|Alert.NO,FlexGlobals.topLevelApplication as UIComponent,function(answer:CloseEvent):void{if(answer.detail==Alert.YES)next();});
+                        else next();
+                    });
+                    var position:int=0;
+                    var exportRevision:Number=source.revision;
+                    function next():void {
+                        if(_nativeSource!=source||position>=ids.length)return;
+                        if(source.revision!=exportRevision){appendLog("The working copy changed; restart the object export.");return;}
+                        var id:uint=ids[position++];var path:String=window.directory.resolvePath(window.fileName+(ids.length>1?"-"+id:"")+"."+window.format).nativePath;
+                        source.request("native-object-export",{category:category,appearanceId:id,version:version.value,datSignature:version.datSignature,sprSignature:version.sprSignature},function(model:Object):void {
+                            if(_nativeSource!=source)return;
+                            if(new File(model.file).nativePath!=source.session.directory.resolvePath("native-obd.bin").nativePath)throw new Error("Native export packet outside owned session.");
+                            model.pixels=ob.modern.NativeObjectExport.packet(model.file);model.file=null;
+                            _nativeObjectExportPath=path;
+                            _nativeObjectExportCallback=function(success:Boolean,message:String):void {if(_nativeSource!=source)return;statusLabel.text=message;if(success)next();};
+                            _communicator.sendCommand(new ob.commands.things.ExportNativeObjectCommand(model,path,source.directory.nativePath,window.obdVersion,version.value,window.transparentBackground,window.jpegQuality,++_nativeObjectExportJob));
+                        });
+                    }
+                }
+            }
+            private function nativeExportPackage():void {
+                if(!_nativeSource||!thingData)return;
+                var window:ob.components.ModernExportWindow=new ob.components.ModernExportWindow();window.source=_nativeSource;window.category=currentCategory;
+                window.appearanceId=thingData.id;window.selection=nativeIds(getActiveThingList().selectedIds);window.initialFormat=1;window.open(this);
+            }
+            private function nativeBitmap(bitmap:BitmapData, target:Object=null):void
+            {
+                var encoder:Base64Encoder=new Base64Encoder();encoder.insertNewLines=false;var pixels:ByteArray=bitmap.getPixels(bitmap.rect);encoder.encodeBytes(pixels);pixels.clear();
+                nativeMutation("native-sprite-set",{width:bitmap.width,height:bitmap.height,argb:encoder.toString(),spriteId:target});
+            }
+            private function nativeImport(sprite:Boolean=false, replace:Boolean=false):void
+            {
+                var source:ModernNativeSource = _nativeSource;
+                var category:String = currentCategory, target:uint = sprite ? activeSpriteList.selectedId : (thingData ? thingData.id : 0);
+                var file:File = _settings.getIODirectory() || source.directory.parent;
+                file.addEventListener(Event.SELECT,picked);file.addEventListener(Event.CANCEL,cancelled);
+                try { file.browseForOpen("Import into the native working copy", [new FileFilter(sprite ? "PNG sprite" : "Native object package or PNG", sprite ? "*.png" : "*.nexaobject;*.png")]); }
+                catch(error:Error){cleanup();appendLog(error.message);}
+                function cleanup():void{file.removeEventListener(Event.SELECT,picked);file.removeEventListener(Event.CANCEL,cancelled);}
+                function cancelled(event:Event):void{cleanup();}
+                function picked(event:Event):void {
+                    cleanup();if(_nativeSource!=source)return;_settings.setIODirectory(file);
+                    if(file.extension && file.extension.toLowerCase()=="nexaobject") {nativeMutation("native-import-object",{category:category,file:file.nativePath,target:replace ? target : null});return;}
+                    if(!sprite && replace){Alert.show("Use a native object package to replace an entire object, or replace its PNG sprite in the Sprites panel.","Native import",Alert.OK,this);return;}
+                    nativeMutation("native-import-png",{category:category,spriteId:replace ? target : null,file:file.nativePath,asObject:!sprite});
+                }
             }
             
             public function openSpritesOptimizer():void
@@ -1148,6 +1450,7 @@ THE SOFTWARE.
             
             public function duplicateThings(ids:Vector.<uint>, category:String):void
             {
+                if (_nativeSource) { nativeMutation("native-duplicate", {category:category, ids:nativeIds(ids)}); return; }
                 if (!clientLoaded || !ids || ids.length == 0 || isNullOrEmpty(category))
                     return;
                 sendCommand(new DuplicateThingCommand(ids, category));
@@ -1170,6 +1473,7 @@ THE SOFTWARE.
             
             public function removeThings(list:Vector.<uint>, category:String, removeSprites:Boolean = false):void
             {
+                if (_nativeSource) { nativeMutation("native-remove", {category:category, ids:nativeIds(list)}); return; }
                 if (clientLoaded && list && !isNullOrEmpty(category))
                 {
                     sendCommand(new RemoveThingCommand(list, category, removeSprites));
@@ -1207,6 +1511,7 @@ THE SOFTWARE.
             
             public function replaceSprite(id:uint, bitmap:BitmapData):void
             {
+                if (_nativeSource) {nativeBitmap(bitmap,id);return;}
                 if (!clientLoaded || id == 0 || !bitmap)
                     return;
                 var spriteData:SpriteData = SpriteData.createSpriteData(id, bitmap.getPixels(bitmap.rect));
@@ -1229,6 +1534,7 @@ THE SOFTWARE.
             
             public function removeSpritesIds(sprites:Vector.<uint>):void
             {
+                if (_nativeSource) { for each(var id:uint in sprites) nativeMutation("native-sprite-clear", {spriteId:id}); return; }
                 if (!clientLoaded || !sprites || sprites.length == 0)
                     return;
                 sprites.sort(Array.NUMERIC | Array.DESCENDING);
@@ -1301,6 +1607,20 @@ THE SOFTWARE.
                 categoryDropDownList.selectedIndex = 0;
                 thingStepper.value = 0;
                 _logs.removeAll();
+                validateNow();
+                if(_nativeSaveWindow)_nativeSaveWindow.close();
+                _nativeObjectExportCallback=null;_nativeObjectExportPath=null;
+                _nativeSaving=false;_nativeCloseAfterSave=false;nexaActions.nativeModern=false;
+                if (_nativeSource) { _nativeSource.removeEventListener(ModernAssetEvent.MESSAGE, nativeMessage); _nativeSource.close(); _nativeSource = null; }
+                _nativeExportedRevision = 0;
+                thingTypeEditor.removeEventListener(ModernFlagEvent.CHANGE, nativeFlagChanged);
+                setClipboardFlag("hasClipboardObject", false);
+                nexaActions.readOnly = false;
+                nativeSearch.visible = nativeSearch.includeInLayout = false;
+                _clientLoaded = false;
+                _clientChanged = false;
+                if (_clientInfo) { _clientInfo.loaded = false; _clientInfo.changed = false; }
+                nexaActions.loaded = nexaNavigation.loaded = false;
                 updateNexaSaveState();
             }
 
@@ -1359,14 +1679,19 @@ THE SOFTWARE.
                 _communicator.registerClass(ClientFeatures);
             
                 _communicator.registerCallback(LogCommand, logCallback);
+                _communicator.registerCallback(ob.commands.things.NativeObjectExportResultCommand,function(path:String,success:Boolean,message:String,job:uint):void {
+                    if(path!=_nativeObjectExportPath||job!=_nativeObjectExportJob)return;
+                    var callback:Function=_nativeObjectExportCallback;_nativeObjectExportCallback=null;_nativeObjectExportPath=null;
+                    if(callback!=null)callback(success,message);
+                });
                 _communicator.registerCallback(ProgressCommand, progressCallback);
                 _communicator.registerCallback(HideProgressBarCommand, hideProgressBarCallback);
-                _communicator.registerCallback(SetClientInfoCommand, setClientInfoCallback);
+                _communicator.registerCallback(SetClientInfoCommand, function(info:ClientInfo):void { setClientInfoCallback(info); });
             
-                _communicator.registerCallback(SetThingDataCommand, setThingDataCallback);
-                _communicator.registerCallback(SetThingListCommand, setThingListCallback);
+                _communicator.registerCallback(SetThingDataCommand, function(data:ThingData):void { setThingDataCallback(data); });
+                _communicator.registerCallback(SetThingListCommand, function(ids:Vector.<uint>, items:Vector.<ThingListItem>, force:Boolean, previous:int, next:int):void { setThingListCallback(ids, items, force, previous, next); });
                 _communicator.registerCallback(UpdateThingPropertiesCommand, updateThingPropertiesCallback);
-                _communicator.registerCallback(SetSpriteListCommand, setSpriteListCallback);
+                _communicator.registerCallback(SetSpriteListCommand, function(ids:Vector.<uint>, sprites:Vector.<SpriteData>, force:Boolean):void { setSpriteListCallback(ids, sprites, force); });
                 _communicator.registerCallback(NeedToReloadCommand, needToReloadCallback);
             }
             
@@ -1626,8 +1951,9 @@ THE SOFTWARE.
                 _logTarget.clear();
             }
             
-            private function setClientInfoCallback(info:ClientInfo):void
+            private function setClientInfoCallback(info:ClientInfo, native:Boolean = false):void
             {
+                if (_nativeSource && !native) return;
                 if (!info)
                     throw new NullArgumentError("info");
             
@@ -1656,8 +1982,9 @@ THE SOFTWARE.
                 spriteStepper.maximum = info.maxSpriteId;
             }
             
-            private function setThingDataCallback(thingData:ThingData):void
+            private function setThingDataCallback(thingData:ThingData, native:Boolean = false):void
             {
+                if (_nativeSource && !native) return;
                 if (!thingData)
                 {
                     throw new NullArgumentError("thingData");
@@ -1667,6 +1994,7 @@ THE SOFTWARE.
                 var savedFrameGroup:uint = thingTypeEditor.frameGroupSlider.value;
             
                 this.thingData = thingData;
+                if (native) _pendingCopyObject = false;
             
                 // Restore framegroup selection after invalidation cycle
                 restoreFrameGroupSelection(savedFrameGroup);
@@ -1706,8 +2034,9 @@ THE SOFTWARE.
                 }
             }
             
-            private function setThingListCallback(selectedIds:Vector.<uint>, things:Vector.<ThingListItem>, forceUpdate:Boolean = false, prevPageId:int = -1, nextPageId:int = -1):void
+            private function setThingListCallback(selectedIds:Vector.<uint>, things:Vector.<ThingListItem>, forceUpdate:Boolean = false, prevPageId:int = -1, nextPageId:int = -1, native:Boolean = false):void
             {
+                if (_nativeSource && !native) return;
                 if (!selectedIds)
                 {
                     throw new NullArgumentError("selectedIds");
@@ -1738,8 +2067,9 @@ THE SOFTWARE.
                 }
             }
             
-            private function setSpriteListCallback(selectedIds:Vector.<uint>, sprites:Vector.<SpriteData>, forceUpdate:Boolean = false):void
+            private function setSpriteListCallback(selectedIds:Vector.<uint>, sprites:Vector.<SpriteData>, forceUpdate:Boolean = false, native:Boolean = false):void
             {
+                if (_nativeSource && !native) return;
                 if (!selectedIds)
                 {
                     throw new NullArgumentError("selectedIds");
@@ -1865,11 +2195,24 @@ THE SOFTWARE.
                     var bitmap:BitmapData = data.getBitmap(0xFFFF00FF);
                     Clipboard.generalClipboard.clear();
                     Clipboard.generalClipboard.setData(ClipboardFormats.BITMAP_FORMAT, bitmap);
+                    if(_nativeSource && data is ob.modern.ModernSpriteData){
+                        var native:ob.modern.ModernSpriteData=data as ob.modern.ModernSpriteData,pixels:ByteArray=new ByteArray();pixels.writeBytes(native.pixels);pixels.position=0;
+                        Clipboard.generalClipboard.setData(NATIVE_SPRITE_CLIPBOARD,{width:native.imageWidth,height:native.imageHeight,pixels:pixels},true);
+                    }
                 }
             }
             
             private function onPasteSprite():void
             {
+                if (_nativeSource) {
+                    if(Clipboard.generalClipboard.hasFormat(NATIVE_SPRITE_CLIPBOARD)){
+                        var copied:Object=Clipboard.generalClipboard.getData(NATIVE_SPRITE_CLIPBOARD),raw:ByteArray=copied ? copied.pixels as ByteArray : null;
+                        if(!raw || [32,64].indexOf(copied.width)<0 || [32,64].indexOf(copied.height)<0 || raw.length!=copied.width*copied.height*4){appendLog("Invalid native sprite clipboard payload.");return;}
+                        var encoded:Base64Encoder=new Base64Encoder();encoded.insertNewLines=false;encoded.encodeBytes(raw);
+                        nativeMutation("native-sprite-set",{width:copied.width,height:copied.height,argb:encoded.toString(),spriteId:activeSpriteList.selectedId});
+                    }else if(Clipboard.generalClipboard.hasFormat(ClipboardFormats.BITMAP_FORMAT))nativeBitmap(BitmapData(Clipboard.generalClipboard.getData(ClipboardFormats.BITMAP_FORMAT)),activeSpriteList.selectedId);
+                    return;
+                }
                 if (!clientLoaded)
                     return;
             
@@ -2059,7 +2402,7 @@ THE SOFTWARE.
                     return;
                 }
 
-                thingData.getBitmap(new FrameGroup);
+                if (!(thingData is ModernThingData)) thingData.getBitmap(new FrameGroup);
 
                 thingView.thingData = thingData;
 
@@ -2352,12 +2695,22 @@ THE SOFTWARE.
             
             protected function applicationClosingHandler(event:Event):void
             {
+                if(_nativeSource && (_nativeSaving || clientChanged || _nativeSource.busy)){
+                    event.preventDefault();
+                    if(_nativeSaving || _nativeSource.busy){statusLabel.text="Wait for the pending native operation before closing.";return;}
+                    Alert.show("Save the changes to this modern asset folder before closing?","Unsaved modern assets",Alert.YES|Alert.NO|Alert.CANCEL,this,function(answer:CloseEvent):void {
+                        if(answer.detail==Alert.YES){_nativeCloseAfterSave=true;saveNativeProject();}
+                        else if(answer.detail==Alert.NO){clear();exit();}
+                    });return;
+                }
                 closeFinder();
                 closeLookGenerator();
                 closeObjectViewer();
                 closeSlicer();
                 closeAnimationEditor();
                 closeAssetStore();
+                if (_modernWindow) _modernWindow.close();
+                if (_nativeSource) clear();
                 if (_bulkEditWindow && !_bulkEditWindow.closed)
                 {
                     _bulkEditWindow.removeEventListener(Event.CLOSE, bulkEditCloseHandler);
@@ -2822,6 +3175,7 @@ THE SOFTWARE.
             
             protected function replaceThingHandler(event:Event):void
             {
+                if (_nativeSource) { nativeImport(false,true); return; }
                 if (!clientLoaded)
                     return;
 
@@ -2865,6 +3219,7 @@ THE SOFTWARE.
             
             protected function importThingHandler(event:Event):void
             {
+                if (_nativeSource) { nativeImport(); return; }
                 if (!clientLoaded || _locked)
                     return;
 
@@ -2891,6 +3246,7 @@ THE SOFTWARE.
             
             protected function exportThingHandler(event:Event):void
             {
+                if (_nativeSource) { nativeExport(); return; }
                 if (!clientLoaded || _locked)
                     return;
 
@@ -2945,6 +3301,7 @@ THE SOFTWARE.
             
             protected function exportAllThingsHandler(event:Event):void
             {
+                if (_nativeSource) { openNativeConversion(); return; }
                 if (!clientLoaded || _locked)
                     return;
 
@@ -3100,6 +3457,7 @@ THE SOFTWARE.
             
             protected function copyObjectHandler(event:Event):void
             {
+                if (_nativeSource) { if(thingData)_nativeSource.request("native-copy",{category:currentCategory,appearanceId:thingData.id},function(result:Object):void{setClipboardFlag("hasClipboardObject",true);}); return; }
                 var src:ThingList = (event.target as ThingList) || getActiveThingList();
                 if (clientLoaded && src.selectedThing)
                     copyThingToClipboard(src.selectedThing);
@@ -3107,6 +3465,7 @@ THE SOFTWARE.
 
             protected function pasteObjectHandler(event:Event):void
             {
+                if (_nativeSource) { var ids:Vector.<uint>=getActiveThingList().selectedIds; if(ids.length)nativeMutation("native-paste",{ids:nativeIds(ids),deleteAfterPaste:_settings.deleteAfterPaste}); return; }
                 var src:ThingList = (event.target as ThingList) || getActiveThingList();
                 if (clientLoaded && src.selectedThings && src.selectedThings.length > 0)
                     pasteThingFromClipboard(src.selectedThings);
@@ -3206,6 +3565,7 @@ THE SOFTWARE.
             
             protected function newThingHandler(event:Event):void
             {
+                if (_nativeSource) { if(!hideEmptyObjectsCheckbox.selected)nativeMutation("native-add",{}); else Alert.show("Disable Hide Empty Objects before creating a blank object.","Native working copy",Alert.OK,this); return; }
                 if (clientLoaded)
                 {
                     // Check if hideEmptyObjects filter is enabled
@@ -3625,6 +3985,7 @@ THE SOFTWARE.
             
             protected function replaceSpriteHandler(event:Event):void
             {
+                if (_nativeSource) { nativeImport(true,true); return; }
                 if (!clientLoaded)
                     return;
             
@@ -3678,6 +4039,7 @@ THE SOFTWARE.
             
             public function fillSpritesInThing(sprites:Vector.<SpriteData>):void
             {
+                if (_nativeSource) {if(sprites.length!=1){Alert.show("Select one native sprite to assign to the current frame, pattern and layer.","Native sprite assignment",Alert.OK,this);return;}var fields:Object=thingTypeEditor.nativeSelection();fields.category=thingTypeEditor.thingData.category;fields.appearanceId=thingTypeEditor.thingData.id;fields.spriteId=sprites[0].id;nativeMutation("native-link-sprite",fields);return;}
                 var length:uint = thingTypeEditor.buttonsContainer.numElements;
                 if (sprites.length != length)
                 {
@@ -3705,6 +4067,7 @@ THE SOFTWARE.
             
             protected function importSpriteHandler(event:MouseEvent):void
             {
+                if (_nativeSource) { nativeImport(true); return; }
                 if (!clientLoaded)
                     return;
             
@@ -3738,6 +4101,7 @@ THE SOFTWARE.
             
             protected function exportSpriteHandler(event:Event):void
             {
+                if (_nativeSource) { nativeExport(true); return; }
                 if (!clientLoaded || _locked)
                     return;
             
@@ -3779,6 +4143,7 @@ THE SOFTWARE.
             
             protected function exportAllSpritesHandler(event:Event):void
             {
+                if (_nativeSource) { Alert.show("Use Export to save selected native sprites as PNG, or Compile As to export the complete native working copy to DAT/SPR. Whole-catalog PNG export is not implemented.","Native export",Alert.OK,this); return; }
                 if (!clientLoaded || _locked)
                     return;
 
@@ -3836,6 +4201,7 @@ THE SOFTWARE.
 
             protected function newSpriteButtonClickHandler(event:MouseEvent):void
             {
+                if (_nativeSource) {var empty:BitmapData=new BitmapData(32,32,true,0);nativeBitmap(empty);empty.dispose();return;}
                 if (clientLoaded)
                 {
                     sendCommand(new NewSpriteCommand());
@@ -4113,6 +4479,7 @@ THE SOFTWARE.
                     case "save": compileProject(); break;
                     case "compileAs": compileProjectAs(); break;
                     case "export": exportThingHandler(event); break;
+                    case "convertModern": if(_nativeSource)openNativeConversion(); break;
                     case "add": newThingHandler(event); break;
                     case "duplicate": duplicateThingHandler(event); break;
                     case "delete": removeThingHandler(event); break;
@@ -4123,6 +4490,7 @@ THE SOFTWARE.
 
             protected function nexaNavigationHandler(event:NexaUiEvent):void
             {
+                if (event.action == "modern") { openModernAssets(); return; }
                 toobar.visible = toobar.includeInLayout = (event.action == "tools");
                 switch (event.action)
                 {
@@ -4169,7 +4537,7 @@ THE SOFTWARE.
                 }
                 else
                 {
-                    _communicator.sendCommand(new GetThingCommand(id, category));
+                    sendCommand(new GetThingCommand(id, category));
                 }
             }
             
@@ -4203,6 +4571,7 @@ THE SOFTWARE.
             
             public function copyThingToClipboard(thing:ThingType):void
             {
+                if (_nativeSource) return;
                 if (!thing)
                     return;
             
@@ -4660,6 +5029,10 @@ THE SOFTWARE.
                         icon="{NexaIcons.SEARCH}" click="openFinder()"/>
 
                     <!-- Hide empty checkbox -->
+                    <s:HGroup id="nativeSearch" width="100%" visible="false" includeInLayout="false">
+                        <s:TextInput id="nativeSearchInput" width="100%" prompt="ID or name" maxChars="256" enter="searchNativeObjects()"/>
+                        <s:Button label="Search" click="searchNativeObjects()"/>
+                    </s:HGroup>
                     <s:HGroup width="100%" paddingLeft="5">
                         <s:CheckBox id="hideEmptyObjectsCheckbox"
                             label="{resourceManager.getString('strings', 'hideEmptyObjects')}"

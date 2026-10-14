@@ -2,16 +2,38 @@
 <s:Skin xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark"
     minWidth="60" minHeight="24" alpha.disabled="0.5">
     <fx:Metadata>[HostComponent("spark.components.DropDownList")]</fx:Metadata>
+    <fx:Script><![CDATA[
+        import flash.events.MouseEvent;
+        import flash.display.DisplayObject;
+        import spark.components.IItemRenderer;
+        private function finishMouseSelection(event:MouseEvent):void {
+            // The normal renderer handler stops bubbling. Install a one-shot
+            // handler on that renderer after Flex's selection handler instead.
+            var target:DisplayObject=event.target as DisplayObject;
+            while(target && !(target is IItemRenderer) && target!=dataGroup)target=target.parent;
+            if(target is IItemRenderer)target.addEventListener(MouseEvent.MOUSE_DOWN,selectionCommitted,false,-100);
+        }
+        private function selectionCommitted(event:MouseEvent):void {
+            event.currentTarget.removeEventListener(MouseEvent.MOUSE_DOWN,selectionCommitted);
+            var list:spark.components.DropDownList=hostComponent;
+            var index:int=IItemRenderer(event.currentTarget).itemIndex;
+            list.closeDropDown(true);
+            if(index>=0 && index<list.dataProvider.length)list.setSelectedIndex(index,true);
+            if(!list.isDropDownOpen){currentState=list.enabled ? "normal" : "disabled";validateNow();}
+            list.invalidateProperties();list.validateNow();
+        }
+    ]]></fx:Script>
     <s:states><s:State name="normal"/><s:State name="open"/><s:State name="disabled"/></s:states>
     <s:PopUpAnchor id="popUp" left="0" right="0" top="0" bottom="0" includeIn="open"
-        displayPopUp.normal="false" displayPopUp.open="true" popUpPosition="below" popUpWidthMatchesAnchorWidth="true">
+        displayPopUp.normal="false" displayPopUp.disabled="false" displayPopUp.open="true" popUpPosition="below" popUpWidthMatchesAnchorWidth="true">
         <s:Group id="dropDown">
             <s:Rect left="0" right="0" top="0" bottom="0">
                 <s:fill><s:SolidColor color="0x16232F"/></s:fill>
                 <s:stroke><s:SolidColorStroke color="0x3B5368"/></s:stroke>
             </s:Rect>
             <s:Scroller left="1" right="1" top="1" bottom="1" hasFocusableChildren="false" minViewportInset="0">
-                <s:DataGroup id="dataGroup" itemRenderer="spark.skins.spark.DefaultItemRenderer">
+                <s:DataGroup id="dataGroup" itemRenderer="spark.skins.spark.DefaultItemRenderer"
+                    initialize="event.currentTarget.addEventListener(MouseEvent.MOUSE_DOWN,finishMouseSelection,true,0,true)">
                     <s:layout><s:VerticalLayout gap="0" horizontalAlign="contentJustify" requestedMinRowCount="1" requestedMaxRowCount="8"/></s:layout>
                 </s:DataGroup>
             </s:Scroller>

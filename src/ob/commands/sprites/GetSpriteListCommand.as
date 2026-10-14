@@ -26,6 +26,7 @@ package ob.commands.sprites
 
     public class GetSpriteListCommand extends WorkerCommand
     {
+        public var targetId:uint;
         // --------------------------------------------------------------------------
         // CONSTRUCTOR
         // --------------------------------------------------------------------------
@@ -33,6 +34,7 @@ package ob.commands.sprites
         public function GetSpriteListCommand(targetId:uint)
         {
             super(targetId);
+            this.targetId = targetId;
         }
     }
 }

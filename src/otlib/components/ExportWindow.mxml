@@ -167,6 +167,7 @@ THE SOFTWARE.
             {
                 return _enableObdFormat;
             }
+            [Bindable] public var enableNativePackage:Boolean=false;
             public function set enableObdFormat(value:Boolean):void
             {
                 if (_enableObdFormat != value)
@@ -565,6 +566,7 @@ THE SOFTWARE.
             <s:HorizontalLayout gap="10" padding="10" verticalAlign="middle" horizontalAlign="right"/>
         </s:layout>
 
+        <s:Button label="Native package…" visible="{enableNativePackage}" includeInLayout="{enableNativePackage}" click="dispatchEvent(new Event('exportNativePackage'))"/>
         <s:Button id="confirmButton"
             label="@Resource(key='confirm', bundle='strings')"
             minWidth="70"

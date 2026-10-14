@@ -1,0 +1,5 @@
+<application xmlns="http://ns.adobe.com/air/application/51.2">
+    <id>local.NexaNativeMainTests</id><filename>NativeMainTests</filename><name>NexaAsset Editor v2 native integration tests</name><versionNumber>0.6.0</versionNumber>
+    <initialWindow><content>NativeMainTests.swf</content><visible>false</visible><width>1600</width><height>900</height></initialWindow>
+    <supportedProfiles>extendedDesktop</supportedProfiles>
+</application>

@@ -41,6 +41,7 @@ package otlib.components
     import otlib.things.ThingType;
     import otlib.utils.OutfitData;
     import otlib.utils.SpriteExtent;
+    import ob.modern.ModernThingData;
 
     [Event(name="change", type="flash.events.Event")]
     [Event(name="complete", type="flash.events.Event")]
@@ -107,6 +108,7 @@ package otlib.components
         public function set patternX(value:uint):void
         {
             _patternX = value;
+            if (_thingData is ModernThingData) draw();
         }
 
         public function get patternY():uint
@@ -116,6 +118,7 @@ package otlib.components
         public function set patternY(value:uint):void
         {
             _patternY = value;
+            if (_thingData is ModernThingData) draw();
         }
 
         public function get patternZ():uint
@@ -125,6 +128,7 @@ package otlib.components
         public function set patternZ(value:uint):void
         {
             _patternZ = value;
+            if (_thingData is ModernThingData) draw();
         }
 
         public function get frame():int
@@ -192,7 +196,9 @@ package otlib.components
         }
         public function set frameGroupType(value:uint):void
         {
+            var changed:Boolean = _frameGroupType != value;
             _frameGroupType = value;
+            if (changed && _thingData is ModernThingData) rebuildSpriteSheet();
         }
 
         public function get minSize():uint
@@ -255,7 +261,7 @@ package otlib.components
 
         public function play():void
         {
-            var frameGroup:FrameGroup = thingData.thing.getFrameGroup(frameGroupType);
+            var frameGroup:FrameGroup = thingData ? thingData.thing.getFrameGroup(frameGroupType) : null;
             if (thingData && frameGroup && frameGroup.isAnimation)
                 _playing = true;
         }
@@ -293,9 +299,12 @@ package otlib.components
 
         private function setThingData(thingData:ThingData):void
         {
+            if (_thingData is ModernThingData) ModernThingData(_thingData).events.removeEventListener(Event.CHANGE, nativeImageChanged);
             _thingData = thingData;
+            if (_thingData is ModernThingData) ModernThingData(_thingData).events.addEventListener(Event.CHANGE, nativeImageChanged, false, 0, true);
             rebuildSpriteSheet();
         }
+        private function nativeImageChanged(event:Event):void { draw(); }
 
         private function rebuildSpriteSheet():void
         {
@@ -308,7 +317,7 @@ package otlib.components
                 var originalFrameGroup:FrameGroup = thingData.thing.getFrameGroup(frameGroupType);
 
                 // Only clone and colorize if outfit has multiple layers (colorization needs blend layer)
-                if (thingData.thing.category == ThingCategory.OUTFIT && originalFrameGroup && originalFrameGroup.layers >= 2)
+                if (!(thingData is ModernThingData) && thingData.thing.category == ThingCategory.OUTFIT && originalFrameGroup && originalFrameGroup.layers >= 2)
                 {
                     if (!_outfitData)
                         _outfitData = new OutfitData();
@@ -323,7 +332,8 @@ package otlib.components
                 if (_spriteSheet)
                     _spriteSheet.dispose();
 
-                _spriteSheet = dataForSheet.getSpriteSheet(_activeFrameGroup, _textureIndex, 0);
+                if (!_activeFrameGroup) _activeFrameGroup = dataForSheet.thing.getFrameGroup(0);
+                _spriteSheet = thingData is ModernThingData ? null : dataForSheet.getSpriteSheet(_activeFrameGroup, _textureIndex, 0);
 
                 var w:int = _activeFrameGroup.width * SpriteExtent.DEFAULT_SIZE;
                 var h:int = _activeFrameGroup.height * SpriteExtent.DEFAULT_SIZE;
@@ -356,7 +366,7 @@ package otlib.components
                     for each (var sourceDuration:FrameDuration in _activeFrameGroup.frameDurations)
                         durations.push(sourceDuration ? new FrameDuration(sourceDuration.minimum, sourceDuration.maximum) : null);
                 }
-                if (durations && _activeFrameGroup.type == FrameGroupType.WALKING && _activeFrameGroup.frames > 2)
+                if (!(thingData is ModernThingData) && durations && _activeFrameGroup.type == FrameGroupType.WALKING && _activeFrameGroup.frames > 2)
                 {
                     var duration:uint = 1000 / _activeFrameGroup.frames;
                     for (var i:uint = 0; i < _activeFrameGroup.frames; i++)
@@ -423,6 +433,20 @@ package otlib.components
 
         private function draw():void
         {
+            if (_thingData is ModernThingData && _bitmap)
+            {
+                var nativeBitmap:BitmapData = ModernThingData(_thingData).image(_frameGroupType, _frame, _patternX, _patternY, _patternZ, _drawBlendLayer ? -1 : 0);
+                // The native decoder is asynchronous: retain the displayed frame on a cache miss.
+                if (!nativeBitmap) return;
+                graphics.clear();
+                _bitmap.fillRect(_bitmap.rect, 0);
+                _bitmap.copyPixels(nativeBitmap, nativeBitmap.rect, new Point(_bitmap.width-nativeBitmap.width, _bitmap.height-nativeBitmap.height));
+                if (!_drawMatrix) _drawMatrix = new Matrix();
+                _drawMatrix.identity(); _drawMatrix.scale(_scale, _scale);
+                graphics.beginBitmapFill(_bitmap, _drawMatrix, false, false);
+                graphics.drawRect(0, 0, _bitmap.width * _scale, _bitmap.height * _scale);
+                graphics.endFill(); return;
+            }
             graphics.clear();
 
             if (_spriteSheet)
