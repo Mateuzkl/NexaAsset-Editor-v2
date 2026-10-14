@@ -23,6 +23,7 @@ static byte[] Appearance(uint id = 100) => Message(Scalar(1, id), Blob(4, System
 if (args.Length == 0) throw new Exception("Specify a test output folder on D:.");
 string tests = Path.GetFullPath(args[0]); Directory.CreateDirectory(tests);
 NativeSaveTests.Run(tests);
+NativeObjectImportTests.Run(tests);
 string root = Path.Combine(tests, "synthetic-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
 void Fixture(object[] catalog, byte[]? appearances = null)
 {

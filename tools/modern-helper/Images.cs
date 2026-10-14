@@ -157,6 +157,14 @@ public static class Png
         AssetSet.RejectLinks(File.Exists(file) ? file : Path.GetDirectoryName(file)!);
         // Only the helper's two fixed preview slots are written, never source assets.
         using var output = new FileStream(file, FileMode.Create, FileAccess.Write, FileShare.None);
+        Write(output,image);
+    }
+    public static byte[] Encode(Pixels image)
+    {
+        using var output=new MemoryStream();Write(output,image);return output.ToArray();
+    }
+    private static void Write(Stream output,Pixels image)
+    {
         output.Write(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
         var header = new byte[13];
         BinaryPrimitives.WriteInt32BigEndian(header, image.Width); BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4), image.Height);

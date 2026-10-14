@@ -566,7 +566,7 @@ THE SOFTWARE.
             <s:HorizontalLayout gap="10" padding="10" verticalAlign="middle" horizontalAlign="right"/>
         </s:layout>
 
-        <s:Button label="Native package…" visible="{enableNativePackage}" includeInLayout="{enableNativePackage}" click="dispatchEvent(new Event('exportNativePackage'))"/>
+        <s:Button label="Native package / AEC…" visible="{enableNativePackage}" includeInLayout="{enableNativePackage}" click="dispatchEvent(new Event('exportNativePackage'))"/>
         <s:Button id="confirmButton"
             label="@Resource(key='confirm', bundle='strings')"
             minWidth="70"

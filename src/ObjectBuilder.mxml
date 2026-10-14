@@ -1209,6 +1209,9 @@ THE SOFTWARE.
                 try { source.request(command, fields, function(result:Object):void {
                     if (_nativeSource != source) return;
                     source.query = ""; nativeSearchInput.text = "";
+                    if(result.category){fields.category=result.category;currentCategory=result.category;}
+                    if(result.imported)appendLog("Imported "+result.imported+" native objects.");
+                    if(result.notices && result.notices.length)Alert.show(result.notices.join("\n"),"Import compatibility",Alert.OK,FlexGlobals.topLevelApplication as UIComponent);
                     if (result.clipboard !== undefined) setClipboardFlag("hasClipboardObject", result.clipboard);
                     sendCommand(new GetThingListCommand(result.selected || (thingData ? thingData.id : getMinThingId()), fields.category));
                     sendCommand(new GetSpriteListCommand(result.sprite !== undefined ? result.sprite : spriteStepper.value));
@@ -1292,17 +1295,34 @@ THE SOFTWARE.
                 var source:ModernNativeSource = _nativeSource;
                 var category:String = currentCategory, target:uint = sprite ? activeSpriteList.selectedId : (thingData ? thingData.id : 0);
                 var file:File = _settings.getIODirectory() || source.directory.parent;
-                file.addEventListener(Event.SELECT,picked);file.addEventListener(Event.CANCEL,cancelled);
-                try { file.browseForOpen("Import into the native working copy", [new FileFilter(sprite ? "PNG sprite" : "Native object package or PNG", sprite ? "*.png" : "*.nexaobject;*.png")]); }
+                file.addEventListener(Event.SELECT,picked);file.addEventListener(Event.CANCEL,cancelled);file.addEventListener(FileListEvent.SELECT_MULTIPLE,pickedMultiple);
+                try {
+                    var filters:Array=[new FileFilter(sprite ? "PNG sprite" : "Objects (OBD, AEC, Nexa package or PNG)", sprite ? "*.png" : "*.obd;*.aec;*.nexaobject;*.png")];
+                    if(sprite || replace)file.browseForOpen("Import into the native working copy",filters);
+                    else file.browseForOpenMultiple("Import native objects (OBD/AEC support batches)",filters);
+                }
                 catch(error:Error){cleanup();appendLog(error.message);}
-                function cleanup():void{file.removeEventListener(Event.SELECT,picked);file.removeEventListener(Event.CANCEL,cancelled);}
+                function cleanup():void{file.removeEventListener(Event.SELECT,picked);file.removeEventListener(Event.CANCEL,cancelled);file.removeEventListener(FileListEvent.SELECT_MULTIPLE,pickedMultiple);}
                 function cancelled(event:Event):void{cleanup();}
+                function pickedMultiple(event:FileListEvent):void {
+                    cleanup();if(_nativeSource!=source || !event.files.length)return;
+                    if(event.files.length==1){file=event.files[0];picked(new Event(Event.SELECT));return;}
+                    var paths:Array=[];
+                    for each(var selected:File in event.files){var ext:String=selected.extension ? selected.extension.toLowerCase() : "";if(ext!="obd"&&ext!="aec"){Alert.show("Batch object import accepts OBD and AEC. Import PNG/Nexa packages individually.","Native import",Alert.OK,FlexGlobals.topLevelApplication as UIComponent);return;}paths.push(selected.nativePath);}
+                    _settings.setIODirectory(event.files[0]);importNativeObjectFiles(paths);
+                }
                 function picked(event:Event):void {
                     cleanup();if(_nativeSource!=source)return;_settings.setIODirectory(file);
+                    if(!sprite && file.extension && (file.extension.toLowerCase()=="obd" || file.extension.toLowerCase()=="aec")){importNativeObjectFiles([file.nativePath],replace ? target : null);return;}
                     if(file.extension && file.extension.toLowerCase()=="nexaobject") {nativeMutation("native-import-object",{category:category,file:file.nativePath,target:replace ? target : null});return;}
-                    if(!sprite && replace){Alert.show("Use a native object package to replace an entire object, or replace its PNG sprite in the Sprites panel.","Native import",Alert.OK,this);return;}
+                    if(!sprite && replace){Alert.show("Use OBD, AEC or a Nexa native package to replace an entire object, or replace its PNG sprite in the Sprites panel.","Native import",Alert.OK,FlexGlobals.topLevelApplication as UIComponent);return;}
                     nativeMutation("native-import-png",{category:category,spriteId:replace ? target : null,file:file.nativePath,asObject:!sprite});
                 }
+            }
+            public function importNativeObjectFiles(files:Array,target:Object=null):void
+            {
+                if(!_nativeSource || !_nativeSource.ready || _locked)return;
+                nativeMutation("native-import-assets",{files:files,category:currentCategory,target:target});
             }
             
             public function openSpritesOptimizer():void
@@ -1419,6 +1439,7 @@ THE SOFTWARE.
             {
                 if (!clientLoaded || !list || list.length == 0)
                     return;
+                if(_nativeSource){var nativeFiles:Array=[];for each(var nativePath:PathHelper in list)nativeFiles.push(nativePath.nativePath);importNativeObjectFiles(nativeFiles);return;}
                 sendCommand(new ImportThingsFromFilesCommand(list));
             }
             
@@ -3832,7 +3853,7 @@ THE SOFTWARE.
                     for (var i:uint = 0; i < length; i++)
                     {
                         var file:File = dropfiles[i];
-                        if (file.extension == OTFormat.OBD)
+                        if (_nativeSource ? file.extension && (file.extension.toLowerCase()=="obd" || file.extension.toLowerCase()=="aec") : file.extension == OTFormat.OBD)
                         {
                             list[list.length] = new PathHelper(file.nativePath, i);
                         }

@@ -10,6 +10,11 @@ public static class NativePng
     public static Pixels Read(string file)
     {
         AssetSet.RejectLinks(file);byte[] bytes=AssetSet.ReadBounded(file,1024*1024);
+        return Read(bytes);
+    }
+    public static Pixels Read(byte[] bytes)
+    {
+        if(bytes.Length>1024*1024)throw new InvalidDataException("PNG input exceeds 1 MiB.");
         if(bytes.Length<33 || !bytes.AsSpan(0,8).SequenceEqual(new byte[]{137,80,78,71,13,10,26,10}))throw new InvalidDataException("Invalid PNG signature.");
         int at=8,width=0,height=0,depth=0,type=-1;byte[]? palette=null,alpha=null;bool ended=false,idat=false,idatEnded=false;using var compressed=new MemoryStream();
         while(at<bytes.Length){

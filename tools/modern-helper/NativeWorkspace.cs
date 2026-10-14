@@ -134,6 +134,53 @@ public sealed class NativeWorkspace(AssetSet assets,SheetCache cache)
         if(sprite)image=cache.Sprite(id);else {var groups=AssetSet.Groups(assets.Find(category,id));if(group<0||group>=groups.Length)throw new InvalidDataException("Invalid group.");image=cache.Render(groups[group],frame,x,y,z);}
         Png.Write(file,image);return new {file};
     }
+    public object ImportAssets(string[] files,string category,uint? target=null)
+    {
+        if(files.Length is <1 or >100)throw new InvalidDataException("Choose 1–100 OBD/AEC files.");
+        var imports=new List<ImportedObject>();var notices=new List<string>();long bytes=0,metadata=0;
+        foreach(string file in files){var batch=NativeObjectImport.Read(file);imports.AddRange(batch.Objects);notices.AddRange(batch.Notices);bytes+=batch.Objects.Sum(o=>o.Sprites.Sum(p=>(long)p.Rgba.Length));metadata+=batch.Objects.Sum(o=>(long)o.Appearance.Source.Length);if(imports.Count>100||bytes>NativeObjectImport.PixelLimit||metadata>4*1024*1024)throw new InvalidDataException("Import exceeds 100 objects, 32 MiB of pixels or 4 MiB of metadata.");}
+        if(target!=null){assets.Find(category,target.Value);if(imports.Count!=1||imports[0].Appearance.Category!=category)throw new InvalidDataException("Replacement needs one object of the selected category.");}
+        if(cache.ChangedBytes+bytes>64*1024*1024)throw new InvalidDataException("Working-copy pixels exceed 64 MiB; save before importing.");
+        int spriteCount=imports.Sum(o=>o.Sprites.Length);
+        if((ulong)assets.Sheets[^1].Last+(uint)spriteCount>=uint.MaxValue)throw new InvalidDataException("Sprite ID limit.");
+        uint nextSprite=NextSprite();var nextIds=new Dictionary<string,uint>();var edits=new List<Appearance>();var pixels=new List<(uint Id,Pixels Image)>();
+        foreach(var imported in imports){
+            var a=imported.Appearance;var groups=AssetSet.Groups(a);
+            foreach(uint id in groups.SelectMany(g=>g.Sprites))if(id>=imported.Sprites.Length)throw new InvalidDataException("Missing imported sprite.");
+            uint idNew;
+            if(target.HasValue)idNew=target.Value;
+            else{if(!nextIds.TryGetValue(a.Category,out uint next))next=NextId(a.Category);idNew=next;nextIds[a.Category]=checked(next+1);}
+            uint first=nextSprite;
+            foreach(var image in imported.Sprites){if(image.Width is not (32 or 64)||image.Height is not (32 or 64)||image.Rgba.Length!=image.Width*image.Height*4)throw new InvalidDataException("Invalid imported pixels.");pixels.Add((nextSprite++,image));}
+            byte[] source=NativeObjectImport.Remap(a.Source,groups.Select(g=>g.Sprites.Select(id=>checked(first+id)).ToArray()).ToArray());
+            source=Rewrite(source,1,Scalar(1,idNew));edits.Add(a with {Id=idNew,Source=source});
+        }
+        assets.ValidateAppearanceEdits(edits); // The complete batch is checked before allocating IDs or changing the catalog.
+        foreach(var (id,image) in pixels)cache.SetSprite(id,image,true);
+        assets.SetAppearances(edits);Changed();
+        return new {selected=edits[0].Id,category=edits[0].Category,imported=edits.Count,revision=Revision,notices=notices.Distinct().ToArray()};
+    }
+    public object ExportAec(string category,uint[] ids,string file)
+    {
+        CheckIds(ids);ValidateExport(file);var appearances=ids.Select(id=>assets.Find(category,id)).ToArray();
+        using var output=new MemoryStream();uint next=0;long pixels=0;
+        foreach(var a in appearances){
+            var groups=AssetSet.Groups(a);var refs=groups.SelectMany(g=>g.Sprites).ToArray();
+            if(refs.Length>8192)throw new InvalidDataException("AEC object exceeds 8,192 references.");
+            byte[] source=NativeObjectImport.Remap(a.Source,groups.Select(g=>g.Sprites.Select(_=>next++).ToArray()).ToArray());source=Rewrite(source,7,[]);
+            source=Rewrite(source,6,Scalar(6,(uint)Array.IndexOf(AssetSet.Categories,category)+1));
+            using var record=new MemoryStream();record.Write(source);
+            foreach(uint id in refs){var image=cache.Sprite(id);pixels+=image.Rgba.Length;if(pixels>NativeObjectImport.PixelLimit)throw new InvalidDataException("AEC export exceeds 32 MiB of pixels.");record.Write(Blob(7,Png.Encode(image)));if(record.Length>4*1024*1024)throw new InvalidDataException("AEC object exceeds 4 MiB.");}
+            if(record.Length>4*1024*1024)throw new InvalidDataException("AEC object exceeds 4 MiB.");
+            output.Write(Blob(Array.IndexOf(AssetSet.Categories,category)+1,record.ToArray()));
+            if(output.Length>NativeObjectImport.FileLimit)throw new InvalidDataException("AEC export exceeds 32 MiB.");
+        }
+        string stage=file+".partial";if(File.Exists(stage)||Directory.Exists(stage))throw new InvalidDataException("AEC export staging file already exists.");
+        bool owned=false;
+        try{using(var stream=new FileStream(stage,FileMode.CreateNew,FileAccess.Write,FileShare.None)){owned=true;output.Position=0;output.CopyTo(stream);stream.Flush(true);}File.Move(stage,file,false);}
+        catch{if(owned&&File.Exists(stage))File.Delete(stage);throw;}
+        return new {file,count=appearances.Length};
+    }
     public object ExportBatch(string category,uint[] ids,string target,bool sprite,bool package)
     {
         CheckIds(ids);if(!AssetSet.Categories.Contains(category))throw new InvalidDataException("Invalid category.");

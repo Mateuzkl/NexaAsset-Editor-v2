@@ -73,6 +73,7 @@
         private var nativeExportDialog:ExportWindow;
         private var copiedPixelsHash:String;
         private var catalogBeforeFailure:ByteArray;
+        private var nativeImportedId:uint;
         override protected function applicationInvokeHandler(event:InvokeEvent):void {args=event.arguments;}
         override protected function applicationPreinitializeHandler(event:FlexEvent):void {
             systemManager.loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, failed);
@@ -201,6 +202,15 @@
                         sendCommand(new ExportNativeObjectCommand(model,workerExport.nativePath,source.directory.nativePath,200,860,true,90));
                     });phase=28;
                 } else if(phase==28 && !source.busy && workerExport && workerExport.exists){
+                    source.request("native-export-aec",{category:"item",ids:[duplicateId],file:snapshots.resolvePath("ui-native.aec").nativePath},function(result:Object):void {
+                        importNativeObjectFiles([snapshots.resolvePath("modern-to-legacy-v100.obd").nativePath,snapshots.resolvePath("modern-to-legacy-v200.obd").nativePath,snapshots.resolvePath("modern-to-legacy-v300.obd").nativePath,result.file]);
+                    });nativeImportedId=duplicateId+4;phase=50;
+                } else if(phase==50 && !source.busy && clientInfo.maxItemId==nativeImportedId){
+                    check(clientChanged && nexaActions.canSave,"Native OBD/AEC import did not set dirty state");
+                    requestEditThing(nativeImportedId,"item");phase=51;
+                } else if(phase==51 && !source.busy && thingData && thingData.id==nativeImportedId && ModernThingData(thingData).cacheBytes>0){
+                    var importedNative:BitmapData=ModernThingData(thingData).image(0,0,0,0,0,0);if(!importedNative)return;
+                    check(importedNative.getPixel32(0,0)==0x80644220,"AEC import pixel composition/alpha mismatch");capture("native-obd-aec-import");
                     nativeMenu.dispatchEvent(new MenuEvent(MenuEvent.SELECTED,Menu.FILE_COMPILE));
                     check(nativeSaving,"Ctrl+S menu route did not start native Save");phase=29;
                 } else if(phase==29 && !nativeSaving && !source.busy){
@@ -264,6 +274,11 @@
                     var imported:BitmapData=thingData.getBitmap(thingData.thing.frameGroups[0]);check(imported.getPixel32(0,0)==0x80644220,"Modern OBD imported into legacy with incorrect pixels");imported.dispose();capture("native-obd-imported-legacy");
                     clear();openNativeProject(savedNative,new File(args[1]));phase=31;
                 } else if(phase==31 && clientLoaded && nativeSource && !nativeSource.busy){
+                    check(clientInfo.maxItemId==nativeImportedId,"Imported objects were not retained by native Save As");
+                    requestEditThing(nativeImportedId-1,"item");phase=52;
+                } else if(phase==52 && !nativeSource.busy && thingData && thingData.id==nativeImportedId-1 && ModernThingData(thingData).cacheBytes>0){
+                    var obdNative:BitmapData=ModernThingData(thingData).image(0,0,0,0,0,0);if(!obdNative)return;
+                    check(obdNative.getPixel32(0,0)==0x80644220,"Native OBD v3 import did not persist pixels after Save/reopen");capture("native-obd-save-reopened");
                     requestEditThing(duplicateId-1,"item");phase=32;
                 } else if(phase==32 && thingData && thingData.id==duplicateId-1 && ModernThingData(thingData).cacheBytes>0){
                     var reopened:BitmapData=ModernThingData(thingData).image(0,0,0,0,0,0);if(!reopened)return;
@@ -302,7 +317,7 @@
                     check(MD5.hashBytes(spritesList.selectedSprite.pixels)==copiedPixelsHash,"Copy/Paste sprite did not persist after Ctrl+S and reopening the SAME modern folder");capture("native-copy-paste-save-reopened");
                     var oracle:Object={counts:nativeSource.inventory.categories,spriteCount:nativeSource.inventory.spriteCount,sprite:{id:1,width:64,height:64,argbMd5:copiedPixelsHash},item:100,reference:1};
                     io=new FileStream();io.open(snapshots.resolvePath("native-validation.json"),FileMode.WRITE);io.writeUTFBytes(JSON.stringify(oracle));io.close();
-                    trace("PASS native main: direct Ctrl+S (no modal), Save As independent of original folder, pixel/flag persistence, real Copy/Paste and item reference after same-folder reopen, failed Save retains dirty, PNG/BMP/JPG/OBD and legacy import; AS memory "+Math.round(System.totalMemory/1048576)+" MiB");
+                    trace("PASS native main: OBD v1/v2/v3 and AEC batch import/export, native Save/reopen, direct Ctrl+S (no modal), independent Save As, pixel/flag persistence, Copy/Paste, failed Save retains dirty, PNG/BMP/JPG/OBD and unchanged legacy import; AS memory "+Math.round(System.totalMemory/1048576)+" MiB");
                     trace("Native screenshots: "+snapshots.nativePath);clock.stop();NativeApplication.nativeApplication.exit(0);
                 }
             }catch(error:Error){failure("Phase "+phase+": "+error.getStackTrace());}

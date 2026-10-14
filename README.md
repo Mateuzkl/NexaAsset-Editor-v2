@@ -39,9 +39,26 @@ the existing legacy **Import** action. Compatibility losses are shown before OBD
 export. Each normalized group is bounded to 4,096 references. Batch object exports
 wait for the encoder acknowledgment before preparing the next object, avoiding an
 unbounded queue of pixel buffers. Sprite export retains the native PNG dialog.
-**Native package…** preserves all groups, flag bytes and referenced pixels in
-portable `.nexaobject` files. **Import** in the native working copy accepts
-native packages or PNG objects; the Sprites panel imports/replaces PNG sprites.
+**Native package / AEC…** preserves all groups, flag bytes and referenced pixels in
+portable `.nexaobject` files or Assets Editor-compatible `.aec` containers.
+**Import** in the native working copy accepts **OBD v1/v2/v3, AEC containers,
+Nexa packages and PNG objects**. OBD/AEC can be imported in batches from the
+file picker or dropped onto the Objects panel. Their own categories are retained,
+object and sprite IDs are remapped without collisions, and explicit replacement
+requires one object matching the selected category. Standard OBD tiles are
+recomposed in bottom-right order into 32/64-pixel native sprites, retaining
+straight RGBA, mapped properties, groups, patterns and v2/v3 phase timings.
+OBD v1 lacks phase timings and uses an explicitly reported 100 ms fallback.
+Legacy charges, floor-change, profession masks and bone offsets have no assumed
+modern meaning: their data is retained as an inspectable custom flag (#200),
+with compatibility notices. AEC preserves unknown appearance/group/flag bytes
+and carries embedded PNG pixels; these container-only images are removed before
+native project persistence. AEC export stores selected objects together in one
+file without a legacy conversion. Imports are completely prevalidated before
+working-copy changes: up to 100 objects and 32 MiB of decoded pixels per batch;
+OBD allows 4,096 tile references per group and at most two outfit groups. Input
+files are limited to 32 MiB, and sprites larger than 64 pixels per axis are rejected.
+The Sprites panel still imports/replaces PNG sprites.
 Packages remap sprite dependencies and currently allow 256 distinct sprites
 per object. Native PNG input is bounded to 1 MiB, 32/64 pixels per axis,
 non-interlaced RGB/RGBA/grayscale/palette encodings supported by the decoder.
@@ -69,8 +86,7 @@ Closing an unsaved modern project prompts before discarding its edits.
 The native opening dialog shows category counts, sprite/sheet counts, dimensions
 and multi-group counts. It does not invent a client release when the catalog lacks one.
 
-Legacy `.obd` import into the native working copy, modern animation/geometry
-editing and whole-catalog PNG export do not yet have
+Modern animation/geometry editing and whole-catalog PNG export do not yet have
 native parity; use an exported DAT/SPR project for the complete legacy toolbox.
 
 **Convert DAT/SPR…** is a separate native-toolbar action that optionally exports the complete native working copy or selected objects
@@ -156,6 +172,7 @@ Some tools and translations are inherited from upstream. The NexaMap adaptation 
 | Standard DAT + SPR | Object metadata and a single sprite archive, with legacy or extended sprite IDs. |
 | DAT + multi-SPR | Object metadata plus `spr_parts.dat`, `spr_index.dat` and split SPR files. Uses the supported SPMT/SPIX layout, with up to 65,535 sprites per part. |
 | OTFI | Companion format settings, including transparency and supported extended options. |
+| AEC | Assets Editor-compatible object containers, with native definitions and embedded PNG sprites; import/export in modern projects. |
 | Extended DAT item IDs | Custom 32-bit item-count encoding. The consuming client must support it; this is not a universal legacy-client format. |
 
 Choose **Open Asset Files** to select the input, then **Compile As** to select the output. A multi-SPR input can be compiled into a standard archive, and a standard input can be split into multi-SPR. The input files are not themselves an output-format restriction.

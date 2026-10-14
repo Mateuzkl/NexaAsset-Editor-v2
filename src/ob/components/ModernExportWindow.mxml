@@ -17,20 +17,22 @@
         public var patternX:int;
         public var patternY:int;
         public var patternZ:int;
-        [Bindable] private var message:String="Single-object PNG exports the selected frame and direction; batch PNG exports use the first group/frame/pattern. Native object packages preserve all groups, flags and referenced pixels. Use Compile As for DAT/SPR.";
+        [Bindable] private var message:String="PNG exports images. Nexa packages and Assets Editor AEC containers preserve all native groups, flags and referenced pixels. AEC exports the selected objects together in one interoperable file. DAT/SPR conversion is a separate tool.";
         [Bindable] private var busy:Boolean=false;
         private var picker:File;
         private function exportFile():void {
             var packageFormat:Boolean=!sprite && formats.selectedIndex==1;
-            picker=new File(source.directory.parent.nativePath).resolvePath(category+"-"+appearanceId+(packageFormat ? ".nexaobject" : ".png"));
+            var aecFormat:Boolean=!sprite && formats.selectedIndex==2;
+            picker=new File(source.directory.parent.nativePath).resolvePath(category+"-"+appearanceId+(aecFormat ? ".aec" : packageFormat ? ".nexaobject" : ".png"));
             picker.addEventListener(Event.SELECT,picked);picker.addEventListener(Event.CANCEL,cancelled);
-            try{if(selection.length>1)picker.browseForDirectory("Choose parent folder for selected native assets");else picker.browseForSave("Choose a NEW file outside the original assets folder");}catch(error:Error){message=error.message;releasePicker();}
+            try{if(selection.length>1&&!aecFormat)picker.browseForDirectory("Choose parent folder for selected native assets");else picker.browseForSave("Choose a NEW file outside the original assets folder");}catch(error:Error){message=error.message;releasePicker();}
         }
         private function picked(event:Event):void {
             var path:String=picker.nativePath;releasePicker();busy=true;source.addEventListener(ModernAssetEvent.MESSAGE,errorHandler);
             var command:String=!sprite && formats.selectedIndex==1 ? "native-export-object" : "native-export-png";
             var fields:Object={category:category,appearanceId:appearanceId,file:path,sprite:sprite,group:group,frame:frame,patternX:patternX,patternY:patternY,patternZ:patternZ};
-            if(selection.length>1){command="native-export-batch";fields.ids=selection;fields.target=new File(path).resolvePath("NexaExport-"+new Date().time).nativePath;fields["package"]=formats.selectedIndex==1;}
+            if(!sprite && formats.selectedIndex==2){command="native-export-aec";fields.ids=selection.length ? selection : [appearanceId];}
+            else if(selection.length>1){command="native-export-batch";fields.ids=selection;fields.target=new File(path).resolvePath("NexaExport-"+new Date().time).nativePath;fields["package"]=formats.selectedIndex==1;}
             try{source.request(command,fields,function(result:Object):void {busy=false;message="Exported: "+(result.file||result.directory);source.removeEventListener(ModernAssetEvent.MESSAGE,errorHandler);});}
             catch(error:Error){busy=false;message=error.message;source.removeEventListener(ModernAssetEvent.MESSAGE,errorHandler);}
         }
@@ -42,7 +44,7 @@
     <s:VGroup left="16" right="16" top="16" bottom="16" gap="14">
         <s:Label text="Format:"/>
         <s:DropDownList id="formats" width="100%" selectedIndex="0" enabled="{!sprite &amp;&amp; !busy}">
-            <s:dataProvider><s:ArrayList><fx:String>PNG — selected frame</fx:String><fx:String>Nexa native object — portable (.nexaobject)</fx:String></s:ArrayList></s:dataProvider>
+            <s:dataProvider><s:ArrayList><fx:String>PNG — selected frame</fx:String><fx:String>Nexa native object — portable (.nexaobject)</fx:String><fx:String>Assets Editor container (.aec)</fx:String></s:ArrayList></s:dataProvider>
         </s:DropDownList>
         <s:TextArea width="100%" height="100%" editable="false" text="{message}"/>
         <s:HGroup width="100%"><s:Button label="Export…" enabled="{!busy}" click="exportFile()"/><s:Spacer width="100%"/><s:Button label="Close" enabled="{!busy}" click="close()"/></s:HGroup>

@@ -1,6 +1,6 @@
 NexaAsset Modern Helper — Third-Party Notices
 
-This helper is an independent implementation of read-only interoperability.
+This helper is an independent implementation of asset-format interoperability.
 It does not incorporate source, schemas, binaries, or artwork from Arch-Mina/Assets-Editor.
 Game assets are not included. Users remain responsible for permission to use their assets.
 

@@ -451,7 +451,7 @@ Pixel packets are snapshotted before the helper reuses its fixed file. The
 worker encodes one batch object at a time and acknowledges completion before the
 next packet is prepared. OBD references are bounded to the existing 4,096/group
 decoder limit; packages/native project save remain the preservation path for
-modern-only attributes. Native OBD import is not yet implemented.
+modern-only attributes. Native OBD import was added in the interoperability follow-up below.
 
 The opening dialog analyzes the native catalog before enabling Load and displays
 real category/sprite/sheet counts, dimensions and multi-group counts. Legacy-only
@@ -532,6 +532,64 @@ The final rerun also passed canceling the unsaved-close prompt. Its input had
 a fixed maximum item ID when the supplied fixture has gained another object.
 Write support remains limited to the supported catalog/protobuf layout with
 384x384 CIP/LZMA BMP sheets and sprite types 0–3. Larger/custom layouts require
-separate support and are rejected. Geometry/animation editing and native OBD
-import remain outside this implementation. Existing startup callback/binding
+separate support and are rejected. Geometry/animation editing remains outside
+this implementation; native OBD/AEC import is covered by the follow-up below. Existing startup callback/binding
 warnings in the harness are still not a clean, zero-warning lifetime audit.
+
+## OBD and Assets Editor AEC interoperability follow-up
+
+The native Import action now accepts OBD v1/v2/v3 and `.aec`, in addition to
+PNG and `.nexaobject`. Multiple OBD/AEC files can be selected or dropped onto
+the existing Objects panel; no separate browser or legacy project is required.
+Their own categories are retained. Add/import assigns fresh category/sprite IDs;
+explicit replacement retains the selected object ID and requires one matching
+category. Every file, dependency, geometry and working-copy budget in the batch
+is validated before mutation. Imports increment the revision once and participate
+in ordinary native Save, Save As and dirty-state handling.
+
+The independent helper decoder was checked against the existing MIT Object
+Builder OBD encoder/metadata families and the wire-format behavior of the
+[Assets Editor container import/export](https://github.com/Arch-Mina/Assets-Editor/blob/d673c33899b48641f44b7494df7ee29824dee502/Assets%20Editor/DatEditor.xaml.cs).
+No reference-editor implementation, generated schema or binaries were copied
+into NexaAsset. OBD tiles are reconstructed using the existing bottom-right
+tile-index contract, retaining each layer/pattern/frame, straight RGBA and
+v2/v3 timings. V1 has no timing data, so a 100 ms fallback is reported.
+Legacy profession masks, charges, floor-change and bone offsets are preserved
+in custom flag #200 with notices; they are not guessed to be native vocations
+or wings offsets. Unsupported properties/geometry fail explicitly.
+
+Native package export also offers `.aec`. It writes the selected objects together
+using the existing appearances wire layout and embedded PNG `sprite_data` in
+reference order, preserving unknown record/group/flag bytes. Container-only pixel
+fields are stripped on import before project Save. PNG uses the bounded helper
+decoder, not AIR premultiplied preview pixels. Exports use an owned staging file
+and do not overwrite existing files or source assets.
+
+Limits: 100 objects, 32 MiB of decoded pixels and 4 MiB of stripped metadata per
+import batch; 32 MiB input files; 4,096 OBD tile references per group; up to two
+OBD outfit groups; native sprite dimensions 32/64 pixels per axis. AEC records
+are limited to 4 MiB and 8,192 references. These bounds reject larger/custom
+objects rather than truncating them. Geometry/animation editing, whole-catalog
+image export and full Assets Editor parity remain outside this follow-up.
+
+Executed validation:
+
+- Synthetic OBD v1/v2/v3 and all six metadata families; signed/implicit offsets,
+  distinct quadrant positions, straight RGBA, frame timings, outfit groups,
+  Latin-1 market names and preserved/reportable legacy-only data.
+- Mixed-category AEC, embedded images, unknown fields, ID collisions, explicit
+  replacement and whole-batch rejection without revision/cache/catalog changes.
+- Native in-place Save/reopen of the imported definitions, pixels and groups.
+- Crystal main-window harness: export/import OBD v1/v2/v3 and AEC in one batch,
+  native Save/Save As/reopen and legacy OBD import; managed AS memory 181 MiB
+  at completion (not a full RSS/leak certification).
+- Independent Python/liblzma/Pillow validation of the saved generation: 43,862
+  objects, 4,935 sheets and 297,903 references, plus the edited ARGB oracle.
+- Separate `tests/validate_aec.py` protobuf/Pillow oracle checked the exported
+  AEC graphs and exact first-pixel RGBA, including transparent RGB and partial alpha.
+- Existing DAT/SPR, Multi-SPR, ownership, rollback, queue, progress-layout,
+  feature-warning and dark-alert regression suite passed.
+
+The user-provided assets were only read; native tests wrote disposable D: copies.
+No running commercial Tibia client or Assets Editor GUI was used for certification.
+Existing callback/binding diagnostics remain visible and documented.
