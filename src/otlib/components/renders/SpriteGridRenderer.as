@@ -23,6 +23,7 @@
 package otlib.components.renders
 {
     import ob.ui.NexaTheme;
+    import flash.display.BitmapData;
     import flash.display.NativeMenuItem;
     import flash.events.ContextMenuEvent;
     import flash.events.Event;
@@ -255,8 +256,14 @@ package otlib.components.renders
                 try
                 {
                     if (!sprite.croppedBitmap)
-                        sprite.croppedBitmap = BitmapUtils.cropToTransparency(sprite.getBitmap());
-                    _imageDisplay.source = sprite.croppedBitmap;
+                    {
+                        var original:BitmapData=sprite.getBitmap();
+                        sprite.croppedBitmap = BitmapUtils.cropToTransparency(original);
+                        if(original && original!=sprite.croppedBitmap)original.dispose();
+                    }
+                    // The page/cache owns croppedBitmap and may retire it while
+                    // this pooled renderer belongs to an inactive view.
+                    _imageDisplay.source = sprite.croppedBitmap ? sprite.croppedBitmap.clone() : null;
                     _idLabel.text = sprite.id.toString();
                 }
                 catch (error:Error)

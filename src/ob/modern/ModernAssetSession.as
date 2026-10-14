@@ -23,6 +23,7 @@ package ob.modern
         private var pending:String;
         private var sessionDirectory:File;
         private var sessionParent:File;
+        private var legacyInputSession:Boolean=false;
         public var generation:uint = 0;
         [Bindable] public var ready:Boolean = false;
         public function get busy():Boolean { return process != null && (!ready || pending != null); }
@@ -30,9 +31,10 @@ package ob.modern
         public function get directory():File { return sessionDirectory; }
 
         public function ModernAssetSession() { timer.addEventListener(TimerEvent.TIMER_COMPLETE, timeoutHandler); }
-        public function open(source:File, executable:File, temporaryParent:File):void
+        public function open(source:File, executable:File, temporaryParent:File,legacyInput:Boolean=false):void
         {
             close(); generation++;
+            legacyInputSession=legacyInput;
             if (!NativeProcess.isSupported) throw new Error("NativeProcess requires an extendedDesktop AIR bundle.");
             if (!source || !source.isDirectory || !executable || !executable.exists) throw new Error("Modern helper or assets folder is missing. Rebuild the portable bundle.");
             if (!temporaryParent) throw new Error("A writable temporary previews folder is required.");
@@ -54,7 +56,7 @@ package ob.modern
             }
             var info:NativeProcessStartupInfo = new NativeProcessStartupInfo();
             info.executable = executable;
-            info.arguments = Vector.<String>(["--input", source.nativePath, "--output", sessionDirectory.nativePath]);
+            info.arguments = Vector.<String>([legacyInput ? "--legacy-input" : "--input", source.nativePath, "--output", sessionDirectory.nativePath]);
             info.workingDirectory = executable.parent;
             process = new NativeProcess();
             process.addEventListener(ProgressEvent.STANDARD_OUTPUT_DATA, stdoutHandler);
@@ -152,9 +154,15 @@ package ob.modern
                     var preview:File = sessionDirectory.resolvePath(name);
                     try { if (preview.exists && !preview.isDirectory) preview.deleteFile(); } catch (fileError:Error) { }
                 }
+                if(legacyInputSession) {
+                    var seed:File=sessionDirectory.resolvePath("legacy-seed");
+                    for each(name in ["appearances.dat","sheet.lzma","catalog-content.json"])try{var seedFile:File=seed.resolvePath(name);if(seedFile.exists&&!seedFile.isDirectory)seedFile.deleteFile();}catch(seedError:Error){}
+                    try{if(seed.exists)seed.deleteDirectory(false);}catch(seedDirectoryError:Error){}
+                }
                 try { if (sessionDirectory.exists) sessionDirectory.deleteDirectory(false); } catch (directoryError:Error) { }
             }
             sessionDirectory = sessionParent = null;
+            legacyInputSession=false;
         }
     }
 }

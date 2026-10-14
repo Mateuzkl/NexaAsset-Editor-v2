@@ -22,6 +22,13 @@
         import ob.commands.things.GetThingListCommand;
         import ob.commands.sprites.GetSpriteListCommand;
         import ob.modern.ModernThingData;
+        import ob.modern.ModernSpriteData;
+        import otlib.components.renders.SpriteGridRenderer;
+        import otlib.components.renders.ThingGridRenderer;
+        import otlib.components.renders.ThingListRenderer;
+        import spark.primitives.BitmapImage;
+        import spark.components.supportClasses.ItemRenderer;
+        import otlib.things.ThingType;
         import ob.modern.ModernNativeSource;
         import ob.modern.ModernAssetEvent;
         import ob.ui.NexaUiEvent;
@@ -36,6 +43,7 @@
         import ob.modern.ModernFlagEvent;
         import ob.components.ModernConversionWindow;
         import ob.components.ModernSaveWindow;
+        import ob.components.ModernExportWindow;
         import ob.modern.NativeObjectExport;
         import otlib.obd.OBDEncoder;
         import ob.settings.ObjectBuilderSettings;
@@ -78,6 +86,25 @@
         private var copiedPixelsHash:String;
         private var catalogBeforeFailure:ByteArray;
         private var nativeImportedId:uint;
+        private var exportRevisionBefore:Number;
+        private var batchExportIds:Vector.<uint>;
+        private function exportWindow():ExportWindow {for(var i:int=0;i<systemManager.rawChildren.numChildren;i++)if(systemManager.rawChildren.getChildAt(i) is ExportWindow)return systemManager.rawChildren.getChildAt(i) as ExportWindow;return null;}
+        private function testRendererOwnership():void {
+            for each(var renderer:ItemRenderer in [new SpriteGridRenderer(),new ThingGridRenderer(),new ThingListRenderer()]) {
+                var pixels:ByteArray=new ByteArray();pixels.length=4096;for(var p:int=0;p<4096;p++)pixels[p]=255;
+                var item:Object;
+                if(renderer is SpriteGridRenderer){var sprite:ModernSpriteData=new ModernSpriteData();sprite.id=1;sprite.imageWidth=sprite.imageHeight=32;sprite.pixels=pixels;item=sprite;}
+                else {var thingItem:ThingListItem=new ThingListItem();thingItem.thing=new ThingType();thingItem.thing.id=100;thingItem.thing.category="item";thingItem.frameGroup=new FrameGroup();thingItem.frameGroup.width=thingItem.frameGroup.height=1;thingItem.pixels=pixels;item=thingItem;}
+                addElement(renderer);renderer.validateNow();renderer.data=item;renderer.validateNow();
+                var image:BitmapImage;for(var i:int=0;i<renderer.numElements;i++)if(renderer.getElementAt(i) is BitmapImage)image=renderer.getElementAt(i) as BitmapImage;
+                check(image && image.source is BitmapData,"Renderer ownership fixture missing image");
+                var displayed:BitmapData=image.source as BitmapData;
+                check(displayed!=item.croppedBitmap,"Renderer borrowed page cache pixels");item.dispose();renderer.validateNow();
+                check(displayed.width==32 && displayed.getPixel32(0,0)==0xFFFFFFFF,"Retired page disposed renderer pixels");
+                renderer.data=null;renderer.validateNow();removeElement(renderer);
+            }
+            trace("PASS: list/grid bitmap ownership survives page retirement");
+        }
         private function dismissAlerts():void {for(var i:int=systemManager.rawChildren.numChildren-1;i>=0;i--){var alert:Alert=systemManager.rawChildren.getChildAt(i) as Alert;if(alert){alert.validateNow();alert.closeButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK,true));}}}
         private function guardedLegacyFolder():File {
             var folder:File=snapshots.resolvePath("guard-legacy");folder.createDirectory();var v:Version=VersionStorage.getInstance().getByValueString("8.60 v2");
@@ -95,7 +122,7 @@
             super.applicationCompleteHandler(event);started=getTimer();clock.addEventListener(TimerEvent.TIMER,tick);clock.start();
         }
         private function check(ok:Boolean,message:String):void {if(!ok)throw new Error(message);}
-        private function failed(event:UncaughtErrorEvent):void {event.preventDefault();failure(event.error is Error ? Error(event.error).getStackTrace() : String(event.error));}
+        private function failed(event:UncaughtErrorEvent):void {event.preventDefault();failure("Phase "+phase+": "+(event.error is Error ? Error(event.error).getStackTrace() : String(event.error)));}
         private function failure(message:String):void {trace("FAIL native main: "+message);clock.stop();if(nativeSource)clear();NativeApplication.nativeApplication.exit(1);}
         private function capture(name:String):void {
             validateNow();var bitmap:BitmapData=new BitmapData(width,height,false,0x0B1622);bitmap.draw(DisplayObject(systemManager),new Matrix());
@@ -105,11 +132,12 @@
             try {
                 check(getTimer()-started<180000,"Timeout phase "+phase+" / category "+at);
                 if(phase==0 && visible && running && args){
+                    testRendererOwnership();
                     snapshots=new File(args[2]).resolvePath("native-main");snapshots.createDirectory();
                     trace("Native source (no conversion): "+new File(args[0]).nativePath);
                     restore();logPanel.expanded=false;
                     var failedProbe:OpenAssetsWindow=new OpenAssetsWindow();failedProbe.modernHelper=snapshots.resolvePath("missing-helper.exe");failedProbe.open(this);failedProbe.clientDirectory=new File(args[0]);failedProbe.validateNow();
-                    check(failedProbe.errorLabel.visible && failedProbe.errorLabel.text.indexOf("helper")>=0 && failedProbe.clientVersionLabel.text=="" && !failedProbe.loadButton.enabled,"Synchronous opening error was erased");failedProbe.close();
+                    check(failedProbe.errorLabel.visible && failedProbe.errorLabel.text.indexOf("helper")>=0 && failedProbe.clientVersionLabel.text=="" && !failedProbe.loadButton.enabled,"Synchronous opening error was erased: visible="+failedProbe.errorLabel.visible+" text="+failedProbe.errorLabel.text+" version="+failedProbe.clientVersionLabel.text+" load="+failedProbe.loadButton.enabled);failedProbe.close();
                     openWindow=new OpenAssetsWindow();openWindow.modernHelper=new File(args[1]);openWindow.open(this);openWindow.clientDirectory=new File(args[0]);phase=8;
                 } else if(phase==8){
                     openWindow.validateNow();if(!openWindow.loadButton.enabled)return;
@@ -206,7 +234,37 @@
                 } else if(phase==18 && !source.busy && thingData && thingData.id==duplicateId && ModernThingData(thingData).cacheBytes>0){
                     source.request("native-export-png",{category:"item",appearanceId:duplicateId,sprite:false,file:snapshots.resolvePath("export-test.png").nativePath},function(result:Object):void{});phase=19;
                 } else if(phase==19 && !source.busy && snapshots.resolvePath("export-test.png").exists){
-                    nexaActions.dispatchEvent(new NexaUiEvent("export"));phase=34;
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));phase=55;
+                } else if(phase==55){
+                    nativeExportDialog=exportWindow();if(!nativeExportDialog)return;
+                    check(nativeObjectExportActive,"Export state missing while dialog is open");nexaActions.dispatchEvent(new NexaUiEvent("export"));check(exportWindow()==nativeExportDialog,"Reentrant export replaced the dialog");
+                    nativeExportDialog.cancelButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));check(!nativeObjectExportActive,"Cancel retained export state");
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));nativeExportDialog=exportWindow();check(nativeExportDialog!=null,"Export did not restart after cancel");
+                    nativeExportDialog.dispatchEvent(new Event("exportNativePackage"));
+                    var packageWindow:ModernExportWindow;
+                    for(child=0;child<systemManager.rawChildren.numChildren;child++)if(systemManager.rawChildren.getChildAt(child) is ModernExportWindow)packageWindow=systemManager.rawChildren.getChildAt(child) as ModernExportWindow;
+                    check(packageWindow && nativeObjectExportActive,"Package route lost batch state");packageWindow.close();check(!nativeObjectExportActive,"Package close retained export state");
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));nativeExportDialog=exportWindow();nativeExportDialog.directory=snapshots;nativeExportDialog.fileName="export-test";nativeExportDialog.format="png";nativeExportDialog.validateNow();
+                    nativeExportDialog.confirmButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));check(nativeObjectExportActive,"Preflight lost export state");
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));check(exportWindow()==null,"Second export entered between preflight and worker");phase=56;
+                } else if(phase==56 && !source.busy && !nativeObjectExportActive){
+                    check(statusLabel.text.indexOf("new export file")>=0,"Expected worker failure for existing output");
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));nativeExportDialog=exportWindow();check(nativeExportDialog!=null,"Worker failure blocked retry");
+                    exportRevisionBefore=source.revision;source.request("native-flag",{category:"item",appearanceId:duplicateId,number:13,enabled:!thingData.thing.isUnpassable});phase=57;
+                } else if(phase==57 && !source.busy){
+                    check(source.revision>exportRevisionBefore && !nativeObjectExportActive,"Revision change did not cancel export");nativeExportDialog.cancelButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    batchExportIds=Vector.<uint>([getActiveThingList().dataProvider.getItemAt(0).id,duplicateId]);
+                    getActiveThingList().selectedIds=batchExportIds;validateNow();check(getActiveThingList().selectedIds.length==2,"Batch fixture selection");
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));nativeExportDialog=exportWindow();nativeExportDialog.directory=snapshots;nativeExportDialog.fileName="native-multi";nativeExportDialog.format="png";nativeExportDialog.validateNow();nativeExportDialog.confirmButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=58;
+                } else if(phase==58 && !source.busy && !nativeObjectExportActive){
+                    check(snapshots.resolvePath("native-multi-"+batchExportIds[0]+".png").exists && snapshots.resolvePath("native-multi-"+duplicateId+".png").exists,"Native batch stopped before all IDs");
+                    getActiveThingList().selectedIds=Vector.<uint>([duplicateId]);validateNow();nexaActions.dispatchEvent(new NexaUiEvent("export"));phase=62;
+                } else if(phase==62){
+                    nativeExportDialog=exportWindow();if(!nativeExportDialog)return;
+                    nativeExportDialog.directory=snapshots;nativeExportDialog.fileName="native-selected-project";nativeExportDialog.format="modern";nativeExportDialog.validateNow();
+                    check(nativeExportDialog.enableModernFormat && nativeExportDialog.modernFormatRadioButton.selected,"Modern format missing from native Export");capture("native-modern-project-export");nativeExportDialog.confirmButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=63;
+                } else if(phase==63 && !source.busy && !nativeObjectExportActive){
+                    check(snapshots.resolvePath("native-selected-project/catalog-content.json").exists && nativeSource==source && clientChanged,"Selected native project export failed or cleared dirty state");nexaActions.dispatchEvent(new NexaUiEvent("export"));phase=34;
                 } else if(phase==34){
                     for(var child:int=0;child<systemManager.rawChildren.numChildren;child++)if(systemManager.rawChildren.getChildAt(child) is ExportWindow)nativeExportDialog=systemManager.rawChildren.getChildAt(child) as ExportWindow;
                     if(!nativeExportDialog)return;
@@ -214,18 +272,20 @@
                     nativeExportDialog.version=VersionStorage.getInstance().getByValueString("8.60 v2");nativeExportDialog.obdVersion=200;nativeExportDialog.validateNow();
                     check(nativeExportDialog.confirmButton.enabled && nativeExportDialog.enableNativePackage,"Standard native export dialog unavailable");capture("native-standard-export-obd");
                     nativeExportDialog.confirmButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=35;
-                } else if(phase==35 && !source.busy && snapshots.resolvePath("native-dialog.obd").exists){
+                } else if(phase==35 && !source.busy && !nativeObjectExportActive && snapshots.resolvePath("native-dialog.obd").exists){
                     check(new OBDEncoder(new ObjectBuilderSettings()).decodeFromFile(snapshots.resolvePath("native-dialog.obd")).clientVersion==860,"Native OBD target not honored");
                     source.request("native-object-export",{category:"item",appearanceId:duplicateId,version:860,datSignature:VersionStorage.getInstance().getByValueString("8.60 v2").datSignature,sprSignature:VersionStorage.getInstance().getByValueString("8.60 v2").sprSignature},function(model:Object):void {
                         var settings:ObjectBuilderSettings=new ObjectBuilderSettings(),encoder:OBDEncoder=new OBDEncoder(settings);
+                        model.pixels=NativeObjectExport.packet(model.file);model.file=null;var packetHash:String=MD5.hashBytes(model.pixels);
                         for each(var obd:uint in [100,200,300]){
                             var file:File=snapshots.resolvePath("modern-to-legacy-v"+obd+".obd");NativeObjectExport.write(model,file.nativePath,source.directory.nativePath,obd,860,true,90,settings);
                             var decoded:ThingData=encoder.decodeFromFile(file);check(decoded.thing.frameGroups[0].width==2 && decoded.thing.frameGroups[0].height==2,"OBD geometry lost");
                             var bitmap:BitmapData=decoded.getBitmap(decoded.thing.frameGroups[0]);check(bitmap.getPixel32(0,0)==0x80644220,"OBD ARGB pixel lost");bitmap.dispose();
+                            check(MD5.hashBytes(model.pixels)==packetHash,"Repeated export destroyed model.pixels");
                         }
                         for each(var format:String in ["png","bmp","jpg"])NativeObjectExport.write(model,snapshots.resolvePath("modern-legacy-export."+format).nativePath,source.directory.nativePath,200,860,true,90,settings);
                         // Copy the packet before another request can reuse the fixed helper file.
-                        model.pixels=NativeObjectExport.packet(model.file);model.file=null;workerExport=snapshots.resolvePath("worker-native-export.obd");
+                        workerExport=snapshots.resolvePath("worker-native-export.obd");
                         sendCommand(new ExportNativeObjectCommand(model,workerExport.nativePath,source.directory.nativePath,200,860,true,90));
                     });phase=28;
                 } else if(phase==28 && !source.busy && workerExport && workerExport.exists){
@@ -302,7 +362,17 @@
                     importThingsFromFiles(Vector.<PathHelper>([new PathHelper(snapshots.resolvePath("modern-to-legacy-v200.obd").nativePath,0)]));phase=30;
                 } else if(phase==30 && thingData && thingData.id==duplicateId){
                     var imported:BitmapData=thingData.getBitmap(thingData.thing.frameGroups[0]);check(imported.getPixel32(0,0)==0x80644220,"Modern OBD imported into legacy with incorrect pixels");imported.dispose();capture("native-obd-imported-legacy");
-                    clear();openNativeProject(savedNative,new File(args[1]));phase=31;
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));phase=59;
+                } else if(phase==59){
+                    nativeExportDialog=exportWindow();if(!nativeExportDialog)return;
+                    nativeExportDialog.directory=snapshots;nativeExportDialog.fileName="legacy-modern-project";nativeExportDialog.format="modern";nativeExportDialog.validateNow();
+                    check(nativeExportDialog.enableModernFormat && nativeExportDialog.modernFormatRadioButton.selected,"Modern format missing from legacy Export");capture("legacy-modern-project-export");nativeExportDialog.confirmButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));check(legacyModernExportActive,"Legacy modern export did not start");phase=60;
+                } else if(phase==60 && !legacyModernExportActive){
+                    check(snapshots.resolvePath("legacy-modern-project/catalog-content.json").exists,"Legacy to appearances project failed: "+statusLabel.text);
+                    clear();openNativeProject(snapshots.resolvePath("legacy-modern-project"),new File(args[1]));phase=61;
+                } else if(phase==61 && nativeSource && !nativeSource.busy && thingData && thingData.id==duplicateId && ModernThingData(thingData).cacheBytes>0){
+                    var legacyModern:BitmapData=ModernThingData(thingData).image(0,0,0,0,0,0);if(!legacyModern)return;
+                    check(legacyModern.getPixel32(0,0)==0x80644220,"Legacy to native project lost alpha/pixels/ID");capture("legacy-modern-project-reopened");clear();openNativeProject(savedNative,new File(args[1]));phase=31;
                 } else if(phase==31 && clientLoaded && nativeSource && !nativeSource.busy){
                     check(clientInfo.maxItemId==nativeImportedId,"Imported objects were not retained by native Save As");
                     requestEditThing(nativeImportedId-1,"item");phase=52;

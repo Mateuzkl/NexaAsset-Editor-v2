@@ -99,6 +99,8 @@ package otlib.utils
          */
         public function dispose():void
         {
+            // Cropping may return the original bitmap; dispose that allocation once.
+            if(croppedBitmap==_bitmap)croppedBitmap=null;
             if (_bitmap)
             {
                 _bitmap.dispose();

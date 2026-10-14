@@ -66,6 +66,7 @@ package
             {
                 testRoot.createDirectory();
                 testBitmaps();
+                testTransparentPixels();
                 testFormats();
                 testFeatureWarnings();
                 testTransaction();
@@ -126,6 +127,34 @@ package
             var v:Version = new Version(); v.value = 860; v.valueStr = "8.60 test";
             v.datSignature = 0x55667788; v.sprSignature = 0x11223344;
             return v;
+        }
+
+        private function testTransparentPixels():void
+        {
+            // Transparent RGB is arbitrary: modern sheets use magenta, not just black.
+            var pixels:ByteArray = new ByteArray(); pixels.length = 4096;
+            for (var i:int = 0; i < 1024; i++) {
+                pixels[i*4+1] = 255; pixels[i*4+3] = 255;
+            }
+            for each (var rgba:Boolean in [false,true]) {
+                var sprite:otlib.sprites.Sprite = new otlib.sprites.Sprite(1,rgba);
+                sprite.setPixels(pixels);
+                check(sprite.isEmpty, "Alpha-zero magenta must be an empty SPR in RGB/RGBA.");
+                pixels[4] = 128; pixels[5] = 12; pixels[6] = 34; pixels[7] = 56;
+                pixels[4092] = 255; pixels[4093] = 255; pixels[4094] = 0; pixels[4095] = 255;
+                sprite.setPixels(pixels);
+                var decoded:ByteArray = sprite.getPixels();
+                for (i = 0; i < 1024; i++) {
+                    var offset:int = i*4;
+                    if (pixels[offset] == 0) check(decoded[offset] == 0, "Transparent pixel became opaque: " + i);
+                    else check(decoded[offset] == (rgba ? pixels[offset] : 255) && decoded[offset+1] == pixels[offset+1] && decoded[offset+2] == pixels[offset+2] && decoded[offset+3] == pixels[offset+3], "Visible pixel changed: " + i);
+                }
+                // A visible magenta pixel is legitimate; alpha, not RGB color-keying, decides.
+                check(decoded[4092] == 255 && decoded[4093] == 255 && decoded[4095] == 255, "Visible magenta was removed.");
+                if (rgba) { sprite.transparent = false; check(sprite.getPixels()[0] == 0, "RGBA to RGB restored a transparent background."); }
+                sprite.dispose(); decoded.clear(); pixels[4] = 0; pixels[4092] = 0;
+            }
+            pixels.clear(); note("PASS: alpha-zero colored pixels stay transparent in RGB/RGBA SPR; visible colors remain intact");
         }
 
         private function fixture(file:File, count:uint):void

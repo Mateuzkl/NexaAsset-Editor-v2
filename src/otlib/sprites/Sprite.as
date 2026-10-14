@@ -157,8 +157,8 @@ package otlib.sprites
         {
             validateCompressedPixels();
             var result:Sprite = new Sprite(_id, value);
-            // Preserve the historical handling of fully transparent black pixels
-            // when removing alpha; RGB -> RGBA can keep all RLE runs verbatim.
+            // Reclassify all alpha-zero pixels as empty runs when removing alpha;
+            // RGB -> RGBA can keep all RLE runs verbatim.
             if (_transparent && !value)
             {
                 result.setPixels(getPixels());
@@ -389,7 +389,9 @@ package otlib.sprites
                 {
                     pixels.position = index * 4;
                     color = pixels.readUnsignedInt();
-                    transparentPixel = (color == 0);
+                    // ARGB alpha defines visibility. Modern sheets may retain
+                    // magenta (or any RGB) underneath a fully transparent pixel.
+                    transparentPixel = (color >>> 24) == 0;
                     if (!transparentPixel)
                         break;
                     alphaCount++;
@@ -412,7 +414,7 @@ package otlib.sprites
                         {
                             pixels.position = index * 4;
                             color = pixels.readUnsignedInt();
-                            transparentPixel = (color == 0);
+                            transparentPixel = (color >>> 24) == 0;
                             if (transparentPixel)
                                 break;
 

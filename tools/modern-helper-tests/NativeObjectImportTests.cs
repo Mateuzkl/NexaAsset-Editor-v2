@@ -18,7 +18,7 @@ internal static class NativeObjectImportTests
         var size=new byte[8];BinaryPrimitives.WriteUInt64LittleEndian(size,(ulong)raw.Length);
         return Join(props,size,output.ToArray());
     }
-    private static byte[] Obd(int format,int version,bool outfit=false,int width=2)
+    internal static byte[] Obd(int format,int version,bool outfit=false,int width=2)
     {
         using var stream=new MemoryStream();using var w=new BinaryWriter(stream,Encoding.UTF8,true);
         bool old=format==100;w.Write((ushort)(old ? version : format));if(!old)w.Write((ushort)version);

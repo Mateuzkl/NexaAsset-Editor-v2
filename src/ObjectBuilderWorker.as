@@ -86,6 +86,7 @@ package
     import ob.commands.things.DuplicateThingCommand;
     import ob.commands.things.ExportThingCommand;
     import ob.commands.things.ExportNativeObjectCommand;
+    import ob.commands.things.ExportLegacyModernCommand;
     import ob.commands.things.NativeObjectExportResultCommand;
     import ob.modern.NativeObjectExport;
     import ob.commands.things.FindThingCommand;
@@ -385,6 +386,7 @@ package
             _communicator.registerCallback(ImportThingsFromFilesCommand, importThingsFromFilesCallback);
             _communicator.registerCallback(ExportThingCommand, exportThingCallback);
             _communicator.registerCallback(ExportNativeObjectCommand,exportNativeObjectCallback);
+            _communicator.registerCallback(ExportLegacyModernCommand,exportLegacyModernCallback);
             _communicator.registerCallback(ReplaceThingsCommand, replaceThingsCallback);
             _communicator.registerCallback(ReplaceThingsFromFilesCommand, replaceThingsFromFilesCallback);
             _communicator.registerCallback(DuplicateThingCommand, duplicateThingCallback);
@@ -1257,6 +1259,37 @@ package
             try{NativeObjectExport.write(model,path,source,obd,version,transparent,quality,_settings);success=true;message="Exported native object: "+path;Log.info(message);}
             catch(error:Error){message=error.message;Log.error("Native object export: "+message);}
             finally{sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));sendCommand(new NativeObjectExportResultCommand(path,success,message,job));}
+        }
+
+        private function exportLegacyModernCallback(ids:Vector.<uint>,category:String,path:String,job:uint):void
+        {
+            var success:Boolean=false,message:String,stream:FileStream=new FileStream(),bytes:ByteArray;
+            try {
+                var directory:File=new File(path);
+                if(!clientLoaded||!directory.isDirectory||directory.name.indexOf("legacy-export-")!=0||directory.getDirectoryListing().length||!ids||ids.length<1||ids.length>100)throw new Error("Invalid modern project export selection/staging.");
+                var rows:Array=[],encoder:OBDEncoder=new OBDEncoder(_settings),pixelBytes:Number=0;
+                // Bound the selection before getThingData inflates any pixel graph.
+                for each(var sourceId:uint in ids) {
+                    var sourceThing:ThingType=_things.getThingType(sourceId,category);if(!sourceThing)throw new Error("Legacy object not found: "+sourceId);
+                    for each(var sourceGroup:FrameGroup in sourceThing.frameGroups)if(sourceGroup) {
+                        if(sourceGroup.width>2 || sourceGroup.height>2)throw new Error("Modern sprites support at most 64 pixels per axis.");
+                        pixelBytes+=Number(sourceGroup.spriteIndex.length)*4096;
+                        if(pixelBytes>32*1024*1024)throw new Error("Selected pixels exceed 32 MiB. Export a smaller selection.");
+                    }
+                }
+                for(var i:int=0;i<ids.length;i++) {
+                    var data:ThingData=getThingData(ids[i],category,OBDVersions.OBD_VERSION_3,_version.value);
+                    // Never export preview error icons when a source SPR record is damaged.
+                    for each(var group:FrameGroup in data.thing.frameGroups)if(group)for each(var sprite:SpriteData in data.sprites[group.type]) {
+                        sprite.pixels=_sprites.getPixelsStrict(sprite.id);
+                    }
+                    bytes=encoder.encode(data);if(!bytes)throw new Error("Failed to encode legacy object.");
+                    var name:String="object-"+i+".obd";stream.open(directory.resolvePath(name),FileMode.WRITE);stream.writeBytes(bytes);stream.close();bytes.clear();
+                    rows.push({id:ids[i],category:category,file:name});
+                }
+                stream.open(directory.resolvePath("manifest.json"),FileMode.WRITE);stream.writeUTFBytes(JSON.stringify({objects:rows}));stream.close();success=true;message="Legacy objects prepared for modern export.";
+            }catch(error:Error){message=error.message;}
+            finally{stream.close();if(bytes)bytes.clear();sendCommand(new NativeObjectExportResultCommand(path,success,message,job));}
         }
 
         private function exportThingsDirect(list:Vector.<PathHelper>,

@@ -27,7 +27,9 @@ package ob.modern
         }
         public static function data(model:Object,obd:uint,version:uint):ThingData
         {
-            var stream:ByteArray=model.pixels as ByteArray;if(!stream)stream=packet(model.file);stream.position=0;
+            var stream:ByteArray=model.pixels as ByteArray,temporary:Boolean=stream==null;
+            if(temporary)stream=packet(model.file);
+            var originalPosition:uint=stream.position;var originalEndian:String=stream.endian;stream.position=0;
             var pixels:Object={};
             try {
                 stream.endian=Endian.LITTLE_ENDIAN;
@@ -40,7 +42,7 @@ package ob.modern
                     var bytes:ByteArray=new ByteArray();stream.readBytes(bytes,0,size);pixels[id]=bytes;
                 }
                 if(stream.bytesAvailable)throw new Error("Trailing native OBD pixels.");
-            }finally{stream.clear();}
+            }finally{if(temporary)stream.clear();else{stream.position=originalPosition;stream.endian=originalEndian;}}
             var thing:ThingType=new ThingType();thing.id=model.id;thing.category=model.category;
             bytes=new ByteArray();bytes.endian=Endian.LITTLE_ENDIAN;
             var hex:String=model.properties;if(hex.length>131072||hex.length%2||!/^[0-9a-f]+$/i.test(hex))throw new Error("Invalid normalized OBD properties.");

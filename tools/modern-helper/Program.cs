@@ -11,7 +11,7 @@ public static class Program
     public static int Main(string[] args)
     {
         if (args.Length == 1 && args[0] == "--version") { Console.WriteLine("nexa-modern-helper 0.5.0 protocol=1 native-save legacy-export"); return 0; }
-        if (args.Length != 4 || args[0] != "--input" || args[2] != "--output")
+        if (args.Length != 4 || args[0] is not ("--input" or "--legacy-input") || args[2] != "--output")
         { Console.Error.WriteLine("Usage: nexa-modern-helper --input assets-folder --output existing-empty-session-folder"); return 2; }
         try
         {
@@ -20,14 +20,17 @@ public static class Program
             AssetSet.RejectLinks(output);
             if (Within(root, output) || Within(output, root)) throw new InvalidDataException("Source and output directories must be disjoint.");
             var watch = System.Diagnostics.Stopwatch.StartNew();
-            var assets = new AssetSet(root, (processed, total) => Emit(new { type = "progress", schemaVersion = Protocol, phase = "catalog", processed, total }));
-            var cache = new SheetCache(assets);
+            string[] notices=[];AssetSet assets;SheetCache cache;
+            if(args[0]=="--legacy-input") {
+                var seed=NativeProjectSeed.FromLegacy(root,Path.Combine(output,"legacy-seed"),(processed,total)=>Emit(new {type="progress",schemaVersion=Protocol,phase="Reading legacy objects",processed,total}));
+                assets=seed.Assets;cache=seed.Cache;notices=seed.Notices;
+            } else {assets=new AssetSet(root, (processed, total) => Emit(new { type = "progress", schemaVersion = Protocol, phase = "catalog", processed, total }));cache=new SheetCache(assets);}
             var native = new NativeAssets(assets,cache,output);
             var workspace = new NativeWorkspace(assets,cache);
             long conversionRevision = -1;
             LegacyExport? conversion = null; string? conversionToken = null;
             Emit(new { type = "ready", schemaVersion = Protocol, fingerprint = assets.Fingerprint, sheets = assets.Sheets.Count,
-                categories = AssetSet.Categories.ToDictionary(c => c, c => assets.Appearances.Count(a => a.Category == c)), native = native.Inventory(), elapsedMs = watch.ElapsedMilliseconds });
+                categories = AssetSet.Categories.ToDictionary(c => c, c => assets.Appearances.Count(a => a.Category == c)), native = native.Inventory(), elapsedMs = watch.ElapsedMilliseconds,notices });
             while (ReadLine(out bool oversized) is string line)
             {
                 if(oversized){Emit(new {type="error",schemaVersion=Protocol,errorCode="REQUEST_TOO_LARGE",message="Request exceeds 64 KiB; the complete line was discarded."});continue;}
@@ -68,6 +71,7 @@ public static class Program
                         case "native-import-object":result=workspace.ImportObject(request.GetProperty("category").GetString()??"",request.GetProperty("file").GetString()??"",request.TryGetProperty("target",out var objectTarget) && objectTarget.ValueKind!=JsonValueKind.Null ? objectTarget.GetUInt32() : null);break;
                         case "native-import-assets":result=workspace.ImportAssets(request.GetProperty("files").EnumerateArray().Select(f=>f.GetString()??"").ToArray(),request.GetProperty("category").GetString()??"",request.TryGetProperty("target",out var assetTarget) && assetTarget.ValueKind!=JsonValueKind.Null ? assetTarget.GetUInt32() : null);break;
                         case "native-export-aec":result=workspace.ExportAec(request.GetProperty("category").GetString()??"",Ids(request),request.GetProperty("file").GetString()??"");break;
+                        case "native-export-project":result=new {directory=NativeProjectSeed.ExportSelected(assets,cache,request.GetProperty("category").GetString()??"",Ids(request),request.GetProperty("target").GetString()??"",output,(phase,processed,total)=>Emit(new {type="progress",schemaVersion=Protocol,requestId,generation,phase,processed,total}))};break;
                         case "native-import-image-object":result=workspace.ImportPngObject(request.GetProperty("category").GetString()??"",Get(request,"width"),Get(request,"height"),request.GetProperty("argb").GetString()??"");break;
                         case "native-import-png":result=workspace.ImportPng(request.GetProperty("file").GetString()??"",request.TryGetProperty("spriteId",out var pngSprite) && pngSprite.ValueKind!=JsonValueKind.Null ? pngSprite.GetUInt32() : null,request.TryGetProperty("asObject",out var pngObject) && pngObject.GetBoolean() ? request.GetProperty("category").GetString() : null);break;
                         case "native-export-png":result=workspace.ExportPng(request.GetProperty("category").GetString()??"",request.GetProperty("appearanceId").GetUInt32(),request.GetProperty("file").GetString()??"",request.GetProperty("sprite").GetBoolean(),Get(request,"group"),Get(request,"frame"),Get(request,"patternX"),Get(request,"patternY"),Get(request,"patternZ"));break;

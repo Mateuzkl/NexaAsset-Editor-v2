@@ -24,6 +24,7 @@ if (args.Length == 0) throw new Exception("Specify a test output folder on D:.")
 string tests = Path.GetFullPath(args[0]); Directory.CreateDirectory(tests);
 NativeSaveTests.Run(tests);
 NativeObjectImportTests.Run(tests);
+NativeProjectExportTests.Run(tests);
 ReviewRegressionTests.Run(tests);
 string root = Path.Combine(tests, "synthetic-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
 void Fixture(object[] catalog, byte[]? appearances = null)
@@ -112,6 +113,7 @@ Console.WriteLine("PASS: 10,000 wire fuzz inputs, unknown fields, catalog/ID/ran
 
 if (args.Contains("--convert"))
 {
+    NativeTransparencyTests.Synthetic(tests);
     // A controlled four-quadrant sheet catches flipped/chopped geometry and
     // verifies partial alpha independently of any real client's palette.
     Array.Clear(bmp, 122, bmp.Length - 122);
@@ -337,6 +339,7 @@ if (args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal))
     Check(new AssetSet(args[1]).Fingerprint == assets.Fingerprint, "source unchanged");
     if (args.Contains("--convert"))
     {
+        NativeTransparencyTests.Generate(tests,assets,"real");
         var ringPlan=new LegacyExport(assets,860,true,[assets.Find("item",54266)]);
         string ringTarget=Path.Combine(tests,"legacy-ring-860");ringPlan.Export(ringTarget,cache,true);WriteOracle(ringPlan,ringTarget,assets,cache);
         Check(ringPlan.SpriteCount>0 && JsonSerializer.Serialize(ringPlan.Summary()).Contains("SELECTED OBJECTS ONLY"),"Selected export scope missing");

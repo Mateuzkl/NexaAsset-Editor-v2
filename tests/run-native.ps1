@@ -23,6 +23,7 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Native main test compilation failed.'}
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'NativeMainTests-app.xml') -Destination (Join-Path $project 'bin-tests')
     Copy-Item -LiteralPath (Join-Path $project 'src/config') -Destination (Join-Path $project 'bin-tests') -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $project 'bin-debug/modern-helper') -Destination (Join-Path $project 'bin-tests') -Recurse -Force
     & (Join-Path $sdk 'bin/adl.exe') -nodebug (Join-Path $project 'bin-tests/NativeMainTests-app.xml') -- `
         $testCopy (Join-Path $project 'bin-debug/modern-helper/nexa-modern-helper.exe') $output
     if($LASTEXITCODE -ne 0){throw 'Native main integration failed.'}

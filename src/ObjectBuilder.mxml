@@ -1072,6 +1072,34 @@ THE SOFTWARE.
             private var _nativeObjectExportCallback:Function;
             private var _nativeObjectExportPath:String;
             private var _nativeObjectExportJob:uint=0;
+            private var _nativeObjectExportActive:Boolean=false;
+            private var _nativeObjectExportBatch:uint=0;
+            private var _nativeObjectExportRevision:Number=0;
+            private var _legacyModernExport:ob.modern.LegacyModernProjectExport;
+            public function get legacyModernExportActive():Boolean {return _legacyModernExport!=null;}
+            public function exportSelectedModernProject(ids:Vector.<uint>,category:String,target:File):void {
+                if(!clientLoaded || _nativeSource || _legacyModernExport)return;
+                if(thingTypeEditor.changed)saveThingChanges();
+                try {
+                    _legacyModernExport=new ob.modern.LegacyModernProjectExport(target,ids.length,++_nativeObjectExportJob);
+                    _legacyModernExport.addEventListener(ModernAssetEvent.MESSAGE,legacyModernMessage);_locked=true;statusLabel.text="Exporting legacy objects to modern assets…";
+                    _communicator.sendCommand(new ob.commands.things.ExportLegacyModernCommand(ids,category,_legacyModernExport.directory.nativePath,_legacyModernExport.job));
+                }catch(error:Error){if(_legacyModernExport){_legacyModernExport.removeEventListener(ModernAssetEvent.MESSAGE,legacyModernMessage);_legacyModernExport.close();_legacyModernExport=null;}_locked=false;appendLog(error.message);statusLabel.text=error.message;}
+            }
+            private function legacyModernMessage(event:ModernAssetEvent):void {
+                if(event.currentTarget!=_legacyModernExport)return;var message:Object=event.message;
+                if(message.type=="notice"){appendLog(message.message);return;}
+                if(message.type=="progress"){statusLabel.text=(message.phase||"Exporting modern assets")+" · "+message.processed+" / "+message.total;return;}
+                if(message.type=="complete" || message.type=="error") {
+                    statusLabel.text=message.type=="complete" ? "Exported modern project: "+message.directory : "Modern project export failed: "+message.message;appendLog(statusLabel.text);
+                    _legacyModernExport.removeEventListener(ModernAssetEvent.MESSAGE,legacyModernMessage);_legacyModernExport.close();_legacyModernExport=null;_locked=false;
+                }
+            }
+            public function get nativeObjectExportActive():Boolean {return _nativeObjectExportActive;}
+            private function finishNativeObjectExport():void {
+                _nativeObjectExportActive=false;_nativeObjectExportBatch++;
+                _nativeObjectExportCallback=null;_nativeObjectExportPath=null;
+            }
             public function get nativeSource():ModernNativeSource { return _nativeSource; }
             private var _nativeSaveWindow:ob.components.ModernSaveWindow;
             private var _nativeSaving:Boolean=false;
@@ -1085,8 +1113,8 @@ THE SOFTWARE.
                 try{source.request("native-save",{},function(result:Object):void {
                     if(_nativeSource!=source)return;_nativeSaving=false;
                     nativeSaved(source,result.directory,result.revision);
-                    if(_nativeCloseAfterSave && !clientChanged){_nativeCloseAfterSave=false;clear();exit();}
-                });}catch(error:Error){_nativeSaving=false;statusLabel.text="Native save failed: "+error.message;appendLog(statusLabel.text);}
+                    if(_nativeCloseAfterSave && !clientChanged){_nativeCloseAfterSave=false;clear();close();}
+                });}catch(error:Error){_nativeSaving=false;_nativeCloseAfterSave=false;statusLabel.text="Native save failed: "+error.message;appendLog(statusLabel.text);}
             }
             private function nativeSaved(source:ModernNativeSource,path:String,revision:Number):void {
                 if(_nativeSource!=source)return;source.directory=new File(path);_settings.setLastDirectory(source.directory);
@@ -1126,6 +1154,9 @@ THE SOFTWARE.
             {
                 if (!_nativeSource || event.currentTarget != _nativeSource) return;
                 var message:Object = event.message;
+                if(_nativeObjectExportActive && _nativeSource.revision!=_nativeObjectExportRevision){
+                    finishNativeObjectExport();appendLog("The working copy changed; restart the object export.");
+                }
                 if (message.type == "ready" || message.type == "inventory")
                 {
                     var inv:Object = _nativeSource.inventory;
@@ -1150,6 +1181,7 @@ THE SOFTWARE.
                     }
                 }
                 else if (message.type == "error") {
+                    if(_nativeObjectExportActive)finishNativeObjectExport();
                     if(message.command=="native-save" || !_nativeSource.ready){_nativeSaving=false;_nativeCloseAfterSave=false;}
                     if(!_nativeSource.ready){if(!clientLoaded)clear();else{nexaActions.readOnly=true;nexaActions.canSave=false;}}
                     statusLabel.text="Native assets: "+message.message;appendLog(statusLabel.text);
@@ -1199,7 +1231,8 @@ THE SOFTWARE.
             }
             protected function canSwitchAssetProject():Boolean
             {
-                if(clientChanged || thingTypeEditor.changed || _nativeSource && (_nativeSource.busy || _nativeSaving)){
+                if(_legacyModernExport){Alert.show("Wait for the modern project export before switching projects.","NexaAsset Editor v2",Alert.OK,this);return false;}
+                if(clientChanged || thingTypeEditor.changed || _nativeSource && (_nativeSource.busy || _nativeSaving || _nativeObjectExportActive)){
                     Alert.show("Save pending edits and wait for the current operation before opening or creating another project.","NexaAsset Editor v2",Alert.OK,this);return false;
                 }
                 return true;
@@ -1244,50 +1277,72 @@ THE SOFTWARE.
                 window.open(this);
             }
             private function nativeLegacyExport():void {
-                if(!_nativeSource||!_nativeSource.ready||_locked||_nativeObjectExportCallback!=null)return;
+                if(!_nativeSource||!_nativeSource.ready||_locked||_nativeObjectExportActive)return;
                 var source:ModernNativeSource=_nativeSource,category:String=currentCategory,ids:Array=nativeIds(getActiveThingList().selectedIds);
                 if(!ids.length)return;
-                var window:ExportWindow=new ExportWindow();window.enableObdFormat=true;window.fileName=category;window.directory=_settings.getIODirectory()||source.directory.parent;
+                _nativeObjectExportActive=true;_nativeObjectExportRevision=source.revision;
+                var batch:uint=++_nativeObjectExportBatch,packageRequested:Boolean=false;
+                function current():Boolean {return _nativeSource==source && _nativeObjectExportActive && _nativeObjectExportBatch==batch;}
+                function finished():void {if(current())finishNativeObjectExport();}
+                var window:ExportWindow=new ExportWindow();window.enableObdFormat=true;window.enableModernFormat=true;window.fileName=category;window.directory=_settings.getIODirectory()||source.directory.parent;
                 window.format=_settings.getLastExportThingFormat()||"png";window.version=_settings.getLastExportThingVersion()||_versionStorage.getByValueString("10.98");
                 window.obdV3=category==ThingCategory.OUTFIT;window.transparentBackground=true;window.jpegQuality=_settings.jpegQuality;
                 window.enableNativePackage=true;window.addEventListener("exportNativePackage",packageSelected);
                 _locked=true;window.addEventListener(Event.CLOSE,closed);window.open(this);
-                function packageSelected(event:Event):void {window.close();nativeExportPackage();}
+                function packageSelected(event:Event):void {packageRequested=true;window.close();if(current())nativeExportPackage();}
                 function closed(event:Event):void {
                     window.removeEventListener(Event.CLOSE,closed);window.removeEventListener("exportNativePackage",packageSelected);_locked=false;
-                    if(window.detail!=DialogDetail.OK||_nativeSource!=source)return;
+                    if(!current() || packageRequested)return;
+                    if(window.detail!=DialogDetail.OK){finished();return;}
                     _settings.setIODirectory(window.directory);_settings.setLastExportThingFormat(window.format);_settings.setLastExportThingVersion(window.version);
+                    if(window.format=="modern") {
+                        try {
+                            var target:File=window.directory.resolvePath(window.fileName);
+                            if(target.parent.nativePath.toLowerCase()!=window.directory.nativePath.toLowerCase() || target.exists)throw new Error("Choose a new child folder for modern assets.");
+                            source.request("native-export-project",{category:category,ids:ids,target:target.nativePath},function(result:Object):void {if(!current())return;statusLabel.text="Exported modern project: "+result.directory;finished();});
+                        }catch(projectError:Error){finished();appendLog(projectError.message);statusLabel.text=projectError.message;}
+                        return;
+                    }
                     var version:Version=window.format=="obd" ? window.version : _versionStorage.getByValueString("10.98");
-                    source.request("preflight",{selection:ids,category:category,version:version.value,datSignature:version.datSignature,sprSignature:version.sprSignature,transparency:true},function(result:Object):void {
-                        if(_nativeSource!=source)return;
+                    try{source.request("preflight",{selection:ids,category:category,version:version.value,datSignature:version.datSignature,sprSignature:version.sprSignature,transparency:true},function(result:Object):void {
+                        if(!current())return;
+                        if(source.revision!=_nativeObjectExportRevision){finished();appendLog("The working copy changed; restart the object export.");return;}
                         var notices:Array=result.summary.losses,notice:String="OBD contains legacy properties and 32-pixel tiles, not all modern-only fields. Keep the native project or .nexaobject packages to preserve those fields.";
                         for each(var row:Object in notices)notice+="\n"+row.field+" ("+row.count+"): "+row.reason;
                         if(category==ThingCategory.OUTFIT && window.obdVersion<300)notice+="\nOBD v1/v2 retain only the moving outfit group.";
                         if(window.format=="obd" && (notices.length||category==ThingCategory.OUTFIT&&window.obdVersion<300))
-                            Alert.show(notice.substr(0,5000)+"\n\nContinue exporting?","OBD compatibility",Alert.YES|Alert.NO,FlexGlobals.topLevelApplication as UIComponent,function(answer:CloseEvent):void{if(answer.detail==Alert.YES)next();});
+                            Alert.show(notice.substr(0,5000)+"\n\nContinue exporting?","OBD compatibility",Alert.YES|Alert.NO,FlexGlobals.topLevelApplication as UIComponent,function(answer:CloseEvent):void{if(answer.detail==Alert.YES)next();else finished();});
                         else next();
-                    });
+                    });}catch(error:Error){finished();appendLog(error.message);statusLabel.text=error.message;}
                     var position:int=0;
-                    var exportRevision:Number=source.revision;
                     function next():void {
-                        if(_nativeSource!=source||position>=ids.length)return;
-                        if(source.revision!=exportRevision){appendLog("The working copy changed; restart the object export.");return;}
+                        if(!current())return;
+                        if(position>=ids.length){finished();return;}
+                        if(source.revision!=_nativeObjectExportRevision){finished();appendLog("The working copy changed; restart the object export.");return;}
                         var id:uint=ids[position++];var path:String=window.directory.resolvePath(window.fileName+(ids.length>1?"-"+id:"")+"."+window.format).nativePath;
-                        source.request("native-object-export",{category:category,appearanceId:id,version:version.value,datSignature:version.datSignature,sprSignature:version.sprSignature},function(model:Object):void {
-                            if(_nativeSource!=source)return;
+                        try{source.request("native-object-export",{category:category,appearanceId:id,version:version.value,datSignature:version.datSignature,sprSignature:version.sprSignature},function(model:Object):void {
+                            if(!current())return;
+                            if(source.revision!=_nativeObjectExportRevision){finished();appendLog("The working copy changed; restart the object export.");return;}
                             if(new File(model.file).nativePath!=source.session.directory.resolvePath("native-obd.bin").nativePath)throw new Error("Native export packet outside owned session.");
                             model.pixels=ob.modern.NativeObjectExport.packet(model.file);model.file=null;
                             _nativeObjectExportPath=path;
-                            _nativeObjectExportCallback=function(success:Boolean,message:String):void {if(_nativeSource!=source)return;statusLabel.text=message;if(success)next();};
+                            _nativeObjectExportCallback=function(success:Boolean,message:String):void {if(!current())return;statusLabel.text=message;if(success)next();else finished();};
                             _communicator.sendCommand(new ob.commands.things.ExportNativeObjectCommand(model,path,source.directory.nativePath,window.obdVersion,version.value,window.transparentBackground,window.jpegQuality,++_nativeObjectExportJob));
-                        });
+                        });}catch(error:Error){finished();appendLog(error.message);statusLabel.text=error.message;}
                     }
                 }
             }
             private function nativeExportPackage():void {
-                if(!_nativeSource||!thingData)return;
+                if(!_nativeSource||!thingData){finishNativeObjectExport();return;}
+                var batch:uint=_nativeObjectExportBatch;
                 var window:ob.components.ModernExportWindow=new ob.components.ModernExportWindow();window.source=_nativeSource;window.category=currentCategory;
-                window.appearanceId=thingData.id;window.selection=nativeIds(getActiveThingList().selectedIds);window.initialFormat=1;window.open(this);
+                window.appearanceId=thingData.id;window.selection=nativeIds(getActiveThingList().selectedIds);window.initialFormat=1;
+                window.addEventListener(Event.CLOSE,closed);window.addEventListener("nativeExportFinished",completed);
+                window.addEventListener("nativeExportStarted",started);
+                window.open(this);
+                function started(event:Event):void {if(_nativeSource==window.source){_nativeObjectExportActive=true;_nativeObjectExportRevision=window.source.revision;batch=++_nativeObjectExportBatch;}}
+                function completed(event:Event):void {if(_nativeObjectExportBatch==batch)finishNativeObjectExport();}
+                function closed(event:Event):void {window.removeEventListener(Event.CLOSE,closed);window.removeEventListener("nativeExportFinished",completed);window.removeEventListener("nativeExportStarted",started);completed(event);}
             }
             private function nativeBitmap(bitmap:BitmapData, target:Object=null):void
             {
@@ -1639,7 +1694,8 @@ THE SOFTWARE.
                 _logs.removeAll();
                 validateNow();
                 if(_nativeSaveWindow){_nativeSaveWindow.shutdown();_nativeSaveWindow.close();}
-                _nativeObjectExportCallback=null;_nativeObjectExportPath=null;
+                if(_legacyModernExport){_legacyModernExport.removeEventListener(ModernAssetEvent.MESSAGE,legacyModernMessage);_legacyModernExport.close();_legacyModernExport=null;_locked=false;}
+                finishNativeObjectExport();
                 _nativeSaving=false;_nativeCloseAfterSave=false;nexaActions.nativeModern=false;
                 if (_nativeSource) { _nativeSource.removeEventListener(ModernAssetEvent.MESSAGE, nativeMessage); _nativeSource.close(); _nativeSource = null; }
                 _nativeExportedRevision = 0;
@@ -1710,6 +1766,7 @@ THE SOFTWARE.
             
                 _communicator.registerCallback(LogCommand, logCallback);
                 _communicator.registerCallback(ob.commands.things.NativeObjectExportResultCommand,function(path:String,success:Boolean,message:String,job:uint):void {
+                    if(_legacyModernExport && path==_legacyModernExport.directory.nativePath && job==_legacyModernExport.job){_legacyModernExport.workerFinished(success,message);return;}
                     if(path!=_nativeObjectExportPath||job!=_nativeObjectExportJob)return;
                     var callback:Function=_nativeObjectExportCallback;_nativeObjectExportCallback=null;_nativeObjectExportPath=null;
                     if(callback!=null)callback(success,message);
@@ -2725,12 +2782,13 @@ THE SOFTWARE.
             
             protected function applicationClosingHandler(event:Event):void
             {
-                if(_nativeSource && (_nativeSaving || clientChanged || _nativeSource.busy)){
+                if(_legacyModernExport){event.preventDefault();statusLabel.text="Wait for the modern project export before closing.";return;}
+                if(_nativeSource && (_nativeSaving || clientChanged || _nativeSource.busy || _nativeObjectExportActive)){
                     event.preventDefault();
-                    if(_nativeSaving || _nativeSource.busy){statusLabel.text="Wait for the pending native operation before closing.";return;}
+                    if(_nativeSaving || _nativeSource.busy || _nativeObjectExportActive){statusLabel.text="Wait for the pending native operation before closing.";return;}
                     Alert.show("Save the changes to this modern asset folder before closing?","Unsaved modern assets",Alert.YES|Alert.NO|Alert.CANCEL,this,function(answer:CloseEvent):void {
                         if(answer.detail==Alert.YES){_nativeCloseAfterSave=true;saveNativeProject();}
-                        else if(answer.detail==Alert.NO){clear();exit();}
+                        else if(answer.detail==Alert.NO){clear();close();}
                     });return;
                 }
                 closeFinder();
@@ -3293,6 +3351,7 @@ THE SOFTWARE.
             
                 var window:ExportWindow = new ExportWindow();
                 window.enableObdFormat = true;
+                window.enableModernFormat = true;
                 window.fileName = currentCategory;
                 window.directory = _settings.getIODirectory();
                 window.format = _settings.getLastExportThingFormat();
@@ -3309,6 +3368,12 @@ THE SOFTWARE.
             
                     if (window.detail == DialogDetail.OK && window.fileName != null && window.directory && window.format != null && window.version)
                     {
+                        if(window.format=="modern") {
+                            var target:File=window.directory.resolvePath(window.fileName);
+                            if(target.parent.nativePath.toLowerCase()!=window.directory.nativePath.toLowerCase()){Alert.show("Choose a new child folder for modern assets.","Modern export",Alert.OK,this);return;}
+                            var ids:Vector.<uint>=new Vector.<uint>();for each(var selected:ThingType in things)ids.push(selected.id);
+                            exportSelectedModernProject(ids,things[0].category,target);return;
+                        }
                         _settings.setIODirectory(window.directory);
                         _settings.setLastExportThingFormat(window.format);
                         _settings.setLastExportThingVersion(window.version);
@@ -3343,6 +3408,7 @@ THE SOFTWARE.
 
                 var window:ExportWindow = new ExportWindow();
                 window.enableObdFormat = true;
+                window.enableModernFormat = true;
                 window.fileName = currentCategory;
                 window.directory = _settings.getIODirectory();
                 window.format = _settings.getLastExportThingFormat();
@@ -3378,6 +3444,12 @@ THE SOFTWARE.
                         var category:String = window.selectedCategory ? window.selectedCategory : currentCategory;
                         var fromId:uint = window.useRange ? window.rangeFrom : getMinThingIdForCategory(category);
                         var toId:uint = window.useRange ? window.rangeTo : getCategoryMaxId(category);
+                        if(window.format=="modern") {
+                            var target:File=window.directory.resolvePath(window.fileName);
+                            if(toId<fromId||toId-fromId>=100||target.parent.nativePath.toLowerCase()!=window.directory.nativePath.toLowerCase()){Alert.show("Select a range of 1–100 objects and a new child folder for modern assets.","Modern export",Alert.OK,this);return;}
+                            var ids:Vector.<uint>=new Vector.<uint>();for(var objectId:uint=fromId;objectId<=toId;objectId++)ids.push(objectId);
+                            exportSelectedModernProject(ids,category,target);return;
+                        }
 
                         var things:Vector.<ThingType> = new Vector.<ThingType>();
                         for (var id:uint = fromId; id <= toId; id++)
@@ -4173,7 +4245,7 @@ THE SOFTWARE.
             
             protected function exportAllSpritesHandler(event:Event):void
             {
-                if (_nativeSource) { Alert.show("Use Export to save selected native sprites as PNG, or Compile As to export the complete native working copy to DAT/SPR. Whole-catalog PNG export is not implemented.","Native export",Alert.OK,this); return; }
+                if (_nativeSource) { Alert.show("Use Export to save selected native sprites as PNG, or Convert DAT/SPR… to export the complete native working copy to DAT/SPR. Whole-catalog PNG export is not implemented.","Native export",Alert.OK,this); return; }
                 if (!clientLoaded || _locked)
                     return;
 

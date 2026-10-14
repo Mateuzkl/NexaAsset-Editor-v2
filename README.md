@@ -59,6 +59,20 @@ working-copy changes: up to 100 objects and 32 MiB of decoded pixels per batch;
 OBD allows 4,096 tile references per group and at most two outfit groups. Input
 files are limited to 32 MiB, and sprites larger than 64 pixels per axis are rejected.
 The Sprites panel still imports/replaces PNG sprites.
+The standard object **Export** dialog also offers **Modern assets — appearances.dat**
+for both legacy and native projects. It creates a **new named folder** containing
+an appearances protobuf, `catalog-content.json` and CIP/LZMA spritesheets; it is
+not an OBD file renamed to `.dat`. Selected object IDs are retained. Native
+objects keep their existing groups, flags and referenced pixels. Legacy objects
+use the independently validated OBD bridge to reassemble 32-pixel tiles into
+32/64-pixel native sprites. An animated legacy outfit without separate groups
+gets an idle group referencing its existing first frame and a moving group
+retaining all source frames and available timings. Existing two-group outfits
+are preserved; no new artwork or distinct idle animation is invented.
+This selected-object export is limited to **100 objects / 32 MiB of pixels**;
+legacy sprites larger than 64 pixels per axis are rejected explicitly. Existing
+folders are not overwritten, and the current document remains active and dirty
+if it had unsaved edits. Use native **Save As** for a complete modern project.
 Packages remap sprite dependencies and currently allow 256 distinct sprites
 per object. Native PNG input is bounded to 1 MiB, 32/64 pixels per axis,
 non-interlaced RGB/RGBA/grayscale/palette encodings supported by the decoder.
@@ -126,7 +140,13 @@ native objects and pixels, including alpha, before exporting to a lossy target.
 Targets before 9.60 automatically use standard 16-bit sprite IDs/counts when the converted
 sprite count fits 65,535; larger exports use the custom 32-bit extension.
 9.60 and newer targets use 32-bit sprite IDs/counts. RGBA requires compatible client
-support; RGB promotes nonzero alpha to opaque. Metadata numbers are translated
+support; RGB promotes nonzero alpha to opaque.
+Fully transparent pixels remain transparent in **both RGB and RGBA SPR**, even
+when their hidden RGB channels contain magenta or another color. This applies
+to Items, Outfits, Effects and Missiles and to OBD imports as well as direct
+DAT/SPR conversion. Re-export and replace objects previously imported with an
+opaque pink background; a saved RGB SPR cannot recover the discarded alpha
+unambiguously. Metadata numbers are translated
 using the six existing legacy reader families. Targets before 7.60 omit Z
 patterns and use implicit offsets; phase timing requires 10.50 and separate
 outfit frame groups require 10.57. Unsupported information is listed before
@@ -296,6 +316,9 @@ the checkout/toolchain. The portable bundle includes the helper and third-party 
 Coverage includes count boundaries, RGB/RGBA conversion, standard/multi-SPR round trips, invalid records, Windows file locks, rollback, close cycles, import failures, clipboard synchronization, Save state, actual instantiated list renderers and dark confirmation callbacks. The real-data test validates every SPR record and compares its compressed payload, in addition to sampled decoded pixels and DAT reopen checks.
 
 See the [audit report](docs/AUDIT_2026-10-10.md) for measured results, known diagnostics and the limits of this validation. Neither a successful build nor a short test run establishes an absolute absence of memory leaks, corruption or runtime defects.
+The [transparency and modern-export follow-up](docs/TRANSPARENCY_AND_MODERN_EXPORT_2026-10-14.md)
+documents the alpha-zero pixel regression, native project export, resource ownership
+and the corresponding real/synthetic interoperability tests.
 
 ## Development principles
 

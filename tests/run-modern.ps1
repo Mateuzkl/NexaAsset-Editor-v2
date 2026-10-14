@@ -27,11 +27,11 @@ try {
         $jdk = @(Get-ChildItem -LiteralPath (Join-Path $tools 'java') -Directory)
         if ($jdk.Count -ne 1) { throw 'Expected one portable JDK.' }
         & (Join-Path $jdk[0].FullName 'bin/java.exe') -Xmx2g ('-Dapplication.home=' + $sdk) -jar (Join-Path $sdk 'lib/mxmlc.jar') '+configname=air' `
-            '-source-path=src' '-library-path+=libs' '-locale=en_US' '-source-path+=locale/{locale}' '-debug=true' '-warnings=false' `
+            '-source-path=src' '-source-path+=tests' '-library-path+=libs' '-locale=en_US' '-source-path+=locale/{locale}' '-debug=true' '-warnings=false' `
             ('-output=' + (Join-Path $project 'bin-tests/LegacyConversionTests.swf')) 'tests/LegacyConversionTests.as'
         if ($LASTEXITCODE -ne 0) { throw 'Legacy conversion oracle compilation failed.' }
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'LegacyConversionTests-app.xml') -Destination (Join-Path $project 'bin-tests')
-        & (Join-Path $sdk 'bin/adl.exe') -nodebug (Join-Path $project 'bin-tests/LegacyConversionTests-app.xml') -- $output
+        & (Join-Path $sdk 'bin/adl.exe') -nodebug (Join-Path $project 'bin-tests/LegacyConversionTests-app.xml') -- $output (Join-Path $project 'src/config/versions.xml')
         if ($LASTEXITCODE -ne 0) { throw 'Legacy conversion oracle failed.' }
     }
     if ($Ui) {

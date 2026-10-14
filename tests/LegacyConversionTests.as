@@ -13,6 +13,7 @@ package
     import by.blooddy.crypto.MD5;
     import ob.settings.ObjectBuilderSettings;
     import otlib.core.Version;
+    import otlib.core.VersionStorage;
     import otlib.resources.Resources;
     import otlib.sprites.SpriteReader;
     import otlib.sprites.SpriteStorage;
@@ -43,11 +44,15 @@ package
             var root:File = new File(event.arguments[0]); var code:int = 0;
             try
             {
+                VersionStorage.getInstance().load(new File(event.arguments[1]));
                 var profiles:int = 0;
-                for each (var folder:File in root.getDirectoryListing())
+                if(event.arguments.indexOf("--transparency-only")<0)for each (var folder:File in root.getDirectoryListing())
                     if (folder.isDirectory && folder.name.indexOf("legacy-") == 0 && folder.resolvePath("oracle.json").exists)
                     { testProject(folder); profiles++; }
-                check(profiles >= 3, "Expected at least three converted profiles.");
+                check(event.arguments.indexOf("--transparency-only")>=0 || profiles >= 3, "Expected at least three converted profiles.");
+                var transparency:int=NativeTransparencyOracle.run(root);
+                check(transparency>=16,"Expected all four categories and four transparency targets.");
+                note("PASS: native transparency oracle ("+transparency+" category/profile fixtures)");
                 note("PASS: independent AIR legacy conversion oracle (" + profiles + " projects)");
             }
             catch (error:Error) { code = 1; note("FAIL: " + error.getStackTrace()); }
