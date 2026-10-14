@@ -28,8 +28,9 @@ public static class Program
             LegacyExport? conversion = null; string? conversionToken = null;
             Emit(new { type = "ready", schemaVersion = Protocol, fingerprint = assets.Fingerprint, sheets = assets.Sheets.Count,
                 categories = AssetSet.Categories.ToDictionary(c => c, c => assets.Appearances.Count(a => a.Category == c)), native = native.Inventory(), elapsedMs = watch.ElapsedMilliseconds });
-            while (ReadLine() is string line)
+            while (ReadLine(out bool oversized) is string line)
             {
+                if(oversized){Emit(new {type="error",schemaVersion=Protocol,errorCode="REQUEST_TOO_LARGE",message="Request exceeds 64 KiB; the complete line was discarded."});continue;}
                 if (string.IsNullOrWhiteSpace(line)) continue;
                 string? requestId = null; long generation = 0;
                 try
@@ -60,6 +61,7 @@ public static class Program
                         case "native-edit-flag":result=workspace.EditFlag(request.GetProperty("category").GetString()??"",request.GetProperty("appearanceId").GetUInt32(),Get(request,"number"),request.GetProperty("enabled").GetBoolean(),request.GetProperty("instances"));break;
                         case "native-sprite-set":result=workspace.Sprite(request.TryGetProperty("spriteId",out var spriteId) && spriteId.ValueKind!=JsonValueKind.Null ? spriteId.GetUInt32() : null,Get(request,"width"),Get(request,"height"),request.GetProperty("argb").GetString()??"");break;
                         case "native-sprite-clear":result=workspace.ClearSprite(request.GetProperty("spriteId").GetUInt32());break;
+                        case "native-sprites-clear":result=workspace.ClearSprites(Ids(request));break;
                         case "native-sprite-duplicate":result=workspace.DuplicateSprite(request.GetProperty("spriteId").GetUInt32());break;
                         case "native-link-sprite":result=workspace.LinkSprite(request.GetProperty("category").GetString()??"",request.GetProperty("appearanceId").GetUInt32(),Get(request,"group"),Get(request,"frame"),Get(request,"patternX"),Get(request,"patternY"),Get(request,"patternZ"),Get(request,"layer"),request.GetProperty("spriteId").GetUInt32());break;
                         case "native-export-object":result=workspace.ExportObject(request.GetProperty("category").GetString()??"",request.GetProperty("appearanceId").GetUInt32(),request.GetProperty("file").GetString()??"");break;
@@ -130,7 +132,7 @@ public static class Program
                             {
                                 int group = Get(request, "group");
                                 if (group < 0 || group >= groups.Length) throw new InvalidDataException("Invalid frame group.");
-                                var image = cache.Render(groups[group], Get(request, "frame"), Get(request, "patternX"), Get(request, "patternY"), Get(request, "patternZ"));
+                                var image = cache.Render(groups[group], Get(request, "frame"), Get(request, "patternX"), Get(request, "patternY"), Get(request, "patternZ"),appearance.Category=="outfit");
                                 string file = Path.Combine(output, "preview-" + (Get(request, "slot") & 1) + ".png");
                                 Png.Write(file, image); result = new { file, image.Width, image.Height, cacheBytes = cache.Bytes, cacheHits = cache.Hits, cacheMisses = cache.Misses };
                             }
@@ -160,15 +162,17 @@ public static class Program
     private static uint[] Ids(JsonElement request) {var ids=request.GetProperty("ids");if(ids.ValueKind!=JsonValueKind.Array || ids.GetArrayLength() is <1 or >100)throw new InvalidDataException("Select 1–100 objects.");return ids.EnumerateArray().Select(v=>v.GetUInt32()).ToArray();}
     private static bool Within(string parent, string child) => string.Equals(parent, child, StringComparison.OrdinalIgnoreCase) ||
         child.StartsWith(parent.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-    private static string? ReadLine()
+    private static string? ReadLine(out bool oversized)
     {
         // ReadLine() alone can allocate an arbitrarily large string from hostile stdin.
-        var text = new StringBuilder(); int ch;
+        var text = new StringBuilder();int ch,bytes=0;bool highSurrogate=false;oversized=false;
         while ((ch = Console.In.Read()) >= 0)
         {
             if (ch == '\n') return text.ToString().TrimEnd('\r');
-            if (text.Length == 65536) throw new InvalidDataException("Request exceeds 64 KiB.");
-            text.Append((char)ch);
+            int encoded=ch<=0x7F ? 1 : ch<=0x7FF ? 2 : highSurrogate && char.IsLowSurrogate((char)ch) ? 1 : 3;
+            highSurrogate=char.IsHighSurrogate((char)ch);
+            if(!oversized){bytes+=encoded;if(bytes>65536)oversized=true;}
+            if(!oversized)text.Append((char)ch);
         }
         return text.Length == 0 ? null : text.ToString();
     }

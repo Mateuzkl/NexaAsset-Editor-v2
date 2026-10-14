@@ -29,6 +29,10 @@
         import otlib.sprites.SpriteData;
         import otlib.animation.FrameGroup;
         import ob.components.OpenAssetsWindow;
+        import ob.components.CreateAssetsWindow;
+        import ob.commands.SettingsCommand;
+        import otlib.core.SpriteDimensionStorage;
+        import flash.utils.Endian;
         import ob.modern.ModernFlagEvent;
         import ob.components.ModernConversionWindow;
         import ob.components.ModernSaveWindow;
@@ -74,6 +78,14 @@
         private var copiedPixelsHash:String;
         private var catalogBeforeFailure:ByteArray;
         private var nativeImportedId:uint;
+        private function dismissAlerts():void {for(var i:int=systemManager.rawChildren.numChildren-1;i>=0;i--){var alert:Alert=systemManager.rawChildren.getChildAt(i) as Alert;if(alert){alert.validateNow();alert.closeButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK,true));}}}
+        private function guardedLegacyFolder():File {
+            var folder:File=snapshots.resolvePath("guard-legacy");folder.createDirectory();var v:Version=VersionStorage.getInstance().getByValueString("8.60 v2");
+            var data:ByteArray=new ByteArray();data.endian=Endian.LITTLE_ENDIAN;data.writeUnsignedInt(v.datSignature);data.writeShort(100);data.writeShort(1);data.writeShort(1);data.writeShort(1);
+            for(var n:int=0;n<4;n++){data.writeByte(255);for(var k:int=0;k<7;k++)data.writeByte(1);data.writeShort(1);}
+            var stream:FileStream=new FileStream();stream.open(folder.resolvePath("Tibia.dat"),FileMode.WRITE);stream.writeBytes(data);stream.close();data.clear();data.endian=Endian.LITTLE_ENDIAN;data.writeUnsignedInt(v.sprSignature);data.writeShort(1);data.writeUnsignedInt(0);
+            stream.open(folder.resolvePath("Tibia.spr"),FileMode.WRITE);stream.writeBytes(data);stream.close();data.clear();return folder;
+        }
         override protected function applicationInvokeHandler(event:InvokeEvent):void {args=event.arguments;}
         override protected function applicationPreinitializeHandler(event:FlexEvent):void {
             systemManager.loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, failed);
@@ -96,6 +108,8 @@
                     snapshots=new File(args[2]).resolvePath("native-main");snapshots.createDirectory();
                     trace("Native source (no conversion): "+new File(args[0]).nativePath);
                     restore();logPanel.expanded=false;
+                    var failedProbe:OpenAssetsWindow=new OpenAssetsWindow();failedProbe.modernHelper=snapshots.resolvePath("missing-helper.exe");failedProbe.open(this);failedProbe.clientDirectory=new File(args[0]);failedProbe.validateNow();
+                    check(failedProbe.errorLabel.visible && failedProbe.errorLabel.text.indexOf("helper")>=0 && failedProbe.clientVersionLabel.text=="" && !failedProbe.loadButton.enabled,"Synchronous opening error was erased");failedProbe.close();
                     openWindow=new OpenAssetsWindow();openWindow.modernHelper=new File(args[1]);openWindow.open(this);openWindow.clientDirectory=new File(args[0]);phase=8;
                 } else if(phase==8){
                     openWindow.validateNow();if(!openWindow.loadButton.enabled)return;
@@ -112,6 +126,7 @@
                     check(ModernThingData(thingData).metadataRows.length>8,"Native metadata missing");
                     thingTypeEditor.tabNavigator.selectedIndex=2;validateNow();check(thingTypeEditor.modernAttributesPanel.visible,"Native Attributes tab disabled");capture("modern-attributes");thingTypeEditor.tabNavigator.selectedIndex=0;
                     source=nativeSource;sessionFolder=source.session.directory;
+                    source.request("stats",{});openNativeProject(new File(args[0]),new File(args[1]));check(nativeSource==source && source.busy,"Busy project switch discarded active session");dismissAlerts();
                     trace("Native first objects/sprites/preview: "+(getTimer()-started)+" ms");
                     check(ThingListItem(thingList.dataProvider.getItemAt(0)).getBitmap()!=null,"Missing object thumbnail");
                     var spriteBitmap:BitmapData=SpriteData(spritesList.dataProvider.getItemAt(0)).getBitmap();check(spriteBitmap!=null,"Missing real sprite");spriteBitmap.dispose();
@@ -150,6 +165,18 @@
                     source=nativeSource;initialMaxItem=clientInfo.maxItemId;duplicateId=initialMaxItem+1;duplicateThings(Vector.<uint>([100]),"item");phase=10;
                 } else if(phase==10 && thingData && thingData.id==duplicateId && !source.busy){
                     check(nexaActions.canSave && clientChanged,"Native edits not tracked");
+                    createNewProject();var create:CreateAssetsWindow;
+                    for(child=0;child<systemManager.rawChildren.numChildren;child++)if(systemManager.rawChildren.getChildAt(child) is CreateAssetsWindow)create=systemManager.rawChildren.getChildAt(child) as CreateAssetsWindow;
+                    check(create!=null,"New dialog not opened");create.version=VersionStorage.getInstance().getByValueString("8.60 v2");create.spriteDimension=SpriteDimensionStorage.getInstance().getBySizes(32,4096);create.validateNow();create.confirmButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    check(nativeSource==source && clientChanged,"New cleared unsaved native project");dismissAlerts();
+                    openProject(guardedLegacyFolder());var legacyOpen:OpenAssetsWindow;
+                    for(child=0;child<systemManager.rawChildren.numChildren;child++)if(systemManager.rawChildren.getChildAt(child) is OpenAssetsWindow)legacyOpen=systemManager.rawChildren.getChildAt(child) as OpenAssetsWindow;
+                    check(legacyOpen!=null,"Legacy Open dialog missing");legacyOpen.validateNow();check(legacyOpen.loadButton.enabled,"Guard fixture not loadable");legacyOpen.loadButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    check(nativeSource==source && clientChanged,"Legacy Open cleared unsaved native project");dismissAlerts();sendCommand(new SettingsCommand(settings));
+                    var revisionBefore:Number=source.revision;removeSpritesIds(new Vector.<uint>(101));check(source.revision==revisionBefore && !source.busy,"Oversized sprite removal enqueued partial changes");
+                    for(var job:int=0;job<16;job++)source.request("stats",{});
+                    check(!source.canEnqueue(4),"Queue capacity ignored follow-up jobs");removeSpritesIds(Vector.<uint>([source.inventory.firstSprite]));check(source.revision==revisionBefore,"Busy sprite removal changed revision");phase=54;
+                } else if(phase==54 && !source.busy){
                     thingTypeEditor.dispatchEvent(new ModernFlagEvent(13,true));phase=11;
                 } else if(phase==11 && thingData && thingData.id==duplicateId && thingData.thing.isUnpassable && !source.busy){
                     var imbue:Object;for each(var row:Object in ModernThingData(thingData).flagRows)if(row.number==60)imbue=row;
@@ -211,6 +238,9 @@
                 } else if(phase==51 && !source.busy && thingData && thingData.id==nativeImportedId && ModernThingData(thingData).cacheBytes>0){
                     var importedNative:BitmapData=ModernThingData(thingData).image(0,0,0,0,0,0);if(!importedNative)return;
                     check(importedNative.getPixel32(0,0)==0x80644220,"AEC import pixel composition/alpha mismatch");capture("native-obd-aec-import");
+                    nexaActions.dispatchEvent(new NexaUiEvent("convertModern"));var signalWindow:ModernConversionWindow;
+                    for(child=0;child<systemManager.rawChildren.numChildren;child++)if(systemManager.rawChildren.getChildAt(child) is ModernConversionWindow)signalWindow=systemManager.rawChildren.getChildAt(child) as ModernConversionWindow;
+                    check(signalWindow!=null,"Conversion handler not connected");signalWindow.validateNow();signalWindow.selectedOnly.selected=false;signalWindow.dispatchEvent(new Event("nativeExportCompleted"));check(clientChanged && clientInfo.changed && nexaActions.canSave,"DAT/SPR export falsely marked native edits saved");signalWindow.close();
                     nativeMenu.dispatchEvent(new MenuEvent(MenuEvent.SELECTED,Menu.FILE_COMPILE));
                     check(nativeSaving,"Ctrl+S menu route did not start native Save");phase=29;
                 } else if(phase==29 && !nativeSaving && !source.busy){
@@ -220,7 +250,7 @@
                     capture("native-save-in-place");compileProjectAs();phase=33;
                 } else if(phase==33){
                     for(child=0;child<systemManager.rawChildren.numChildren;child++)if(systemManager.rawChildren.getChildAt(child) is ModernSaveWindow)saveWindow=systemManager.rawChildren.getChildAt(child) as ModernSaveWindow;
-                    if(!saveWindow)return;saveWindow.saveTo(snapshots.resolvePath("saved-native-assets"));phase=37;
+                    if(!saveWindow)return;saveWindow.saveTo(snapshots.resolvePath("saved-native-assets"));saveWindow.close();check(saveWindow.parent!=null,"Save As was closed during publication");phase=37;
                 } else if(phase==37 && !source.busy && saveWindow.savedDirectory){
                     savedNative=saveWindow.savedDirectory;check(savedNative.resolvePath("catalog-content.json").exists,"Native catalog not saved");
                     check(!nexaActions.canSave && !clientChanged,"Native Save did not reset dirty state");capture("native-save-completed");saveWindow.close();

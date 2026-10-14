@@ -316,9 +316,9 @@ THE SOFTWARE.
                     legacyOptions.visible=legacyOptions.includeInLayout=false;
                     m_modernProbe=new ModernAssetSession();
                     m_modernProbe.addEventListener(ModernAssetEvent.MESSAGE,modernProbeMessage);
-                    try{m_modernProbe.open(directory,modernHelper||File.applicationDirectory.resolvePath("modern-helper/nexa-modern-helper.exe"),new File(File.applicationDirectory.nativePath).parent.resolvePath("nexa-modern-sessions"));}
-                    catch(error:Error){releaseModernProbe();setErrorText(error.message);}
                     setErrorText(null);
+                    try{m_modernProbe.open(directory,modernHelper||File.applicationDirectory.resolvePath("modern-helper/nexa-modern-helper.exe"),new File(File.applicationDirectory.nativePath).parent.resolvePath("nexa-modern-sessions"));}
+                    catch(error:Error){releaseModernProbe();clientVersionLabel.text="";setErrorText(error.message);}
                     updateProperties();
                     return;
                 }

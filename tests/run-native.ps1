@@ -5,6 +5,7 @@ $project=Split-Path -Parent $PSScriptRoot
 $tools=Join-Path (Split-Path -Parent $project) 'ObjectBuilder-tools'
 $sdk=Join-Path $tools 'flex-air'
 $jdk=@(Get-ChildItem -LiteralPath (Join-Path $tools 'java') -Directory)
+if($jdk.Count -ne 1){throw 'Expected exactly one portable JDK in ObjectBuilder-tools/java.'}
 $output=Join-Path $project ('bin-tests/native-'+[Guid]::NewGuid().ToString('N'))
 $sourceAssets=(Resolve-Path -LiteralPath $RealAssets).Path
 New-Item -ItemType Directory -Path $output | Out-Null

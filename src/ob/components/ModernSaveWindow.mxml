@@ -12,6 +12,7 @@
         [Bindable] private var busy:Boolean=false;
         [Bindable] private var message:String="Save a complete modern copy to a new folder. Definitions, spritesheets, catalog and required resources are retained. No DAT/SPR conversion is performed. Further Save commands will update this new project folder.";
         private var picker:File;
+        public override function close():void {if(!busy)super.close();}
         private function start():void {source.addEventListener(ModernAssetEvent.MESSAGE,received);outputInput.text=source.directory.nativePath+"-copy";}
         private function browse():void {
             picker=new File(source.directory.parent.nativePath);picker.addEventListener(Event.SELECT,picked);picker.addEventListener(Event.CANCEL,cancelled);
@@ -29,12 +30,12 @@
         }
         private function received(event:ModernAssetEvent):void {
             var m:Object=event.message;
-            if(m.type=="error"){busy=false;message=m.message;}
+            if(m.type=="error" && (!busy || m.command=="native-save-as" || !source.ready)){busy=false;message=m.message;}
             else if(busy&&m.type=="progress")message=m.phase+" · "+m.processed+" / "+m.total;
         }
         private function cancelled(event:Event):void {releasePicker();}
         private function releasePicker():void {if(picker){picker.removeEventListener(Event.SELECT,picked);picker.removeEventListener(Event.CANCEL,cancelled);picker=null;}}
-        public function shutdown():void {releasePicker();if(source)source.removeEventListener(ModernAssetEvent.MESSAGE,received);}
+        public function shutdown():void {busy=false;releasePicker();if(source)source.removeEventListener(ModernAssetEvent.MESSAGE,received);}
     ]]></fx:Script>
     <s:VGroup left="16" right="16" top="16" bottom="16" gap="14">
         <s:Label text="New output folder:"/>

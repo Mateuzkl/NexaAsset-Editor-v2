@@ -29,6 +29,7 @@ public sealed class SheetCache
     private readonly Dictionary<uint,Pixels> changedSprites=[];
     public long ChangedBytes { get; private set; }
     public IReadOnlyCollection<uint> ChangedIds => changedSprites.Keys;
+    public long EditedSpriteBytes(uint id)=>changedSprites.TryGetValue(id,out var image) ? image.Rgba.Length : 0;
     internal void AcceptSaved()
     {
         changedSprites.Clear();ChangedBytes=0;index.Clear();lru.Clear();Bytes=0;
@@ -125,13 +126,14 @@ public sealed class SheetCache
         }
         return new Pixels(384, 384, rgba);
     }
-    public Pixels Render(Group group, int frame, int x, int y, int z)
+    public Pixels Render(Group group, int frame, int x, int y, int z,bool baseLayerOnly=false)
     {
         if (frame < 0 || frame >= group.Frames || x < 0 || x >= group.PatternX || y < 0 || y >= group.PatternY || z < 0 || z >= group.PatternZ)
             throw new InvalidDataException("Frame/pattern outside appearance.");
         int first = checked((int)((((frame * group.PatternZ + z) * group.PatternY + y) * group.PatternX + x) * group.Layers));
+        if(baseLayerOnly||group.Layers==1){var image=Sprite(group.Sprites[first]);return new Pixels(image.Width,image.Height,image.Rgba.ToArray());}
         var tiles = new List<Pixels>();
-        for (int layer = 0; layer < group.Layers; layer++) tiles.Add(Sprite(group.Sprites[first + layer]));
+        for (int layer = 0; layer < (baseLayerOnly ? 1 : group.Layers); layer++) tiles.Add(Sprite(group.Sprites[first + layer]));
         int width = tiles.Max(t => t.Width), height = tiles.Max(t => t.Height);
         var result = new Pixels(width, height, new byte[width * height * 4]);
         foreach (var tile in tiles)

@@ -28,7 +28,7 @@ public static class NativeSave
         foreach(var a in assets.Appearances)foreach(var g in AssetSet.Groups(a))foreach(uint id in g.Sprites)assets.FindSheet(id);
         var catalog=JsonNode.Parse(assets.CatalogBytes.Span)!.AsArray();
         var originalSheets=catalog.Where(n=>n?["type"]?.GetValue<string>()=="sprite").ToDictionary(n=>n!["firstspriteid"]!.GetValue<uint>());
-        var changed=cache.ChangedIds.ToHashSet(); var entries=new List<JsonNode>();
+        var changed=cache.ChangedIds.ToHashSet();var changedSorted=changed.Order().ToArray();var entries=new List<JsonNode>();
         var files=new HashSet<string>(StringComparer.OrdinalIgnoreCase); var directories=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var published=new List<string>();string? backup=null;bool committed=false;FileStream? writeLock=null;
         string lockFile=Path.Combine(target,".nexa-save.lock");bool ownsLock=false;
@@ -89,7 +89,8 @@ public static class NativeSave
             int done=0;
             foreach(var sheet in assets.Sheets)
             {
-                bool modified=changed.Any(id=>id>=sheet.First && id<=sheet.Last);
+                int changedIndex=Array.BinarySearch(changedSorted,sheet.First);if(changedIndex<0)changedIndex=~changedIndex;
+                bool modified=changedIndex<changedSorted.Length && changedSorted[changedIndex]<=sheet.Last;
                 if(!modified)
                 {
                     var entry=originalSheets[sheet.First]!.DeepClone();currentFile=sheet.File;string source=assets.Input(sheet.File);
@@ -148,9 +149,11 @@ public static class NativeSave
                 phase="Checking committed native assets";var saved=new AssetSet(target);Validate(saved);
                 // Move the live model/cache baseline forward only after publication and validation.
                 assets.AcceptSaved(saved);cache.AcceptSaved();CleanupStage();
+                NativeRetention.Prune(target,progress);
             }
             else{Directory.Move(stage,target);}
-            progress?.Invoke("Native assets saved",1,1);return target;
+            // Notification failure must not roll back a generation after the live baseline was rebased.
+            try{progress?.Invoke("Native assets saved",1,1);}catch(Exception error)when(error is not OutOfMemoryException){}return target;
         }
         catch(Exception error) when(error is not OutOfMemoryException)
         {

@@ -585,9 +585,10 @@ THE SOFTWARE.
                         source.sprites(GetSpriteListCommand(command).targetId, function(result:Object, sprites:Vector.<SpriteData>):void {
                             if (_nativeSource == source) setSpriteListCallback(Vector.<uint>([result.selected]), sprites, true, true);
                         });
-                    // Native source viewing is immutable. Never send legacy mutation commands
+                    // Never send legacy asset mutation commands
                     // against a modern source or the previously loaded worker project.
-                    else if (!(command is SettingsCommand)) { statusLabel.text = "This legacy operation is not available in the native working copy. Use Convert DAT/SPR to continue in legacy format."; appendLog(statusLabel.text); }
+                    else if (command is SettingsCommand) _communicator.sendCommand(command);
+                    else { statusLabel.text = "This legacy operation is not available in the native working copy. Use Convert DAT/SPR to continue in legacy format."; appendLog(statusLabel.text); }
                     return;
                 }
                 _communicator.sendCommand(command);
@@ -655,8 +656,8 @@ THE SOFTWARE.
             
                     if (window.detail == DialogDetail.OK)
                     {
-                        // TODO: check if it's changed/compiled
-                        if (_nativeSource) clear();
+                        if(!canSwitchAssetProject())return;
+                        if(_nativeSource)clear();
             
                         setSpriteExtend(window.spriteDimension);
                         var features:ClientFeatures = ClientFeatures.fromWindow(window);
@@ -693,7 +694,8 @@ THE SOFTWARE.
                     if (window.detail == DialogDetail.OK)
                     {
                         if (window.modernDirectory) { openNativeProject(window.modernDirectory); return; }
-                        if (_nativeSource) clear();
+                        if(!canSwitchAssetProject())return;
+                        if(_nativeSource)clear();
                         var mainFile:File = window.datFile || window.sprFile;
                         _settings.setLastDirectory(mainFile);
                         _settings.setServerItemsDirectory(window.serverItemsDirectory);
@@ -1105,11 +1107,7 @@ THE SOFTWARE.
             }
             public function openNativeProject(directory:File, helper:File = null):void
             {
-                if (clientChanged || thingTypeEditor.changed)
-                {
-                    Alert.show("Save or close the current project before opening another asset folder.", "NexaAsset Editor v2", Alert.OK, this);
-                    return;
-                }
+                if(!canSwitchAssetProject())return;
                 clear();
                 _communicator.sendCommand(new UnloadFilesCommand());
                 setSpriteExtend(SpriteDimensionStorage.getInstance().getBySizes(32, 4096));
@@ -1196,9 +1194,15 @@ THE SOFTWARE.
             }
             private function nativeExportCompleted(event:Event):void
             {
-                if (_modernWindow.selectedOnly.selected) return;
-                _nativeExportedRevision = _nativeSource.revision;
-                _clientInfo.changed = _clientChanged = false; updateNexaSaveState();
+                // A legacy conversion is an export, not persistence of the modern document.
+                updateNexaSaveState();
+            }
+            protected function canSwitchAssetProject():Boolean
+            {
+                if(clientChanged || thingTypeEditor.changed || _nativeSource && (_nativeSource.busy || _nativeSaving)){
+                    Alert.show("Save pending edits and wait for the current operation before opening or creating another project.","NexaAsset Editor v2",Alert.OK,this);return false;
+                }
+                return true;
             }
             private function nativeIds(ids:Vector.<uint>):Array {var list:Array=[];for each(var id:uint in ids)list.push(id);return list;}
             public function nativeMutation(command:String, fields:Object):void
@@ -1555,9 +1559,13 @@ THE SOFTWARE.
             
             public function removeSpritesIds(sprites:Vector.<uint>):void
             {
-                if (_nativeSource) { for each(var id:uint in sprites) nativeMutation("native-sprite-clear", {spriteId:id}); return; }
                 if (!clientLoaded || !sprites || sprites.length == 0)
                     return;
+                if (_nativeSource) {
+                    // One atomic batch plus the three list/detail refresh jobs; never enqueue a partial selection.
+                    if(sprites.length>100 || !_nativeSource.canEnqueue(4)){statusLabel.text="Native sprite cleanup is busy or exceeds 100 sprites. Wait before retrying; no sprites were cleared.";appendLog(statusLabel.text);return;}
+                    nativeMutation("native-sprites-clear",{ids:nativeIds(sprites)});return;
+                }
                 sprites.sort(Array.NUMERIC | Array.DESCENDING);
                 sendCommand(new RemoveSpritesCommand(sprites));
             }
@@ -1613,6 +1621,7 @@ THE SOFTWARE.
                 _thingDataChanged = false;
                 _clientInfo = null;
                 _nextThingData = null;
+                _copiedThingData = null; // The project clipboard is disabled below; do not retain an invisible old sprite graph.
                 _selectThingIndex = -1;
             
                 thingList.removeAll();
@@ -1629,7 +1638,7 @@ THE SOFTWARE.
                 thingStepper.value = 0;
                 _logs.removeAll();
                 validateNow();
-                if(_nativeSaveWindow)_nativeSaveWindow.close();
+                if(_nativeSaveWindow){_nativeSaveWindow.shutdown();_nativeSaveWindow.close();}
                 _nativeObjectExportCallback=null;_nativeObjectExportPath=null;
                 _nativeSaving=false;_nativeCloseAfterSave=false;nexaActions.nativeModern=false;
                 if (_nativeSource) { _nativeSource.removeEventListener(ModernAssetEvent.MESSAGE, nativeMessage); _nativeSource.close(); _nativeSource = null; }

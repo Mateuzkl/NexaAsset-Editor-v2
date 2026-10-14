@@ -37,7 +37,9 @@ try {
     if ($Ui) {
         if (-not $RealAssets) { throw 'Modern UI tests require the audited Crystal assets fixture.' }
         & (Join-Path $project 'tools/modern-helper/build.ps1')
+        if ($LASTEXITCODE -ne 0) { throw 'Native helper build failed.' }
         & (Join-Path $PSScriptRoot 'run-native.ps1') -RealAssets $RealAssets
+        if ($LASTEXITCODE -ne 0) { throw 'Native main integration failed.' }
     }
 } finally {
     Pop-Location

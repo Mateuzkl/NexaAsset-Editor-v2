@@ -52,7 +52,7 @@ public sealed class NativeAssets(AssetSet assets, SheetCache cache, string outpu
         int at=Array.FindIndex(rows,a=>a.Id>=target); if(at<0) at=Math.Max(0,rows.Length-1); int start=at/PageSize*PageSize;
         var page=rows.Skip(start).Take(PageSize).ToArray();
         string file=Write("native-things.bin",page.Select(a=> {
-            var g=AssetSet.Groups(a)[0]; return (a.Id,cache.Render(g,0,a.Category=="outfit" ? Math.Min(2,(int)g.PatternX-1) : 0,0,0)); }));
+            var g=AssetSet.Groups(a)[0]; return (a.Id,cache.Render(g,0,a.Category=="outfit" ? Math.Min(2,(int)g.PatternX-1) : 0,0,0,a.Category=="outfit")); }));
         return new { file,total=rows.Length,selected=page.Length==0 ? 0 : rows[at].Id,
             previous=start==0 ? -1L : rows[Math.Max(0,start-PageSize)].Id,next=start+page.Length>=rows.Length ? -1L : rows[start+page.Length].Id,
             items=page.Select(a=>Model(a,false)) };
@@ -82,7 +82,7 @@ public sealed class NativeAssets(AssetSet assets, SheetCache cache, string outpu
         var groups=AssetSet.Groups(assets.Find(category,id)); if(group<0 || group>=groups.Length) throw new InvalidDataException("Invalid native group.");
         var g=groups[group]; if(frame<0 || frame>=g.Frames || x<0 || x>=g.PatternX || y<0 || y>=g.PatternY || z<0 || z>=g.PatternZ || layer< -1 || layer>=g.Layers) throw new InvalidDataException("Invalid native frame/pattern/layer.");
         Pixels Render(int px,int py) {
-            if(layer<0) return cache.Render(g,frame,px,py,z);
+            if(layer<0) return cache.Render(g,frame,px,py,z,category=="outfit");
             int i=checked((((frame*(int)g.PatternZ+z)*(int)g.PatternY+py)*(int)g.PatternX+px)*(int)g.Layers+layer);
             return cache.Sprite(g.Sprites[i]);
         }

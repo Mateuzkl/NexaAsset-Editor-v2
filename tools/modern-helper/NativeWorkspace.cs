@@ -55,7 +55,7 @@ public sealed class NativeWorkspace(AssetSet assets,SheetCache cache)
         Changed();return new {sprite,revision=Revision};
     }
     public object Remove(string category,uint[] ids){CheckIds(ids);assets.RemoveAppearances(category,ids);Changed();return new {selected=assets.Appearances.Where(a=>a.Category==category).Select(a=>a.Id).FirstOrDefault(),revision=Revision};}
-    public object Copy(string category,uint id){clipboard=assets.Find(category,id);return new {clipboard=true};}
+    public object Copy(string category,uint id){var a=assets.Find(category,id);clipboard=a with {Source=a.Source.ToArray()};return new {clipboard=true};} // Do not pin the entire original protobuf through one clipboard slice.
     public object Paste(string category,uint[] ids,bool deleteAfterPaste)
     {
         CheckIds(ids);if(clipboard==null || clipboard.Category!=category)throw new InvalidDataException("Copy an object from the same category before pasting.");
@@ -86,6 +86,13 @@ public sealed class NativeWorkspace(AssetSet assets,SheetCache cache)
         uint selected=id??NextSprite();cache.SetSprite(selected,new(width,height,rgba),id==null);Changed();return new {sprite=selected,revision=Revision};
     }
     public object ClearSprite(uint id){var shape=assets.FindSheet(id);cache.SetSprite(id,new(shape.Width,shape.Height,new byte[shape.Width*shape.Height*4]));Changed();return new {sprite=id,revision=Revision};}
+    public object ClearSprites(uint[] ids)
+    {
+        CheckIds(ids);var images=ids.Select(id=>{var shape=assets.FindSheet(id);return new Pixels(shape.Width,shape.Height,new byte[shape.Width*shape.Height*4]);}).ToArray();
+        long delta=ids.Select((id,i)=>images[i].Rgba.Length-cache.EditedSpriteBytes(id)).Sum();
+        if(cache.ChangedBytes+delta>SheetCache.Limit)throw new InvalidDataException("Working-copy sprite budget exceeded; no sprites were cleared.");
+        for(int i=0;i<ids.Length;i++)cache.SetSprite(ids[i],images[i]);Changed();return new {sprite=ids[0],revision=Revision};
+    }
     public object LinkSprite(string category,uint id,int group,int frame,int x,int y,int z,int layer,uint sprite)
     {
         assets.FindSheet(sprite);var a=assets.Find(category,id);var groups=AssetSet.Groups(a);
@@ -131,7 +138,7 @@ public sealed class NativeWorkspace(AssetSet assets,SheetCache cache)
     public object ExportPng(string category,uint id,string file,bool sprite,int group=0,int frame=0,int x=0,int y=0,int z=0)
     {
         ValidateExport(file);Pixels image;
-        if(sprite)image=cache.Sprite(id);else {var groups=AssetSet.Groups(assets.Find(category,id));if(group<0||group>=groups.Length)throw new InvalidDataException("Invalid group.");image=cache.Render(groups[group],frame,x,y,z);}
+        if(sprite)image=cache.Sprite(id);else {var groups=AssetSet.Groups(assets.Find(category,id));if(group<0||group>=groups.Length)throw new InvalidDataException("Invalid group.");image=cache.Render(groups[group],frame,x,y,z,category=="outfit");}
         Png.Write(file,image);return new {file};
     }
     public object ImportAssets(string[] files,string category,uint? target=null)

@@ -8,6 +8,7 @@ package ob.modern
     import flash.utils.ByteArray;
     import flash.utils.Endian;
     import flash.utils.setTimeout;
+    import flash.utils.clearTimeout;
     import otlib.animation.FrameGroup;
     import otlib.animation.FrameDuration;
     import otlib.things.ThingType;
@@ -30,16 +31,24 @@ package ob.modern
         private var spritePage:Vector.<SpriteData>=new Vector.<SpriteData>();
         private var selectedData:ModernThingData;
         private var revisions:Object={};
+        private var retired:Array=[];
+        private var retirementTimer:uint=0;
+        private var closed:Boolean=false;
+        private function retire(value:Object):void {if(!value)return;retired.push(value);if(!retirementTimer)retirementTimer=setTimeout(disposeRetired,100);}
+        private function disposeRetired():void {retirementTimer=0;var values:Array=retired;retired=[];for each(var value:Object in values)value.dispose();}
         public function ModernNativeSource(){session.addEventListener(ModernAssetEvent.MESSAGE,message);}
         public function get ready():Boolean{return session.ready;}
         public function get busy():Boolean{return active != null || queue.length > 0 || session.busy;}
+        public function canEnqueue(jobs:int):Boolean{return ready && jobs>0 && queue.length+(active ? 1 : 0)+jobs<=16;}
         public function open(folder:File,helper:File=null):void
         {
+            closed=false;session.addEventListener(ModernAssetEvent.MESSAGE,message);
             directory=folder;
             session.open(folder,helper||File.applicationDirectory.resolvePath("modern-helper/nexa-modern-helper.exe"),new File(File.applicationDirectory.nativePath).parent.resolvePath("nexa-modern-sessions"));
         }
         public function enqueue(key:String,command:String,fields:Object,callback:Function,onError:Function=null):void
         {
+            if(closed)throw new Error("Native session is closed.");
             if(active && active.key==key && JSON.stringify(active.fields)==JSON.stringify(fields))return;
             revisions[key]=uint(revisions[key])+1;
             for(var i:int=queue.length-1;i>=0;i--)if(queue[i].key==key)queue.splice(i,1);
@@ -73,9 +82,9 @@ package ob.modern
                 var records:Array=readPixels(result.file,"native-things.bin"),pixels:Object={};for each(var r:Object in records)pixels[r.id]=r;
                 var list:Vector.<ThingListItem>=new Vector.<ThingListItem>();
                 for each(var model:Object in result.items){var item:ThingListItem=new ThingListItem();item.thing=modelThing(model);item.frameGroup=item.thing.frameGroups[0].clone();item.frameGroup.width=pixels[model.id].width/32;item.frameGroup.height=pixels[model.id].height/32;item.pixels=pixels[model.id].pixels;list.push(item);}
-                if(callback(result,list)===false){for each(var rejected:ThingListItem in list)rejected.dispose();return;}
+                if(callback(result,list)===false||closed){for each(var rejected:ThingListItem in list)rejected.dispose();return;}
                 var old:Vector.<ThingListItem>=thingPage;thingPage=list;
-                setTimeout(function():void{for each(var item:ThingListItem in old)item.dispose();},100);
+                for each(var retiredItem:ThingListItem in old)retire(retiredItem);
             });
         }
         public function sprites(target:uint,callback:Function):void
@@ -83,8 +92,9 @@ package ob.modern
             enqueue("sprites","native-sprites",{target:target},function(result:Object):void {
                 var list:Vector.<SpriteData>=new Vector.<SpriteData>();
                 for each(var r:Object in readPixels(result.file,"native-sprites.bin")){var sprite:ModernSpriteData=new ModernSpriteData();sprite.id=r.id;sprite.imageWidth=r.width;sprite.imageHeight=r.height;sprite.pixels=r.pixels;list.push(sprite);}
-                var old:Vector.<SpriteData>=spritePage;spritePage=list;callback(result,list);
-                setTimeout(function():void{for each(var sprite:SpriteData in old)sprite.dispose();},100);
+                callback(result,list);if(closed){for each(var rejected:SpriteData in list)rejected.dispose();return;}
+                var old:Vector.<SpriteData>=spritePage;spritePage=list;
+                for each(var retiredSprite:SpriteData in old)retire(retiredSprite);
             });
         }
         public function detail(id:uint,category:String,callback:Function):void
@@ -94,9 +104,9 @@ package ob.modern
                 var data:ModernThingData=new ModernThingData();data.thing=modelThing(result);data.clientVersion=1525;data.source=thisSource;data.flags=result.flags;data.flagRows=result.flagRows;data.metadataRows=result.metadataRows;
                 for each(var group:Object in result.groups){data.groupIndices[group.type]=group.index;data.groupLabels[group.type]="Group "+group.index+" · native type "+group.originalType;}
                 if(data.groupIndices[0]==null)data.groupIndices[0]=data.groupIndices[1];
-                if(callback(data)===false){data.dispose();return;}
+                if(callback(data)===false||closed){data.dispose();return;}
                 var old:ModernThingData=selectedData;selectedData=data;
-                if(old)setTimeout(old.dispose,100);
+                retire(old);
             });
         }
         private function modelThing(model:Object):ThingType
@@ -119,9 +129,9 @@ package ob.modern
                 var count:uint=stream.readUnsignedInt();if(count>100)throw new Error("Native page exceeds 100 records.");
                 for(var i:uint=0;i<count;i++){if(stream.bytesAvailable<16)throw new Error("Truncated native record.");var id:uint=stream.readUnsignedInt(),w:int=stream.readInt(),h:int=stream.readInt(),length:int=stream.readInt();if(w<1 || h<1 || w>8192 || h>8192 || Number(w)*h*4!=length || length>8388608 || length>stream.bytesAvailable)throw new Error("Invalid native dimensions/payload.");var pixels:ByteArray=new ByteArray();stream.readBytes(pixels,0,length);rows.push({id:id,width:w,height:h,pixels:pixels});}
                 if(stream.bytesAvailable)throw new Error("Trailing native pixel data.");
-            }finally{stream.close();}return rows;
+            }catch(error:Error){if(pixels)pixels.clear();for each(var record:Object in rows)record.pixels.clear();throw error;}finally{stream.close();}return rows;
         }
         public function close():void
-        {session.removeEventListener(ModernAssetEvent.MESSAGE,message);session.close();queue=[];revisions={};active=null;for each(var item:ThingListItem in thingPage)item.dispose();for each(var sprite:SpriteData in spritePage)sprite.dispose();thingPage=new Vector.<ThingListItem>();spritePage=new Vector.<SpriteData>();if(selectedData)selectedData.dispose();selectedData=null;}
+        {closed=true;session.removeEventListener(ModernAssetEvent.MESSAGE,message);session.close();queue=[];revisions={};active=null;if(retirementTimer)clearTimeout(retirementTimer);disposeRetired();for each(var item:ThingListItem in thingPage)item.dispose();for each(var sprite:SpriteData in spritePage)sprite.dispose();thingPage=new Vector.<ThingListItem>();spritePage=new Vector.<SpriteData>();if(selectedData)selectedData.dispose();selectedData=null;inventory=null;}
     }
 }

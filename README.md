@@ -70,8 +70,12 @@ invalidating references used by other objects.
 without opening a converter or an export modal. Native definitions and edited
 CIP/LZMA spritesheets are staged, validated and published as content-addressed
 files. The catalog is then replaced atomically where supported, retaining the
-previous head as `.nexa-backup-*.catalog.json`. Old payloads are retained so that
-the backup remains usable. Metadata-only changes do not rebuild spritesheets;
+previous head as `.nexa-backup-*.catalog.json`. After the committed generation is
+validated, retention keeps the **three newest writer backups** and all resources
+needed by the current catalog and retained backups. Unreferenced writer-format
+appearance/sheet payloads are removed only after their SHA-256 filename is verified;
+unrelated or unverified files are left alone. Malformed catalogs or locked files
+defer cleanup without turning a successful save into a failure. Metadata-only changes do not rebuild spritesheets;
 unchanged sheets are not copied for an in-place save. Existing IDs, unknown
 protobuf fields, dimensions and group/phase metadata are preserved.
 
@@ -150,6 +154,8 @@ portable bundle, on the same drive, rather than AIR's protected application
 resources. Use a writable location for the portable application.
 Read the [modern assets audit and implementation status](docs/MODERN_APPEARANCES_AUDIT.md)
 for measured results, compatibility boundaries and remaining work.
+The [2026-10-14 reliability audit](docs/AUDIT_2026-10-14.md) covers state protection,
+request recovery, outfit layer policy, bounded disposal and backup retention.
 
 ## Capabilities
 

@@ -9,6 +9,7 @@ package ob.modern
     import flash.events.TimerEvent;
     import flash.filesystem.File;
     import flash.utils.Timer;
+    import flash.utils.ByteArray;
 
     /** One bounded, serial JSON-lines connection. It never sends worker mutations. */
     public class ModernAssetSession extends EventDispatcher
@@ -69,9 +70,12 @@ package ob.modern
         {
             if (!ready || !running || pending != null) throw new Error("Modern session is not ready or is busy.");
             var request:Object = fields || {};
-            pending = String(++sequence); request.requestId = pending;
+            var id:String=String(++sequence);request.requestId=id;
             request.generation = generation; request.command = command;
-            try { process.standardInput.writeUTFBytes(JSON.stringify(request) + "\n"); armTimeout(); }
+            var payload:String=JSON.stringify(request),encoded:ByteArray=new ByteArray();encoded.writeUTFBytes(payload);var size:uint=encoded.length;encoded.clear();
+            if(size>65536)throw new Error("Native request exceeds 64 KiB; nothing was sent.");
+            pending=id;
+            try { process.standardInput.writeUTFBytes(payload + "\n"); armTimeout(); }
             catch (error:Error) { fail(error.message); throw error; }
             return pending;
         }
@@ -100,6 +104,7 @@ package ob.modern
         private function accept(message:Object):void
         {
             if (!message || message.schemaVersion != SCHEMA_VERSION) throw new Error("Incompatible modern protocol version.");
+            if(message.type=="error" && message.errorCode=="REQUEST_TOO_LARGE" && ready && pending!=null){message.requestId=pending;message.generation=generation;}
             if (message.type == "progress" && (!ready || (pending != null && message.generation == generation && message.requestId == pending))) { armTimeout(); }
             else if (message.type == "ready" && !ready) { ready = true; timer.reset(); }
             else if (message.type == "error" && !ready) { fail(String(message.message)); return; }
