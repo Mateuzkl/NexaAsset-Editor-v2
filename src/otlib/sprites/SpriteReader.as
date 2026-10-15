@@ -39,6 +39,7 @@ package otlib.sprites
         private var m_transparency:Boolean;
         private var m_headerSize:uint;
         private var m_fileSize:Number;
+        private var m_sourceFile:File;
         private var m_count:uint;
         private var m_multi:MultiSpriteReader;
         private var m_offsets:ByteArray;
@@ -70,15 +71,27 @@ package otlib.sprites
 
         public function openSpriteFile(file:File, progress:Function = null):void
         {
+            openSpriteFileInternal(file, progress, true);
+        }
+
+        /** Open one physical chunk from an index-less FileParts archive. */
+        internal function openStandardSpriteFile(file:File, progress:Function = null):void
+        {
+            openSpriteFileInternal(file, progress, false);
+        }
+
+        private function openSpriteFileInternal(file:File, progress:Function, detectMulti:Boolean):void
+        {
             closeSpriteFile();
             try
             {
-                if (file.name.toLowerCase() == "spr_index.dat")
+                if (detectMulti && isMultiSpriteFile(file))
                 {
                     m_multi = new MultiSpriteReader(m_transparency);
                     m_multi.open(file, progress);
                     return;
                 }
+                m_sourceFile = file;
                 open(file, FileMode.READ);
                 m_fileSize = file.size;
                 if (m_fileSize < m_headerSize)
@@ -106,6 +119,7 @@ package otlib.sprites
             try { close(); } catch (error:Error) {}
             m_count = 0;
             m_fileSize = 0;
+            m_sourceFile = null;
             if (m_offsets) m_offsets.clear();
             if (m_window) m_window.clear();
             m_offsets = null; m_window = null; m_windowStart = -1;
@@ -158,17 +172,28 @@ package otlib.sprites
                 ensureWindow(address, 5 + length);
                 sprite.compressedPixels.writeBytes(m_window, address - m_windowStart + 5, length);
             }
-
             return sprite;
         }
 
         private function ensureWindow(address:Number, length:uint):void
         {
             if (m_windowStart >= 0 && address >= m_windowStart && address + length <= m_windowStart + m_window.length) return;
-            m_window.clear();
+            // Replace rather than reuse the large ByteArray: AIR can retain stale
+            // backing-buffer data after a seek/refill, corrupting later sprite RLE.
+            m_window = new ByteArray();
+            m_window.endian = Endian.LITTLE_ENDIAN;
             m_windowStart = address;
-            position = address;
-            readBytes(m_window, 0, Math.min(1024 * 1024, m_fileSize - address));
+            // Read each new window through a fresh file handle. On AIR, seeking
+            // the long-lived FileStream after a 1 MiB read can return stale bytes
+            // from its previous window even though position reports the new seek.
+            var windowStream:FileStream = new FileStream();
+            try
+            {
+                windowStream.open(m_sourceFile, FileMode.READ);
+                windowStream.position = address;
+                windowStream.readBytes(m_window, 0, Math.min(1024 * 1024, m_fileSize - address));
+            }
+            finally { try { windowStream.close(); } catch (closeWindow:Error) {} }
         }
 
         public function detectTransparency():Boolean
@@ -219,11 +244,44 @@ package otlib.sprites
         /** A bounded structural probe. Ambiguous headers retain the caller's hint. */
         public static function probeHeader(file:File, preferred:Boolean):Object
         {
-            if (file.name.toLowerCase() == "spr_index.dat") return {extended:true, known:true};
+            if (isMultiSpriteFile(file)) return {extended:true, known:true};
             var shortValid:Boolean = validHeader(file, false);
             var longValid:Boolean = validHeader(file, true);
             if (!shortValid && !longValid) throw new Error("Invalid SPR header/address table.");
             return {extended:shortValid == longValid ? preferred : longValid, known:shortValid != longValid};
+        }
+
+        public static function isFilePartsEntry(file:File):Boolean
+        {
+            return file && file.name.toLowerCase() == "part_1.spr" &&
+                file.parent && file.parent.name.toLowerCase() == "fileparts";
+        }
+
+        public static function isMultiSpriteFile(file:File):Boolean
+        {
+            return file && (file.name.toLowerCase() == "spr_index.dat" || isFilePartsEntry(file));
+        }
+
+        public static function normalizeMultiSpriteFile(file:File):File
+        {
+            if (!isFilePartsEntry(file)) return file;
+            var root:File = file.parent.parent;
+            var index:File = root.resolvePath("spr_index.dat");
+            var manifest:File = root.resolvePath("spr_parts.dat");
+            if (index.exists || manifest.exists)
+                return index.exists && !index.isDirectory && manifest.exists && !manifest.isDirectory ? index : null;
+            return file;
+        }
+
+        public static function findMultiSpriteFile(root:File):File
+        {
+            if (!root || !root.exists || !root.isDirectory) return null;
+            var index:File = root.resolvePath("spr_index.dat");
+            var manifest:File = root.resolvePath("spr_parts.dat");
+            if (index.exists || manifest.exists)
+                return index.exists && !index.isDirectory && manifest.exists && !manifest.isDirectory ? index : null;
+            var first:File = root.resolvePath("FileParts/part_1.spr");
+            return first.exists && !first.isDirectory ? first : null;
         }
 
         private static function validHeader(file:File, extended:Boolean):Boolean

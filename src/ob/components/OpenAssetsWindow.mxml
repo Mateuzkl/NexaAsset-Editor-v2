@@ -53,6 +53,7 @@ THE SOFTWARE.
             import otlib.utils.ClientInfo;
             import otlib.utils.ClientInfoLoader;
             import otlib.utils.OTFI;
+            import otlib.utils.AssetDirectoryFinder;
             import otlib.core.ClientFeatures;
             import otlib.sprites.SpriteReader;
             import otlib.utils.OTFormat;
@@ -305,6 +306,13 @@ THE SOFTWARE.
                     updateProperties();
                     return;
                 }
+
+                var resolvedDirectory:File = AssetDirectoryFinder.resolve(directory);
+                if (resolvedDirectory && !FileUtil.equals(resolvedDirectory, directory))
+                {
+                    directory = resolvedDirectory;
+                    m_clientDirectory = directory;
+                }
             
                 clientDirectoryTextInput.file = directory;
                 if (directory.resolvePath("catalog-content.json").exists)
@@ -333,6 +341,9 @@ THE SOFTWARE.
                 file = directory.resolvePath("Tibia.spr");
                 if (file.exists)
                     spr = file;
+
+                if (!spr)
+                    spr = SpriteReader.findMultiSpriteFile(directory);
 
                 // Rust-compatible multi-SPR entry point (physical parts stay lazy).
                 var indexFile:File = directory.resolvePath("spr_index.dat");
@@ -451,10 +462,11 @@ THE SOFTWARE.
                 var reader:SpriteReader;
                 try
                 {
-                    var multi:Boolean = spr.name.toLowerCase() == "spr_index.dat";
-                    stream.open(multi ? spr.parent.resolvePath("spr_parts.dat") : spr, FileMode.READ);
+                    var multi:Boolean = SpriteReader.isMultiSpriteFile(spr);
+                    var indexedMulti:Boolean = spr.name.toLowerCase() == "spr_index.dat";
+                    stream.open(indexedMulti ? spr.parent.resolvePath("spr_parts.dat") : spr, FileMode.READ);
                     stream.endian = Endian.LITTLE_ENDIAN;
-                    if (multi)
+                    if (indexedMulti)
                     {
                         if (stream.bytesAvailable < 16 || stream.readUTFBytes(4) != "SPMT")
                             throw new Error("Invalid multi-SPR manifest.");

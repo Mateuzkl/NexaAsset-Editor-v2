@@ -31,6 +31,7 @@
         private var mergeWindow:MergeAssetsWindow;
         private var warningRoot:File;
         private var exportWindow:ExportWindow;
+        private var nestedClient:File;
         private function startTest():void
         {
             try
@@ -92,9 +93,51 @@
                 if (compileWindow.sprFile.name != "Tibia.spr") throw new Error("Standard output choice failed.");
                 compileWindow.close();
                 trace("PASS: SPR-only multi-index load, standard SPR priority, independent output selection");
+                prepareSequentialFolderSelection();
+            }
+            catch (error:Error) { fail(error); }
+        }
+        private function prepareSequentialFolderSelection():void
+        {
+            try
+            {
+                var selected:File = fixtureRoot.resolvePath("nested-selection"); selected.createDirectory();
+                nestedClient = selected.resolvePath("860");
+                nestedClient.resolvePath("FileParts").createDirectory();
+                var bytes:ByteArray = buffer();
+                bytes.writeUnsignedInt(version.datSignature); bytes.writeShort(100);
+                bytes.writeShort(0); bytes.writeShort(0); bytes.writeShort(0);
+                write(nestedClient.resolvePath("Tibia.dat"), bytes);
+                writeSequentialPart(nestedClient.resolvePath("FileParts/part_1.spr"), 2, 12);
+                writeSequentialPart(nestedClient.resolvePath("FileParts/part_2.spr"), 1, 34);
+                openWindow = new OpenAssetsWindow(); openWindow.open(this); openWindow.clientDirectory = selected;
+                callLater(verifySequentialFolderSelection);
+            }
+            catch (error:Error) { fail(error); }
+        }
+        private function verifySequentialFolderSelection():void
+        {
+            try
+            {
+                openWindow.validateNow();
+                if (!openWindow.clientDirectory || openWindow.clientDirectory.nativePath != nestedClient.nativePath ||
+                    !openWindow.sprFile || openWindow.sprFile.name != "part_1.spr" ||
+                    !openWindow.version || openWindow.version.value != 860 || !openWindow.loadButton.enabled)
+                    throw new Error("Nested 8.60 DAT + sequential FileParts folder was not recognized.");
+                openWindow.close();
+                trace("PASS: nested client-folder discovery and index-less 8.60 FileParts recognition");
                 prepareWarnings();
             }
             catch (error:Error) { fail(error); }
+        }
+        private function writeSequentialPart(file:File, count:uint, color:uint):void
+        {
+            var bytes:ByteArray = buffer(); bytes.writeUnsignedInt(version.sprSignature); bytes.writeUnsignedInt(count);
+            bytes.writeUnsignedInt(8 + count * 4);
+            for (var i:uint = 2; i <= count; i++) bytes.writeUnsignedInt(0);
+            bytes.writeByte(255); bytes.writeByte(0); bytes.writeByte(255); bytes.writeShort(7);
+            bytes.writeShort(0); bytes.writeShort(1); bytes.writeByte(color); bytes.writeByte(20); bytes.writeByte(30);
+            write(file, bytes);
         }
         private function prepareWarnings():void
         {
