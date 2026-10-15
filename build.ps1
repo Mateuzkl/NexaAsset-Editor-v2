@@ -49,6 +49,9 @@ try {
     if ([IO.Path]::GetFileName($BundleName) -ne $BundleName -or $BundleName -in @('.', '..')) { throw 'BundleName must be a directory name, not a path.' }
     $bundle = Join-Path (Join-Path $ProjectRoot 'bin') $BundleName
     New-Item -ItemType Directory -Path (Split-Path -Parent $bundle) -Force | Out-Null
+    # Native modern asset decoding runs out of process and has its own
+    # portable .NET runtime. No third-party editor binary is redistributed.
+    & (Join-Path $ProjectRoot 'tools/modern-helper/build.ps1') -Output (Join-Path $stage 'modern-helper') -ToolsRoot $ToolsRoot
     # AIR requires a package certificate. This temporary self-signed certificate
     # is for local builds, not a trusted Windows publisher or production release.
     $certificatePath = Join-Path $tempDirectory ('objectbuilder-' + [Guid]::NewGuid().ToString('N') + '.p12')
@@ -62,6 +65,7 @@ try {
         -package -storetype pkcs12 -keystore $certificate -storepass $certificatePassword -tsa none `
         -target bundle -arch x64 $bundle $descriptor `
         -C $stage $compiledSwf `
+        -C $stage modern-helper `
         -C (Join-Path $ProjectRoot 'assets') icon `
         -C (Join-Path $ProjectRoot 'assets') nexa `
         -C $ProjectRoot LICENSE `

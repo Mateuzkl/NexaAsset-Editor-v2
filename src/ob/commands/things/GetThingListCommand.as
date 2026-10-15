@@ -26,6 +26,8 @@ package ob.commands.things
 
     public class GetThingListCommand extends WorkerCommand
     {
+        public var targetId:uint;
+        public var category:String;
         // --------------------------------------------------------------------------
         // CONSTRUCTOR
         // --------------------------------------------------------------------------
@@ -33,6 +35,8 @@ package ob.commands.things
         public function GetThingListCommand(targetId:uint, category:String)
         {
             super(targetId, category);
+            this.targetId = targetId;
+            this.category = category;
         }
     }
 }

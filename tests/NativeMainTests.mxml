@@ -1,0 +1,426 @@
+<?xml version="1.0" encoding="utf-8"?>
+<local:ObjectBuilder xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:local="*">
+    <fx:Style source="../src/ObjectBuilder.css"/>
+    <fx:Script><![CDATA[
+        import flash.desktop.NativeApplication;
+        import flash.display.BitmapData;
+        import flash.display.DisplayObject;
+        import flash.display.PNGEncoderOptions;
+        import flash.events.InvokeEvent;
+        import flash.events.TimerEvent;
+        import flash.events.UncaughtErrorEvent;
+        import flash.events.MouseEvent;
+        import flash.filesystem.File;
+        import flash.filesystem.FileMode;
+        import flash.filesystem.FileStream;
+        import flash.utils.Timer;
+        import flash.utils.getTimer;
+        import flash.system.System;
+        import flash.geom.Matrix;
+        import flash.geom.Point;
+        import mx.events.FlexEvent;
+        import ob.commands.things.GetThingListCommand;
+        import ob.commands.sprites.GetSpriteListCommand;
+        import ob.modern.ModernThingData;
+        import ob.modern.ModernSpriteData;
+        import otlib.components.renders.SpriteGridRenderer;
+        import otlib.components.renders.ThingGridRenderer;
+        import otlib.components.renders.ThingListRenderer;
+        import spark.primitives.BitmapImage;
+        import spark.components.supportClasses.ItemRenderer;
+        import otlib.things.ThingType;
+        import ob.modern.ModernNativeSource;
+        import ob.modern.ModernAssetEvent;
+        import ob.ui.NexaUiEvent;
+        import otlib.utils.ThingListItem;
+        import otlib.sprites.SpriteData;
+        import otlib.animation.FrameGroup;
+        import ob.components.OpenAssetsWindow;
+        import ob.components.CreateAssetsWindow;
+        import ob.commands.SettingsCommand;
+        import otlib.core.SpriteDimensionStorage;
+        import flash.utils.Endian;
+        import ob.modern.ModernFlagEvent;
+        import ob.components.ModernConversionWindow;
+        import ob.components.ModernSaveWindow;
+        import ob.components.ModernExportWindow;
+        import ob.modern.NativeObjectExport;
+        import otlib.obd.OBDEncoder;
+        import ob.settings.ObjectBuilderSettings;
+        import otlib.things.ThingData;
+        import ob.commands.things.ExportNativeObjectCommand;
+        import otlib.loaders.PathHelper;
+        import otlib.components.ExportWindow;
+        import nail.events.MenuEvent;
+        import ob.menu.Menu;
+        import by.blooddy.crypto.MD5;
+        import flash.utils.ByteArray;
+        import nail.components.controls.Alert;
+        import ob.modern.ModernFlagEditorWindow;
+        import ob.commands.files.LoadFilesCommand;
+        import otlib.core.VersionStorage;
+        import otlib.core.Version;
+        import otlib.utils.OTFI;
+        private var args:Array;
+        private var clock:Timer=new Timer(200);
+        private var started:int;
+        private var phase:int;
+        private var categories:Array=["item","outfit","effect","missile"];
+        private var at:int;
+        private var snapshots:File;
+        private var sessionFolder:File;
+        private var source:ModernNativeSource;
+        private var cacheChecked:int;
+        private var openWindow:OpenAssetsWindow;
+        private var previewSettled:int;
+        private var duplicateId:uint;
+        private var initialMaxItem:uint;
+        private var conversion:ModernConversionWindow;
+        private var flagEditor:ModernFlagEditorWindow;
+        private var beforeAttributeRevision:Number;
+        private var legacyDirectory:File;
+        private var saveWindow:ModernSaveWindow;
+        private var savedNative:File;
+        private var workerExport:File;
+        private var nativeExportDialog:ExportWindow;
+        private var copiedPixelsHash:String;
+        private var catalogBeforeFailure:ByteArray;
+        private var nativeImportedId:uint;
+        private var exportRevisionBefore:Number;
+        private var batchExportIds:Vector.<uint>;
+        private function exportWindow():ExportWindow {for(var i:int=0;i<systemManager.rawChildren.numChildren;i++)if(systemManager.rawChildren.getChildAt(i) is ExportWindow)return systemManager.rawChildren.getChildAt(i) as ExportWindow;return null;}
+        private function testRendererOwnership():void {
+            for each(var renderer:ItemRenderer in [new SpriteGridRenderer(),new ThingGridRenderer(),new ThingListRenderer()]) {
+                var pixels:ByteArray=new ByteArray();pixels.length=4096;for(var p:int=0;p<4096;p++)pixels[p]=255;
+                var item:Object;
+                if(renderer is SpriteGridRenderer){var sprite:ModernSpriteData=new ModernSpriteData();sprite.id=1;sprite.imageWidth=sprite.imageHeight=32;sprite.pixels=pixels;item=sprite;}
+                else {var thingItem:ThingListItem=new ThingListItem();thingItem.thing=new ThingType();thingItem.thing.id=100;thingItem.thing.category="item";thingItem.frameGroup=new FrameGroup();thingItem.frameGroup.width=thingItem.frameGroup.height=1;thingItem.pixels=pixels;item=thingItem;}
+                addElement(renderer);renderer.validateNow();renderer.data=item;renderer.validateNow();
+                var image:BitmapImage;for(var i:int=0;i<renderer.numElements;i++)if(renderer.getElementAt(i) is BitmapImage)image=renderer.getElementAt(i) as BitmapImage;
+                check(image && image.source is BitmapData,"Renderer ownership fixture missing image");
+                var displayed:BitmapData=image.source as BitmapData;
+                check(displayed!=item.croppedBitmap,"Renderer borrowed page cache pixels");item.dispose();renderer.validateNow();
+                check(displayed.width==32 && displayed.getPixel32(0,0)==0xFFFFFFFF,"Retired page disposed renderer pixels");
+                renderer.data=null;renderer.validateNow();removeElement(renderer);
+            }
+            trace("PASS: list/grid bitmap ownership survives page retirement");
+        }
+        private function dismissAlerts():void {for(var i:int=systemManager.rawChildren.numChildren-1;i>=0;i--){var alert:Alert=systemManager.rawChildren.getChildAt(i) as Alert;if(alert){alert.validateNow();alert.closeButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK,true));}}}
+        private function guardedLegacyFolder():File {
+            var folder:File=snapshots.resolvePath("guard-legacy");folder.createDirectory();var v:Version=VersionStorage.getInstance().getByValueString("8.60 v2");
+            var data:ByteArray=new ByteArray();data.endian=Endian.LITTLE_ENDIAN;data.writeUnsignedInt(v.datSignature);data.writeShort(100);data.writeShort(1);data.writeShort(1);data.writeShort(1);
+            for(var n:int=0;n<4;n++){data.writeByte(255);for(var k:int=0;k<7;k++)data.writeByte(1);data.writeShort(1);}
+            var stream:FileStream=new FileStream();stream.open(folder.resolvePath("Tibia.dat"),FileMode.WRITE);stream.writeBytes(data);stream.close();data.clear();data.endian=Endian.LITTLE_ENDIAN;data.writeUnsignedInt(v.sprSignature);data.writeShort(1);data.writeUnsignedInt(0);
+            stream.open(folder.resolvePath("Tibia.spr"),FileMode.WRITE);stream.writeBytes(data);stream.close();data.clear();return folder;
+        }
+        override protected function applicationInvokeHandler(event:InvokeEvent):void {args=event.arguments;}
+        override protected function applicationPreinitializeHandler(event:FlexEvent):void {
+            systemManager.loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR, failed);
+            super.applicationPreinitializeHandler(event);
+        }
+        override protected function applicationCompleteHandler(event:FlexEvent):void {
+            super.applicationCompleteHandler(event);started=getTimer();clock.addEventListener(TimerEvent.TIMER,tick);clock.start();
+        }
+        private function check(ok:Boolean,message:String):void {if(!ok)throw new Error(message);}
+        private function failed(event:UncaughtErrorEvent):void {event.preventDefault();failure("Phase "+phase+": "+(event.error is Error ? Error(event.error).getStackTrace() : String(event.error)));}
+        private function failure(message:String):void {trace("FAIL native main: "+message);clock.stop();if(nativeSource)clear();NativeApplication.nativeApplication.exit(1);}
+        private function capture(name:String):void {
+            validateNow();var bitmap:BitmapData=new BitmapData(width,height,false,0x0B1622);bitmap.draw(DisplayObject(systemManager),new Matrix());
+            var stream:FileStream=new FileStream();stream.open(snapshots.resolvePath(name+".png"),FileMode.WRITE);stream.writeBytes(bitmap.encode(bitmap.rect,new PNGEncoderOptions()));stream.close();bitmap.dispose();
+        }
+        private function tick(event:TimerEvent):void {
+            try {
+                check(getTimer()-started<180000,"Timeout phase "+phase+" / category "+at);
+                if(phase==0 && visible && running && args){
+                    testRendererOwnership();
+                    snapshots=new File(args[2]).resolvePath("native-main");snapshots.createDirectory();
+                    trace("Native source (no conversion): "+new File(args[0]).nativePath);
+                    restore();logPanel.expanded=false;
+                    var failedProbe:OpenAssetsWindow=new OpenAssetsWindow();failedProbe.modernHelper=snapshots.resolvePath("missing-helper.exe");failedProbe.open(this);failedProbe.clientDirectory=new File(args[0]);failedProbe.validateNow();
+                    check(failedProbe.errorLabel.visible && failedProbe.errorLabel.text.indexOf("helper")>=0 && failedProbe.clientVersionLabel.text=="" && !failedProbe.loadButton.enabled,"Synchronous opening error was erased: visible="+failedProbe.errorLabel.visible+" text="+failedProbe.errorLabel.text+" version="+failedProbe.clientVersionLabel.text+" load="+failedProbe.loadButton.enabled);failedProbe.close();
+                    openWindow=new OpenAssetsWindow();openWindow.modernHelper=new File(args[1]);openWindow.open(this);openWindow.clientDirectory=new File(args[0]);phase=8;
+                } else if(phase==8){
+                    openWindow.validateNow();if(!openWindow.loadButton.enabled)return;
+                    check(openWindow.modernDirectory!=null && !openWindow.datFile && !openWindow.sprFile,"Open Asset Files did not detect native folder safely");
+                    check(Number(openWindow.itemsCountLabel.text)>0 && Number(openWindow.spritesCountLabel.text)>0 && openWindow.nativeInfo.text.indexOf("Spritesheets:")>=0,"Modern opening information missing: "+openWindow.itemsCountLabel.text+" / "+openWindow.spritesCountLabel.text+" / "+openWindow.nativeInfo.text);capture("open-native-information");openWindow.close();
+                    openNativeProject(new File(args[0]),new File(args[1]));phase=1;
+                } else if(phase==1 && clientLoaded && thingData is ModernThingData && spritesList.length && ModernThingData(thingData).cacheBytes>0){
+                    check(clientInfo.nativeModern,"ClientInfo not native");check(thingList.length<=100 && spritesList.length<=100,"Unbounded pages");
+                    check(nativeSource.directory.nativePath==new File(args[0]).nativePath,"Loaded the wrong source folder");
+                    trace("Native inventory: "+JSON.stringify(nativeSource.inventory));
+                    check(!nexaActions.canSave && !nexaActions.readOnly && nexaActions.duplicateButton.enabled && nexaActions.exportButton.enabled,"Native working-copy controls not active");
+                    check(ModernThingData(thingData).flagRows.length>=68,"Modern flag options are missing");
+                    thingTypeEditor.tabNavigator.selectedIndex=1;validateNow();capture("modern-flags");thingTypeEditor.tabNavigator.selectedIndex=0;
+                    check(ModernThingData(thingData).metadataRows.length>8,"Native metadata missing");
+                    thingTypeEditor.tabNavigator.selectedIndex=2;validateNow();check(thingTypeEditor.modernAttributesPanel.visible,"Native Attributes tab disabled");capture("modern-attributes");thingTypeEditor.tabNavigator.selectedIndex=0;
+                    source=nativeSource;sessionFolder=source.session.directory;
+                    source.request("stats",{});openNativeProject(new File(args[0]),new File(args[1]));check(nativeSource==source && source.busy,"Busy project switch discarded active session");dismissAlerts();
+                    trace("Native first objects/sprites/preview: "+(getTimer()-started)+" ms");
+                    check(ThingListItem(thingList.dataProvider.getItemAt(0)).getBitmap()!=null,"Missing object thumbnail");
+                    var spriteBitmap:BitmapData=SpriteData(spritesList.dataProvider.getItemAt(0)).getBitmap();check(spriteBitmap!=null,"Missing real sprite");spriteBitmap.dispose();
+                    setObjectsView(1);setSpritesView(1);capture("items-grid");
+                    phase=2;
+                } else if(phase==2){
+                    at++;if(at<categories.length){requestEditThing(at==1 ? 2 : 1,categories[at]);phase=3;}else{
+                        // Newer requests must win, even while an old category page is in flight.
+                        currentCategory="item";currentCategory="outfit";currentCategory="effect";currentCategory="missile";
+                        sendCommand(new GetThingListCommand(clientInfo.minMissileId,"missile"));phase=4;
+                    }
+                } else if(phase==3 && thingData && thingData.category==categories[at] && ModernThingData(thingData).cacheBytes>0 && thingTypeEditor.bitmapView.source && !source.session.busy){
+                    check(thingTypeEditor.nativeReadOnly && thingTypeEditor.thingData.category==categories[at],"Inspector not integrated");
+                    for each(var group:FrameGroup in thingData.thing.frameGroups)check(group.frames>0 && group.patternX>0,"Bad geometry");
+                    check(ModernThingData(thingData).cacheBytes<=8388608,"Preview cache exceeds 8 MiB");
+                    thingTypeEditor.frameGroupSlider.value=0;thingTypeEditor.frameGroupSliderChange();
+                    if(at==1){check(thingData.thing.frameGroups.length>1,"Grouped outfit fixture not selected");check(thingTypeEditor.frameGroup.enabled,"Native group navigation disabled");}
+                    if(thingData.thing.frameGroups.length>1){thingTypeEditor.frameGroupSlider.value=1;thingTypeEditor.frameGroupSliderChange();}
+                    var current:FrameGroup=thingData.thing.getFrameGroup(thingTypeEditor.frameGroupSlider.value);
+                    if(current.frames>1){thingTypeEditor.animationSlider.value=current.frames-1;thingTypeEditor.updatePreview();}
+                    check(thingTypeEditor.bitmapView.source!=null,"Native cache miss erased the previous preview frame");
+                    previewSettled=0;phase=9;
+                } else if(phase==9){
+                    thingTypeEditor.updatePreview();validateNow();
+                    if(source.busy)previewSettled=0;else previewSettled++;
+                    if(previewSettled>=2){capture(categories[at]);trace("PASS native category "+categories[at]+" objects="+thingList.length);phase=2;}
+                } else if(phase==4 && thingData && thingData.category=="missile" && !source.session.busy){
+                    check(ThingListItem(thingList.dataProvider.getItemAt(0)).thing.category=="missile","Stale page replaced current category");
+                    currentCategory="item";nativeSearchInput.text="white flower";searchNativeObjects();phase=5;
+                } else if(phase==5 && thingData && thingData.category=="item" && thingList.length && !source.session.busy){
+                    check(thingList.length<=100,"Search unbounded");
+                    check(ThingListItem(thingList.dataProvider.getItemAt(0)).thing.name.toLowerCase().indexOf("white flower")>=0,"Native name search failed");
+                    clear();check(!sessionFolder.exists,"Owned session not cleaned");
+                    openNativeProject(new File(args[0]),new File(args[1]));phase=6;
+                } else if(phase==6 && thingData is ModernThingData && nativeSource && ModernThingData(thingData).cacheBytes>0){
+                    source=nativeSource;initialMaxItem=clientInfo.maxItemId;duplicateId=initialMaxItem+1;duplicateThings(Vector.<uint>([100]),"item");phase=10;
+                } else if(phase==10 && thingData && thingData.id==duplicateId && !source.busy){
+                    check(nexaActions.canSave && clientChanged,"Native edits not tracked");
+                    createNewProject();var create:CreateAssetsWindow;
+                    for(child=0;child<systemManager.rawChildren.numChildren;child++)if(systemManager.rawChildren.getChildAt(child) is CreateAssetsWindow)create=systemManager.rawChildren.getChildAt(child) as CreateAssetsWindow;
+                    check(create!=null,"New dialog not opened");create.version=VersionStorage.getInstance().getByValueString("8.60 v2");create.spriteDimension=SpriteDimensionStorage.getInstance().getBySizes(32,4096);create.validateNow();create.confirmButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    check(nativeSource==source && clientChanged,"New cleared unsaved native project");dismissAlerts();
+                    openProject(guardedLegacyFolder());var legacyOpen:OpenAssetsWindow;
+                    for(child=0;child<systemManager.rawChildren.numChildren;child++)if(systemManager.rawChildren.getChildAt(child) is OpenAssetsWindow)legacyOpen=systemManager.rawChildren.getChildAt(child) as OpenAssetsWindow;
+                    check(legacyOpen!=null,"Legacy Open dialog missing");legacyOpen.validateNow();check(legacyOpen.loadButton.enabled,"Guard fixture not loadable");legacyOpen.loadButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    check(nativeSource==source && clientChanged,"Legacy Open cleared unsaved native project");dismissAlerts();sendCommand(new SettingsCommand(settings));
+                    var revisionBefore:Number=source.revision;removeSpritesIds(new Vector.<uint>(101));check(source.revision==revisionBefore && !source.busy,"Oversized sprite removal enqueued partial changes");
+                    for(var job:int=0;job<16;job++)source.request("stats",{});
+                    check(!source.canEnqueue(4),"Queue capacity ignored follow-up jobs");removeSpritesIds(Vector.<uint>([source.inventory.firstSprite]));check(source.revision==revisionBefore,"Busy sprite removal changed revision");phase=54;
+                } else if(phase==54 && !source.busy){
+                    thingTypeEditor.dispatchEvent(new ModernFlagEvent(13,true));phase=11;
+                } else if(phase==11 && thingData && thingData.id==duplicateId && thingData.thing.isUnpassable && !source.busy){
+                    var imbue:Object;for each(var row:Object in ModernThingData(thingData).flagRows)if(row.number==60)imbue=row;
+                    check(imbue && imbue.structured,"Missing typed attributes");beforeAttributeRevision=source.revision;
+                    flagEditor=thingTypeEditor.modernFlagsPanel.edit(imbue);phase=21;
+                } else if(phase==21){
+                    flagEditor.validateNow();check(flagEditor.fieldList.dataProvider.length==1,"Imbuement fields missing");
+                    var field:Object=flagEditor.fieldList.dataProvider.getItemAt(0);field.present=true;field.value="3";flagEditor.enabledFlag.selected=true;
+                    flagEditor.validateNow();capture("edit-flag-attributes");flagEditor.apply();phase=22;
+                } else if(phase==22 && !source.busy){
+                    var applied:Boolean=false;for each(row in ModernThingData(thingData).flagRows)if(row.number==60)applied=row.value.indexOf("3")>=0;
+                    check(applied && source.revision==beforeAttributeRevision+1,"Typed flag event duplicated or not applied; applied="+applied+", revision="+source.revision+" before="+beforeAttributeRevision+" status="+statusLabel.text);copyObjectHandler(new Event("copy"));phase=12;
+                } else if(phase==12 && nexaActions.hasClipboard && !source.busy){
+                    nativeMutation("native-paste",{category:"item",ids:[duplicateId],deleteAfterPaste:true});phase=13;
+                } else if(phase==13 && !source.busy && !nexaActions.hasClipboard){
+                    removeThings(Vector.<uint>([duplicateId]),"item");phase=14;
+                } else if(phase==14 && !source.busy && clientInfo.maxItemId==initialMaxItem){
+                    var png:BitmapData=new BitmapData(64,64,true,0x80644220),pngFile:File=snapshots.resolvePath("import-test.png"),pngStream:FileStream=new FileStream();
+                    pngStream.open(pngFile,FileMode.WRITE);pngStream.writeBytes(png.encode(png.rect,new PNGEncoderOptions()));pngStream.close();png.dispose();
+                    duplicateId=clientInfo.maxItemId+1;
+                    nativeMutation("native-import-png",{category:"item",file:pngFile.nativePath,asObject:true});phase=17;
+                } else if(phase==17 && !source.busy && thingData && thingData.id==duplicateId && ModernThingData(thingData).cacheBytes>0){
+                    check(thingData.thing.frameGroups[0].width==2 && thingData.thing.frameGroups[0].height==2,"PNG was truncated to 32px");
+                    var importedFrame:BitmapData=ModernThingData(thingData).image(0,0,0,0,0,0);if(!importedFrame)return;
+                    check(importedFrame.getPixel32(0,0)==0x80644220,"PNG import did not preserve ARGB");
+                    source.request("native-export-object",{category:"item",appearanceId:duplicateId,file:snapshots.resolvePath("roundtrip.nexaobject").nativePath},function(result:Object):void{nativeMutation("native-import-object",{category:"item",file:result.file});});duplicateId++;phase=18;
+                } else if(phase==18 && !source.busy && thingData && thingData.id==duplicateId && ModernThingData(thingData).cacheBytes>0){
+                    source.request("native-export-png",{category:"item",appearanceId:duplicateId,sprite:false,file:snapshots.resolvePath("export-test.png").nativePath},function(result:Object):void{});phase=19;
+                } else if(phase==19 && !source.busy && snapshots.resolvePath("export-test.png").exists){
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));phase=55;
+                } else if(phase==55){
+                    nativeExportDialog=exportWindow();if(!nativeExportDialog)return;
+                    check(nativeObjectExportActive,"Export state missing while dialog is open");nexaActions.dispatchEvent(new NexaUiEvent("export"));check(exportWindow()==nativeExportDialog,"Reentrant export replaced the dialog");
+                    nativeExportDialog.cancelButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));check(!nativeObjectExportActive,"Cancel retained export state");
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));nativeExportDialog=exportWindow();check(nativeExportDialog!=null,"Export did not restart after cancel");
+                    nativeExportDialog.dispatchEvent(new Event("exportNativePackage"));
+                    var packageWindow:ModernExportWindow;
+                    for(child=0;child<systemManager.rawChildren.numChildren;child++)if(systemManager.rawChildren.getChildAt(child) is ModernExportWindow)packageWindow=systemManager.rawChildren.getChildAt(child) as ModernExportWindow;
+                    check(packageWindow && nativeObjectExportActive,"Package route lost batch state");packageWindow.close();check(!nativeObjectExportActive,"Package close retained export state");
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));nativeExportDialog=exportWindow();nativeExportDialog.directory=snapshots;nativeExportDialog.fileName="export-test";nativeExportDialog.format="png";nativeExportDialog.validateNow();
+                    nativeExportDialog.confirmButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));check(nativeObjectExportActive,"Preflight lost export state");
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));check(exportWindow()==null,"Second export entered between preflight and worker");phase=56;
+                } else if(phase==56 && !source.busy && !nativeObjectExportActive){
+                    check(statusLabel.text.indexOf("new export file")>=0,"Expected worker failure for existing output");
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));nativeExportDialog=exportWindow();check(nativeExportDialog!=null,"Worker failure blocked retry");
+                    exportRevisionBefore=source.revision;source.request("native-flag",{category:"item",appearanceId:duplicateId,number:13,enabled:!thingData.thing.isUnpassable});phase=57;
+                } else if(phase==57 && !source.busy){
+                    check(source.revision>exportRevisionBefore && !nativeObjectExportActive,"Revision change did not cancel export");nativeExportDialog.cancelButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    batchExportIds=Vector.<uint>([getActiveThingList().dataProvider.getItemAt(0).id,duplicateId]);
+                    getActiveThingList().selectedIds=batchExportIds;validateNow();check(getActiveThingList().selectedIds.length==2,"Batch fixture selection");
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));nativeExportDialog=exportWindow();nativeExportDialog.directory=snapshots;nativeExportDialog.fileName="native-multi";nativeExportDialog.format="png";nativeExportDialog.validateNow();nativeExportDialog.confirmButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=58;
+                } else if(phase==58 && !source.busy && !nativeObjectExportActive){
+                    check(snapshots.resolvePath("native-multi-"+batchExportIds[0]+".png").exists && snapshots.resolvePath("native-multi-"+duplicateId+".png").exists,"Native batch stopped before all IDs");
+                    getActiveThingList().selectedIds=Vector.<uint>([duplicateId]);validateNow();nexaActions.dispatchEvent(new NexaUiEvent("export"));phase=62;
+                } else if(phase==62){
+                    nativeExportDialog=exportWindow();if(!nativeExportDialog)return;
+                    nativeExportDialog.directory=snapshots;nativeExportDialog.fileName="native-selected-project";nativeExportDialog.format="modern";nativeExportDialog.validateNow();
+                    check(nativeExportDialog.enableModernFormat && nativeExportDialog.modernFormatRadioButton.selected,"Modern format missing from native Export");capture("native-modern-project-export");nativeExportDialog.confirmButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=63;
+                } else if(phase==63 && !source.busy && !nativeObjectExportActive){
+                    check(snapshots.resolvePath("native-selected-project/catalog-content.json").exists && nativeSource==source && clientChanged,"Selected native project export failed or cleared dirty state");nexaActions.dispatchEvent(new NexaUiEvent("export"));phase=34;
+                } else if(phase==34){
+                    for(var child:int=0;child<systemManager.rawChildren.numChildren;child++)if(systemManager.rawChildren.getChildAt(child) is ExportWindow)nativeExportDialog=systemManager.rawChildren.getChildAt(child) as ExportWindow;
+                    if(!nativeExportDialog)return;
+                    nativeExportDialog.directory=snapshots;nativeExportDialog.fileName="native-dialog";nativeExportDialog.format="obd";
+                    nativeExportDialog.version=VersionStorage.getInstance().getByValueString("8.60 v2");nativeExportDialog.obdVersion=200;nativeExportDialog.validateNow();
+                    check(nativeExportDialog.confirmButton.enabled && nativeExportDialog.enableNativePackage,"Standard native export dialog unavailable");capture("native-standard-export-obd");
+                    nativeExportDialog.confirmButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=35;
+                } else if(phase==35 && !source.busy && !nativeObjectExportActive && snapshots.resolvePath("native-dialog.obd").exists){
+                    check(new OBDEncoder(new ObjectBuilderSettings()).decodeFromFile(snapshots.resolvePath("native-dialog.obd")).clientVersion==860,"Native OBD target not honored");
+                    source.request("native-object-export",{category:"item",appearanceId:duplicateId,version:860,datSignature:VersionStorage.getInstance().getByValueString("8.60 v2").datSignature,sprSignature:VersionStorage.getInstance().getByValueString("8.60 v2").sprSignature},function(model:Object):void {
+                        var settings:ObjectBuilderSettings=new ObjectBuilderSettings(),encoder:OBDEncoder=new OBDEncoder(settings);
+                        model.pixels=NativeObjectExport.packet(model.file);model.file=null;var packetHash:String=MD5.hashBytes(model.pixels);
+                        for each(var obd:uint in [100,200,300]){
+                            var file:File=snapshots.resolvePath("modern-to-legacy-v"+obd+".obd");NativeObjectExport.write(model,file.nativePath,source.directory.nativePath,obd,860,true,90,settings);
+                            var decoded:ThingData=encoder.decodeFromFile(file);check(decoded.thing.frameGroups[0].width==2 && decoded.thing.frameGroups[0].height==2,"OBD geometry lost");
+                            var bitmap:BitmapData=decoded.getBitmap(decoded.thing.frameGroups[0]);check(bitmap.getPixel32(0,0)==0x80644220,"OBD ARGB pixel lost");bitmap.dispose();
+                            check(MD5.hashBytes(model.pixels)==packetHash,"Repeated export destroyed model.pixels");
+                        }
+                        for each(var format:String in ["png","bmp","jpg"])NativeObjectExport.write(model,snapshots.resolvePath("modern-legacy-export."+format).nativePath,source.directory.nativePath,200,860,true,90,settings);
+                        // Copy the packet before another request can reuse the fixed helper file.
+                        workerExport=snapshots.resolvePath("worker-native-export.obd");
+                        sendCommand(new ExportNativeObjectCommand(model,workerExport.nativePath,source.directory.nativePath,200,860,true,90));
+                    });phase=28;
+                } else if(phase==28 && !source.busy && workerExport && workerExport.exists){
+                    source.request("native-export-aec",{category:"item",ids:[duplicateId],file:snapshots.resolvePath("ui-native.aec").nativePath},function(result:Object):void {
+                        importNativeObjectFiles([snapshots.resolvePath("modern-to-legacy-v100.obd").nativePath,snapshots.resolvePath("modern-to-legacy-v200.obd").nativePath,snapshots.resolvePath("modern-to-legacy-v300.obd").nativePath,result.file]);
+                    });nativeImportedId=duplicateId+4;phase=50;
+                } else if(phase==50 && !source.busy && clientInfo.maxItemId==nativeImportedId){
+                    check(clientChanged && nexaActions.canSave,"Native OBD/AEC import did not set dirty state");
+                    requestEditThing(nativeImportedId,"item");phase=51;
+                } else if(phase==51 && !source.busy && thingData && thingData.id==nativeImportedId && ModernThingData(thingData).cacheBytes>0){
+                    var importedNative:BitmapData=ModernThingData(thingData).image(0,0,0,0,0,0);if(!importedNative)return;
+                    check(importedNative.getPixel32(0,0)==0x80644220,"AEC import pixel composition/alpha mismatch");capture("native-obd-aec-import");
+                    nexaActions.dispatchEvent(new NexaUiEvent("convertModern"));var signalWindow:ModernConversionWindow;
+                    for(child=0;child<systemManager.rawChildren.numChildren;child++)if(systemManager.rawChildren.getChildAt(child) is ModernConversionWindow)signalWindow=systemManager.rawChildren.getChildAt(child) as ModernConversionWindow;
+                    check(signalWindow!=null,"Conversion handler not connected");signalWindow.validateNow();signalWindow.selectedOnly.selected=false;signalWindow.dispatchEvent(new Event("nativeExportCompleted"));check(clientChanged && clientInfo.changed && nexaActions.canSave,"DAT/SPR export falsely marked native edits saved");signalWindow.close();
+                    nativeMenu.dispatchEvent(new MenuEvent(MenuEvent.SELECTED,Menu.FILE_COMPILE));
+                    check(nativeSaving,"Ctrl+S menu route did not start native Save");phase=29;
+                } else if(phase==29 && !nativeSaving && !source.busy){
+                    check(!nexaActions.canSave && !clientChanged,"In-place native Save did not reset dirty state");
+                    check(source.directory.nativePath==new File(args[0]).nativePath,"Save unexpectedly changed the active folder");
+                    for(child=0;child<systemManager.rawChildren.numChildren;child++)check(!(systemManager.rawChildren.getChildAt(child) is ModernSaveWindow),"Ctrl+S opened Save As modal");
+                    capture("native-save-in-place");compileProjectAs();phase=33;
+                } else if(phase==33){
+                    for(child=0;child<systemManager.rawChildren.numChildren;child++)if(systemManager.rawChildren.getChildAt(child) is ModernSaveWindow)saveWindow=systemManager.rawChildren.getChildAt(child) as ModernSaveWindow;
+                    if(!saveWindow)return;saveWindow.saveTo(snapshots.resolvePath("saved-native-assets"));saveWindow.close();check(saveWindow.parent!=null,"Save As was closed during publication");phase=37;
+                } else if(phase==37 && !source.busy && saveWindow.savedDirectory){
+                    savedNative=saveWindow.savedDirectory;check(savedNative.resolvePath("catalog-content.json").exists,"Native catalog not saved");
+                    check(!nexaActions.canSave && !clientChanged,"Native Save did not reset dirty state");capture("native-save-completed");saveWindow.close();
+                    check(source.directory.nativePath==savedNative.nativePath,"Save As did not switch the active folder");
+                    var originalCopy:File=new File(args[0]);originalCopy.moveTo(originalCopy.parent.resolvePath("original-copy-unavailable"),false);
+                    // Exercise the conversion dialog on the SAME edited session, not a second helper.
+                    conversion=new ModernConversionWindow();conversion.source=source;conversion.category="item";conversion.selection=[duplicateId];conversion.open(this);phase=15;
+                } else if(phase==15){
+                    conversion.validateNow();check(conversion.versions.dataProvider.length==VersionStorage.getInstance().getList().length && conversion.versions.dataProvider.length>80,"Missing registered targets");
+                    conversion.versions.selectedItem=VersionStorage.getInstance().getByValueString("8.60 v1");conversion.validateNow();
+                    conversion.versions.openDropDown();phase=24;
+                } else if(phase==24){
+                    conversion.validateNow();check(conversion.versions.isDropDownOpen,"Target popup did not open");
+                    var index:int=conversion.versions.dataProvider.getItemIndex(VersionStorage.getInstance().getByValueString("8.60 v2"));
+                    var delta:Point=conversion.versions.dataGroup.layout.getScrollPositionDeltaToElement(index);
+                    if(delta)conversion.versions.dataGroup.verticalScrollPosition+=delta.y;phase=26;
+                } else if(phase==26){
+                    conversion.validateNow();capture("legacy-target-versions");index=conversion.versions.dataProvider.getItemIndex(VersionStorage.getInstance().getByValueString("8.60 v2"));
+                    var renderer:Object=conversion.versions.dataGroup.getElementAt(index);check(renderer!=null,"Target renderer missing");
+                    renderer.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_DOWN,true));phase=25;
+                } else if(phase==25){
+                    conversion.validateNow();capture("legacy-target-selected");
+                    var popup:Object=Object(conversion.versions.skin).popUp;
+                    check(!conversion.versions.isDropDownOpen && (!popup || !popup.popUp || !DisplayObject(popup.popUp).parent),"Target dropdown remained visible after mouse selection; open="+conversion.versions.isDropDownOpen+" skin="+conversion.versions.skin.currentState+" selected="+conversion.versions.selectedIndex);
+                    check(Version(conversion.versions.selectedItem).valueStr=="8.60 v2","Mouse selection did not commit the target");
+                    conversion.versions.openDropDown();phase=27;
+                } else if(phase==27){
+                    conversion.versions.validateNow();check(conversion.versions.isDropDownOpen && Object(conversion.versions.skin).popUp.popUp.parent,"Target popup did not reopen after selection");
+                    conversion.versions.closeDropDown(false);conversion.versions.invalidateProperties();conversion.versions.validateNow();
+                    check(Version(conversion.versions.selectedItem).valueStr=="8.60 v2","Canceled dropdown changed target");
+                    conversion.selectedOnly.selected=true;conversion.review();phase=16;
+                } else if(phase==16 && !source.busy && conversion.accept.enabled){
+                    check(conversion.reportText.text.indexOf("DAT/SPR 860")>=0,"Conversion report did not populate");
+                    check(conversion.reportText.text.indexOf("16-bit standard 8.60")>=0,"8.60 small export did not choose standard 16-bit IDs");
+                    conversion.accept.selected=true;conversion.exportTo(snapshots.resolvePath("legacy-export"));phase=20;
+                } else if(phase==20 && !source.busy && conversion.convertedDirectory){
+                    check(conversion.convertedDirectory.resolvePath("Tibia.dat").exists && conversion.convertedDirectory.resolvePath("Tibia.spr").exists,"Conversion UI did not publish output");
+                    legacyDirectory=conversion.convertedDirectory;
+                    capture("export-completed");
+                    conversion.close();
+                    check(source.ready,"Closing conversion destroyed the native session");
+                    var directory:File=nativeSource.session.directory;clear();check(!directory.exists,"Reopened session not cleaned");
+                    var descriptor:OTFI=new OTFI();check(descriptor.load(legacyDirectory.resolvePath("Tibia.otfi")),"Export descriptor missing");
+                    sendCommand(new LoadFilesCommand(legacyDirectory.resolvePath("Tibia.dat"),legacyDirectory.resolvePath("Tibia.spr"),VersionStorage.getInstance().getByValueString("8.60 v2"),null,descriptor.features));phase=23;
+                } else if(phase==23 && clientLoaded && thingData && thingList.length>0){
+                    check(!clientInfo.nativeModern && thingData.id==duplicateId,"Legacy reopen did not select the exported object");
+                    check(ThingListItem(thingList.dataProvider.getItemAt(thingList.length-1)).getBitmap()!=null,"Reopened exported thumbnail missing");capture("reopened-export");
+                    duplicateId=clientInfo.maxItemId+1;
+                    importThingsFromFiles(Vector.<PathHelper>([new PathHelper(snapshots.resolvePath("modern-to-legacy-v200.obd").nativePath,0)]));phase=30;
+                } else if(phase==30 && thingData && thingData.id==duplicateId){
+                    var imported:BitmapData=thingData.getBitmap(thingData.thing.frameGroups[0]);check(imported.getPixel32(0,0)==0x80644220,"Modern OBD imported into legacy with incorrect pixels");imported.dispose();capture("native-obd-imported-legacy");
+                    nexaActions.dispatchEvent(new NexaUiEvent("export"));phase=59;
+                } else if(phase==59){
+                    nativeExportDialog=exportWindow();if(!nativeExportDialog)return;
+                    nativeExportDialog.directory=snapshots;nativeExportDialog.fileName="legacy-modern-project";nativeExportDialog.format="modern";nativeExportDialog.validateNow();
+                    check(nativeExportDialog.enableModernFormat && nativeExportDialog.modernFormatRadioButton.selected,"Modern format missing from legacy Export");capture("legacy-modern-project-export");nativeExportDialog.confirmButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));check(legacyModernExportActive,"Legacy modern export did not start");phase=60;
+                } else if(phase==60 && !legacyModernExportActive){
+                    check(snapshots.resolvePath("legacy-modern-project/catalog-content.json").exists,"Legacy to appearances project failed: "+statusLabel.text);
+                    clear();openNativeProject(snapshots.resolvePath("legacy-modern-project"),new File(args[1]));phase=61;
+                } else if(phase==61 && nativeSource && !nativeSource.busy && thingData && thingData.id==duplicateId && ModernThingData(thingData).cacheBytes>0){
+                    var legacyModern:BitmapData=ModernThingData(thingData).image(0,0,0,0,0,0);if(!legacyModern)return;
+                    check(legacyModern.getPixel32(0,0)==0x80644220,"Legacy to native project lost alpha/pixels/ID");capture("legacy-modern-project-reopened");clear();openNativeProject(savedNative,new File(args[1]));phase=31;
+                } else if(phase==31 && clientLoaded && nativeSource && !nativeSource.busy){
+                    check(clientInfo.maxItemId==nativeImportedId,"Imported objects were not retained by native Save As");
+                    requestEditThing(nativeImportedId-1,"item");phase=52;
+                } else if(phase==52 && !nativeSource.busy && thingData && thingData.id==nativeImportedId-1 && ModernThingData(thingData).cacheBytes>0){
+                    var obdNative:BitmapData=ModernThingData(thingData).image(0,0,0,0,0,0);if(!obdNative)return;
+                    check(obdNative.getPixel32(0,0)==0x80644220,"Native OBD v3 import did not persist pixels after Save/reopen");capture("native-obd-save-reopened");
+                    requestEditThing(duplicateId-1,"item");phase=32;
+                } else if(phase==32 && thingData && thingData.id==duplicateId-1 && ModernThingData(thingData).cacheBytes>0){
+                    var reopened:BitmapData=ModernThingData(thingData).image(0,0,0,0,0,0);if(!reopened)return;
+                    check(reopened.getPixel32(0,0)==0x80644220,"Saved native source did not retain edited RGBA");capture("native-save-reopened");
+                    source=nativeSource;setSpritesView(0);sendCommand(new GetSpriteListCommand(source.inventory.lastSprite));phase=38;
+                } else if(phase==38 && !source.busy && spritesList.selectedSprite && spritesList.selectedId==source.inventory.lastSprite){
+                    copiedPixelsHash=MD5.hashBytes(spritesList.selectedSprite.pixels);copySpriteButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    sendCommand(new GetSpriteListCommand(1));phase=39;
+                } else if(phase==39 && !source.busy && spritesList.selectedId==1){
+                    pasteSpriteButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=40;
+                } else if(phase==40 && !source.busy && clientChanged){
+                    check(MD5.hashBytes(spritesList.selectedSprite.pixels)==copiedPixelsHash,"Native Copy/Paste changed ARGB pixels");
+                    var closing:Event=new Event(Event.CLOSING,false,true);applicationClosingHandler(closing);
+                    check(closing.isDefaultPrevented() && nativeSource==source && clientChanged,"Closing discarded native edits before asking");phase=46;
+                } else if(phase==46){
+                    var unsaved:Alert;
+                    for(child=0;child<systemManager.rawChildren.numChildren;child++)if(systemManager.rawChildren.getChildAt(child) is Alert)unsaved=systemManager.rawChildren.getChildAt(child) as Alert;
+                    if(!unsaved)return;unsaved.validateNow();unsaved.closeButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK,true));
+                    check(nativeSource==source && clientChanged && source.ready,"Canceling close lost native working copy");
+                    nativeMutation("native-link-sprite",{category:"item",appearanceId:100,group:0,frame:0,patternX:0,patternY:0,patternZ:0,layer:0,spriteId:1});phase=41;
+                } else if(phase==41 && !source.busy && thingData && thingData.id==100){
+                    var catalogFile:File=savedNative.resolvePath("catalog-content.json"),io:FileStream=new FileStream();catalogBeforeFailure=new ByteArray();
+                    io.open(catalogFile,FileMode.READ);io.readBytes(catalogBeforeFailure);io.close();
+                    io.open(catalogFile,FileMode.APPEND);io.writeUTFBytes("\n");io.close();
+                    nativeMenu.dispatchEvent(new MenuEvent(MenuEvent.SELECTED,Menu.FILE_COMPILE));phase=42;
+                } else if(phase==42 && !nativeSaving && !source.busy){
+                    check(clientChanged && nexaActions.canSave && statusLabel.text.indexOf("changed on disk")>=0,"Failed native Save cleared dirty or hid the concrete failure");
+                    io=new FileStream();io.open(savedNative.resolvePath("catalog-content.json"),FileMode.WRITE);io.writeBytes(catalogBeforeFailure);io.close();catalogBeforeFailure.clear();
+                    nexaActions.saveButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=43;
+                } else if(phase==43 && !nativeSaving && !source.busy){
+                    check(!clientChanged && !nexaActions.canSave,"Successful Ctrl+S retry did not reset dirty");
+                    clear();openNativeProject(savedNative,new File(args[1]));phase=44;
+                } else if(phase==44 && nativeSource && !nativeSource.busy && thingData && thingData.id==100 && ModernThingData(thingData).cacheBytes>0){
+                    sendCommand(new GetSpriteListCommand(1));phase=45;
+                } else if(phase==45 && !nativeSource.busy && spritesList.selectedId==1 && spritesList.selectedSprite){
+                    check(MD5.hashBytes(spritesList.selectedSprite.pixels)==copiedPixelsHash,"Copy/Paste sprite did not persist after Ctrl+S and reopening the SAME modern folder");capture("native-copy-paste-save-reopened");
+                    var oracle:Object={counts:nativeSource.inventory.categories,spriteCount:nativeSource.inventory.spriteCount,sprite:{id:1,width:64,height:64,argbMd5:copiedPixelsHash},item:100,reference:1};
+                    io=new FileStream();io.open(snapshots.resolvePath("native-validation.json"),FileMode.WRITE);io.writeUTFBytes(JSON.stringify(oracle));io.close();
+                    trace("PASS native main: OBD v1/v2/v3 and AEC batch import/export, native Save/reopen, direct Ctrl+S (no modal), independent Save As, pixel/flag persistence, Copy/Paste, failed Save retains dirty, PNG/BMP/JPG/OBD and unchanged legacy import; AS memory "+Math.round(System.totalMemory/1048576)+" MiB");
+                    trace("Native screenshots: "+snapshots.nativePath);clock.stop();NativeApplication.nativeApplication.exit(0);
+                }
+            }catch(error:Error){failure("Phase "+phase+": "+error.getStackTrace());}
+        }
+    ]]></fx:Script>
+</local:ObjectBuilder>

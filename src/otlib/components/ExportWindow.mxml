@@ -150,7 +150,7 @@ THE SOFTWARE.
             }
             public function set format(value:String):void
             {
-                if (isNullOrEmpty(value) || !_enableObdFormat && value == OTFormat.OBD)
+                if (isNullOrEmpty(value) || !_enableObdFormat && value == OTFormat.OBD || !enableModernFormat && value == "modern")
                     value = ImageFormat.PNG;
                 else
                     value = value.toLowerCase();
@@ -167,6 +167,8 @@ THE SOFTWARE.
             {
                 return _enableObdFormat;
             }
+            [Bindable] public var enableNativePackage:Boolean=false;
+            [Bindable] public var enableModernFormat:Boolean=false;
             public function set enableObdFormat(value:Boolean):void
             {
                 if (_enableObdFormat != value)
@@ -281,6 +283,10 @@ THE SOFTWARE.
                         obdFormatRadioButton.selected = true;
                         stackView.selectedIndex = 3;
                         break;
+                    case "modern":
+                        modernFormatRadioButton.selected = true;
+                        stackView.selectedIndex = 4;
+                        break;
                 }
             }
             
@@ -303,6 +309,7 @@ THE SOFTWARE.
             
             protected function creationCompleteHandler(event:FlexEvent):void
             {
+                if(enableModernFormat)height=Math.max(height,480);
                 _obdVersionCollection = new ArrayCollection();
                 if (obdV3)
                     _obdVersionCollection.addItem({label: "v3", version: OBDVersions.OBD_VERSION_3});
@@ -480,9 +487,9 @@ THE SOFTWARE.
 
         <mg:GroupBox label="@Resource(key='format', bundle='strings')" width="100%">
             <mg:layout>
-                <s:HorizontalLayout gap="20" padding="10" verticalAlign="middle"/>
+                <s:VerticalLayout gap="8" padding="10"/>
             </mg:layout>
-
+            <s:HGroup gap="20" verticalAlign="middle">
             <s:RadioButton id="pngFormatRadioButton"
                 label="PNG"
                 groupName="formatRadioButtonGroup"/>
@@ -496,6 +503,9 @@ THE SOFTWARE.
                 label="OBD"
                 visible="false"
                 groupName="formatRadioButtonGroup"/>
+            </s:HGroup>
+            <s:RadioButton id="modernFormatRadioButton" label="Modern assets — appearances.dat" value="modern"
+                visible="{enableModernFormat}" includeInLayout="{enableModernFormat}" groupName="formatRadioButtonGroup"/>
         </mg:GroupBox>
 
         <mg:GroupBox label="@Resource(key='options', bundle='strings')" width="100%">
@@ -556,6 +566,12 @@ THE SOFTWARE.
                         change="obdVersionDropDownListChangeHandler(event)">
                     </s:DropDownList>
                 </s:NavigatorContent>
+                <s:NavigatorContent>
+                    <s:VGroup padding="10" width="100%">
+                        <s:Label id="modernInfo" width="100%" text="Creates a NEW folder named above with appearances, catalog and spritesheets. Existing files are preserved. Select up to 100 objects (32 MiB pixels)."/>
+                        <s:Label id="modernGroupsInfo" width="100%" text="Legacy animated outfits use the first existing frame for idle and retain the complete moving animation. No new artwork is generated."/>
+                    </s:VGroup>
+                </s:NavigatorContent>
             </mx:ViewStack>
         </mg:GroupBox>
     </s:VGroup>
@@ -565,6 +581,7 @@ THE SOFTWARE.
             <s:HorizontalLayout gap="10" padding="10" verticalAlign="middle" horizontalAlign="right"/>
         </s:layout>
 
+        <s:Button label="Native package / AEC…" visible="{enableNativePackage}" includeInLayout="{enableNativePackage}" click="dispatchEvent(new Event('exportNativePackage'))"/>
         <s:Button id="confirmButton"
             label="@Resource(key='confirm', bundle='strings')"
             minWidth="70"

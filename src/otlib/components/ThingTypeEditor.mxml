@@ -97,6 +97,10 @@ THE SOFTWARE.
             import otlib.core.SpriteDimension;
             import otlib.assets.Assets;
             import ob.settings.ObjectBuilderSettings;
+            import ob.modern.ModernThingData;
+            [Bindable] public var nativeReadOnly:Boolean = false;
+            [Bindable] private var nativeFlags:String = "";
+            [Bindable] private var nativeData:ModernThingData;
             import flash.events.MouseEvent;
             import mx.collections.ArrayList;
             import flash.ui.ContextMenu;
@@ -887,6 +891,7 @@ THE SOFTWARE.
 
             public function updateFrameGroupNameLabel():void
             {
+                if (nativeData) { frameGroupNameLabel.text = nativeData.groupLabels[frameGroupSlider.value]; return; }
                 if (frameGroupSlider.value == 0)
                 {
                     frameGroupNameLabel.text = "Idle / Stand";
@@ -958,6 +963,12 @@ THE SOFTWARE.
                     frameGroupSlider.visible = (_thingData.category == ThingCategory.OUTFIT && frameGroupsNumericStepper.value > 1);
                 }
 
+                if (nativeReadOnly)
+                {
+                    frameGroupSlider.visible = _thingBinding.groups > 1;
+                    updateNativeView();
+                    return;
+                }
                 if (_filmRollMode && _frameGroup.frames > 1)
                 {
                     if (isOutfitOrMissile)
@@ -981,6 +992,7 @@ THE SOFTWARE.
             
             public function invalidateThingData():void
             {
+                if (nativeReadOnly) return;
                 _invalidateThingData = true;
                 invalidateProperties();
             }
@@ -1107,6 +1119,11 @@ THE SOFTWARE.
             
             private function setThingData(thingData:ThingData):void
             {
+                if (nativeData) nativeData.events.removeEventListener(Event.CHANGE, nativePreviewChanged);
+                nativeData = thingData as ModernThingData;
+                nativeReadOnly = nativeData != null;
+                nativeFlags = nativeData ? nativeData.flags : "";
+                if (nativeData) nativeData.events.addEventListener(Event.CHANGE, nativePreviewChanged, false, 0, true);
                 _loading = true;
                 _editPixelsMode = false;
                 _pixelsModified = false;
@@ -1157,12 +1174,19 @@ THE SOFTWARE.
                     thingView.frameGroupType = FrameGroupType.DEFAULT;
             
                     _thingBinding.copyFrom(thingData);
+                    if (nativeData)
+                    {
+                        _thingBinding.frameGroups = [];
+                        for each (var nativeGroup:FrameGroup in thingData.thing.frameGroups)
+                            _thingBinding.frameGroups[nativeGroup.type] = nativeGroup.clone();
+                        _thingBinding.groups = thingData.thing.frameGroups.length;
+                    }
                     setCurrentFrameGroup(_thingBinding.getFrameGroup(thingView.frameGroupType));
             
                     addonGroup.visible = (isOutfit && _frameGroup.patternY > 1);
                     cropSizeNumericStepper.maximum = Math.max(_frameGroup.width * SpriteExtent.DEFAULT_SIZE, _frameGroup.height * SpriteExtent.DEFAULT_SIZE);
             
-                    frameGroupSlider.visible = (isOutfit && _thingBinding.groups > 1);
+                    frameGroupSlider.visible = ((isOutfit || nativeReadOnly) && _thingBinding.groups > 1);
                     animationModeDropDownList.selectedIndex = _frameGroup.animationMode;
                     loopCountNumericStepper.value = _frameGroup.loopCount;
                     startFrameNumericStepper.value = _frameGroup.startFrame;
@@ -1180,6 +1204,7 @@ THE SOFTWARE.
             
                 setPreviewMode(false);
             
+                if (nativeData && _filesInfo) setFilesInfo(_filesInfo);
                 _changed = false;
                 _loading = false;
 
@@ -1323,6 +1348,8 @@ THE SOFTWARE.
                     }
                 }
             
+                animationGroupBox.visible = visible;
+                if (nativeReadOnly) visible = _frameGroup && _frameGroup.frames > 1;
                 animationGroupBox.visible = visible;
                 animationGroupBox.includeInLayout = visible;
                 minimumGroup.visible = visible;
@@ -2420,7 +2447,7 @@ THE SOFTWARE.
                 _previewMode = enabled;
                 if (_previewMode)
                 {
-                    thingData = _thingBinding.toThingData(_thingData.clientVersion);
+                    thingData = nativeReadOnly ? _thingData : _thingBinding.toThingData(_thingData.clientVersion);
                     frameGroupType = _frameGroup.type;
             
                     thingView.outfitData = new OutfitData(0, 0, 0, 0, addonsSlider.value);
@@ -2450,11 +2477,11 @@ THE SOFTWARE.
                 animationSlider.mouseChildren = controlsEnabled;
                 mountGroup.enabled = controlsEnabled;
                 addonGroup.enabled = controlsEnabled;
-                patternsTileGroup.enabled = controlsEnabled;
-                minimumGroup.enabled = controlsEnabled;
-                maximumGroup.enabled = controlsEnabled;
+                patternsTileGroup.enabled = controlsEnabled && !nativeReadOnly;
+                minimumGroup.enabled = controlsEnabled && !nativeReadOnly;
+                maximumGroup.enabled = controlsEnabled && !nativeReadOnly;
                 layerGroup.enabled = controlsEnabled;
-                animationTileGroup.enabled = controlsEnabled;
+                animationTileGroup.enabled = controlsEnabled && !nativeReadOnly;
                 frameGroup.enabled = controlsEnabled;
 
                 // Restore film roll view after animation stops
@@ -2470,6 +2497,7 @@ THE SOFTWARE.
             
             private function propertyChanged(property:String, oldValue:Object, newValue:Object):void
             {
+                if (nativeReadOnly) return;
                 _changed = true;
 
                 var evt:ThingEditorEvent = new ThingEditorEvent(ThingEditorEvent.THING_PROPERTY_CHANGE, this.thingData);
@@ -2478,6 +2506,19 @@ THE SOFTWARE.
                 evt.oldValue = oldValue;
                 evt.newValue = newValue;
                 dispatchEvent(evt);
+            }
+            private function nativePreviewChanged(event:Event):void { if (!_previewMode) updateNativeView(); }
+            public function nativeSelection():Object {return {group:frameGroupSlider.value,frame:animationSlider.value,patternX:_patternX%_frameGroup.patternX,patternY:(_patternY+addonsSlider.value)%_frameGroup.patternY,patternZ:mountSlider.value%_frameGroup.patternZ,layer:layerSlider.value};}
+            private function updateNativeView():void
+            {
+                if (!nativeData || !_frameGroup) return;
+                var directional:Boolean = nativeData.category == ThingCategory.OUTFIT || nativeData.category == ThingCategory.MISSILE;
+                var image:BitmapData = nativeData.image(frameGroupSlider.value, animationSlider.value, _patternX,
+                    _patternY + addonsSlider.value, mountSlider.value, layerSlider.value, !directional);
+                if (!image) return; // Keep the last complete frame while native I/O is pending.
+                buttonsContainer.removeAllElements();
+                if (_viewBitmap) { bitmapView.source = null; _viewBitmap.dispose(); _viewBitmap = null; }
+                if (image) { _viewBitmap = image.clone(); bitmapView.source = _viewBitmap; buttonsContainer.width = image.width; buttonsContainer.height = image.height; }
             }
             
             // --------------------------------------
@@ -3137,6 +3178,7 @@ THE SOFTWARE.
                             <s:Spacer width="100%"/>
 
                             <s:CheckBox id="editPixelsCheckBox"
+                                enabled="{!nativeReadOnly}"
                                 label="{resourceManager.getString('strings', 'nexa.editPixels')}"
                                 selected="{_editPixelsMode}"
                                 change="{_editPixelsMode = editPixelsCheckBox.selected; clearMultiSelection(); if (_editPixelsMode) setFocus(); if (_filmRollMode) updatePreview();}"/>
@@ -3170,6 +3212,7 @@ THE SOFTWARE.
                             </s:DropDownList>
 
                             <s:CheckBox id="filmRollCheckBox"
+                                enabled="{!nativeReadOnly}"
                                 label="{resourceManager.getString('strings', 'nexa.filmRoll')}"
                                 selected="{_filmRollMode}"
                                 change="{_filmRollMode = filmRollCheckBox.selected; clearMultiSelection(); updatePreview();}"/>
@@ -3370,6 +3413,7 @@ THE SOFTWARE.
 
                     <!-- has bones group -->
                     <mg:GroupCheckBox id="hasBonesGroupCheckBox"
+                        enabled="{!nativeReadOnly}"
                         label="{resourceManager.getString('strings', 'hasBones')}"
                         width="100%"
                         selected="{_thingBinding.hasBones}"
@@ -3560,7 +3604,12 @@ THE SOFTWARE.
         </s:NavigatorContent>
         <s:NavigatorContent label="{resourceManager.getString('strings', 'properties')}"
             width="100%" height="100%">
+            <s:VGroup width="100%" height="100%">
+            <obmodern:ModernFlagsPanel xmlns:obmodern="ob.modern.*" id="modernFlagsPanel" rows="{nativeData ? nativeData.flagRows : []}"
+                visible="{nativeReadOnly}" includeInLayout="{nativeReadOnly}"/>
             <s:Scroller id="propertiesScroller" width="100%" height="100%"
+                visible="{!nativeReadOnly}" includeInLayout="{!nativeReadOnly}"
+                enabled="{!nativeReadOnly}"
                 mouseWheel="onPropertiesMouseWheel(event)">
                 <s:Group>
                     <s:layout>
@@ -4151,17 +4200,24 @@ THE SOFTWARE.
                     </mg:GroupBox>
                 </s:Group>
             </s:Scroller>
+            </s:VGroup>
         </s:NavigatorContent>
 
-        <!-- Attributes Tab (only for items, requires items.xml) -->
+        <!-- Native metadata inspection is independent of legacy server items.xml. -->
         <s:NavigatorContent label="{resourceManager.getString('strings', 'attributes')}"
             width="100%" height="100%"
-            enabled="{_thingData != null &amp;&amp; _thingData.category == ThingCategory.ITEM &amp;&amp; _filesInfo != null &amp;&amp; _filesInfo.otbLoaded}">
+            enabled="{nativeReadOnly || (_thingData != null &amp;&amp; _thingData.category == ThingCategory.ITEM &amp;&amp; _filesInfo != null &amp;&amp; _filesInfo.otbLoaded)}">
+            <s:VGroup width="100%" height="100%">
+            <modern:ModernAttributesPanel xmlns:modern="ob.modern.*" id="modernAttributesPanel"
+                width="100%" height="100%" rows="{nativeData ? nativeData.metadataRows : null}"
+                visible="{nativeReadOnly}" includeInLayout="{nativeReadOnly}"/>
             <otlib:AttributesEditor id="attributesEditor"
+                visible="{!nativeReadOnly}" includeInLayout="{!nativeReadOnly}"
                 width="100%" height="100%" minHeight="0" minWidth="0"
                 thingData="{_thingData}"
                 settings="{_settings}"
                 change="onAttributesEditorChange(event)"/>
+            </s:VGroup>
         </s:NavigatorContent>
     </nail:TabNavigator>
 </s:Group>

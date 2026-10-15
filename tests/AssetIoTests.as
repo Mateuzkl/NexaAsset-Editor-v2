@@ -69,6 +69,7 @@ package
             {
                 testRoot.createDirectory();
                 testBitmaps();
+                testTransparentPixels();
                 testFormats();
                 testWindowRefill();
                 testSequentialFileParts();
@@ -137,6 +138,34 @@ package
             var v:Version = new Version(); v.value = 860; v.valueStr = "8.60 test";
             v.datSignature = 0x55667788; v.sprSignature = 0x11223344;
             return v;
+        }
+
+        private function testTransparentPixels():void
+        {
+            // Transparent RGB is arbitrary: modern sheets use magenta, not just black.
+            var pixels:ByteArray = new ByteArray(); pixels.length = 4096;
+            for (var i:int = 0; i < 1024; i++) {
+                pixels[i*4+1] = 255; pixels[i*4+3] = 255;
+            }
+            for each (var rgba:Boolean in [false,true]) {
+                var sprite:otlib.sprites.Sprite = new otlib.sprites.Sprite(1,rgba);
+                sprite.setPixels(pixels);
+                check(sprite.isEmpty, "Alpha-zero magenta must be an empty SPR in RGB/RGBA.");
+                pixels[4] = 128; pixels[5] = 12; pixels[6] = 34; pixels[7] = 56;
+                pixels[4092] = 255; pixels[4093] = 255; pixels[4094] = 0; pixels[4095] = 255;
+                sprite.setPixels(pixels);
+                var decoded:ByteArray = sprite.getPixels();
+                for (i = 0; i < 1024; i++) {
+                    var offset:int = i*4;
+                    if (pixels[offset] == 0) check(decoded[offset] == 0, "Transparent pixel became opaque: " + i);
+                    else check(decoded[offset] == (rgba ? pixels[offset] : 255) && decoded[offset+1] == pixels[offset+1] && decoded[offset+2] == pixels[offset+2] && decoded[offset+3] == pixels[offset+3], "Visible pixel changed: " + i);
+                }
+                // A visible magenta pixel is legitimate; alpha, not RGB color-keying, decides.
+                check(decoded[4092] == 255 && decoded[4093] == 255 && decoded[4095] == 255, "Visible magenta was removed.");
+                if (rgba) { sprite.transparent = false; check(sprite.getPixels()[0] == 0, "RGBA to RGB restored a transparent background."); }
+                sprite.dispose(); decoded.clear(); pixels[4] = 0; pixels[4092] = 0;
+            }
+            pixels.clear(); note("PASS: alpha-zero colored pixels stay transparent in RGB/RGBA SPR; visible colors remain intact");
         }
 
         private function fixture(file:File, count:uint):void
@@ -644,6 +673,25 @@ package
                 }
             } finally { before.closeSpriteFile(); after.closeSpriteFile(); }
             note("PASS: all " + sprites.spritesCount + " real SPR records validated and preserved byte-for-byte");
+            var edited:ByteArray=reopened.getPixelsStrict(1);edited[0]=255;edited[1]=17;edited[2]=31;edited[3]=59;
+            check(reopened.replaceSprite(1,edited).done,"Real legacy pixel edit");
+            var changedThing:ThingType=things.getThingType(100,ThingCategory.ITEM).clone();changedThing.isUnpassable=!changedThing.isUnpassable;
+            check(things.replaceThing(changedThing,ThingCategory.ITEM,100).done,"Real legacy property edit");
+            var editedDat:File=out.resolvePath("Edited.dat"),editedSpr:File=out.resolvePath("Edited.spr");
+            check(things.compile(editedDat,v,f) && reopened.compile(editedSpr,v,f),"Real edited DAT/SPR save");
+            var editedRead:SpriteStorage=new SpriteStorage();editedRead.load(editedSpr,v,f);check(samePixels(editedRead.getPixelsStrict(1),edited),"Edited standard SPR reopen");editedRead.unload();
+            var editedThings:ThingTypeStorage=new ThingTypeStorage(new ObjectBuilderSettings());editedThings.load(editedDat,v,f);
+            check(editedThings.loaded && editedThings.getThingType(100,ThingCategory.ITEM).isUnpassable==changedThing.isUnpassable,"Edited DAT property reopen");editedThings.unload();
+            var multiOut:File=testRoot.resolvePath("real-multi");multiOut.createDirectory();var multiFeatures:ClientFeatures=f.clone();
+            check(things.compile(multiOut.resolvePath("Tibia.dat"),v,multiFeatures),"Real multi DAT compile");
+            check(reopened.compile(multiOut.resolvePath("spr_index.dat"),v,multiFeatures),"Real edited multi-SPR compile");
+            var multiRead:SpriteStorage=new SpriteStorage();multiRead.load(multiOut.resolvePath("spr_index.dat"),v,multiFeatures);
+            check(multiRead.loaded && multiRead.spritesCount==sprites.spritesCount && samePixels(multiRead.getPixelsStrict(1),edited),"Real multi-SPR edit/reopen");
+            for each(var boundary:uint in Vector.<uint>([65535,65536,sprites.spritesCount]))if(boundary<=sprites.spritesCount)check(samePixels(multiRead.getPixelsStrict(boundary),sprites.getPixelsStrict(boundary)),"Real multi-SPR boundary "+boundary);
+            var back:File=testRoot.resolvePath("real-multi-back.spr");var standardFeatures:ClientFeatures=f.clone();
+            check(multiRead.compile(back,v,standardFeatures),"Real multi-SPR to standard compile");multiRead.unload();
+            var backRead:SpriteStorage=new SpriteStorage();backRead.load(back,v,standardFeatures);check(samePixels(backRead.getPixelsStrict(1),edited),"Real multi-SPR to standard edited-pixel reopen");backRead.unload();
+            edited.clear();note("PASS: real legacy sprite/property edit-save-reopen and full multi-SPR compile/reopen/standard round trip");
             reopened.unload(); sprites.unload(); things.unload();
             var datReload:ThingTypeStorage = new ThingTypeStorage(new ObjectBuilderSettings());
             datReload.addEventListener(ErrorEvent.ERROR, capture); datReload.load(out.resolvePath("Tibia.dat"), v, f);

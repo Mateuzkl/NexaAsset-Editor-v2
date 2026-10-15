@@ -63,6 +63,24 @@ THE SOFTWARE.
                 if (!info)
                     throw new NullArgumentError("info");
             
+                if (info.nativeModern)
+                {
+                    clear();
+                    filesVersionLabel.text = "Modern (Appearances)";
+                    spriteDimensionLabel.text = "32 / 64 px";
+                    datSignatureLabel.text = "Protobuf";
+                    sprSignatureLabel.text = "Catalog / sheets";
+                    itemsCountLabel.text = info.nativeInventory.categories.item.count;
+                    outfitsCountLabel.text = info.nativeInventory.categories.outfit.count;
+                    effectsCountLabel.text = info.nativeInventory.categories.effect.count;
+                    missilesCountLabel.text = info.nativeInventory.categories.missile.count;
+                    spritesCountLabel.text = info.nativeInventory.spriteCount;
+                    transparencyValueLabel.text = "Native alpha";
+                    improvedAnimationsValueLabel.text = "Native phases";
+                    frameGroupsValueLabel.text = "Native groups";
+                    metadataControllerValueLabel.text = "Appearances";
+                    return;
+                }
                 var version:Version = m_versions.getBySignatures(info.datSignature, info.sprSignature);
             
                 spriteDimensionLabel.text = SpriteExtent.DEFAULT_VALUE;

@@ -13,6 +13,7 @@
         import ob.components.OpenAssetsWindow;
         import ob.components.CompileAssetsWindow;
         import ob.components.MergeAssetsWindow;
+        import otlib.components.ExportWindow;
         import flash.events.Event;
         import flash.geom.Point;
         import flash.display.BitmapData;
@@ -29,6 +30,7 @@
         private var openWindow:OpenAssetsWindow;
         private var mergeWindow:MergeAssetsWindow;
         private var warningRoot:File;
+        private var exportWindow:ExportWindow;
         private var nestedClient:File;
         private function startTest():void
         {
@@ -218,9 +220,20 @@
                 mergeWindow.close();
                 trace("PASS: Open/Merge red mismatch, checkbox correction, yellow DAT hints, suggested settings, warning layout");
                 trace("Warning screenshots: " + fixtureRoot.nativePath);
-                NativeApplication.nativeApplication.exit(0);
+                exportWindow=new ExportWindow();exportWindow.enableObdFormat=true;exportWindow.enableModernFormat=true;
+                exportWindow.fileName="modern-outfit";exportWindow.directory=fixtureRoot.parent;exportWindow.version=version;exportWindow.format="modern";exportWindow.open(this);callLater(verifyModernExport);
             }
             catch (error:Error) { fail(error); }
+        }
+        private function verifyModernExport():void
+        {
+            try{
+                exportWindow.validateNow();var bottom:Point=exportWindow.modernGroupsInfo.localToGlobal(new Point(0,exportWindow.modernGroupsInfo.height));var button:Point=exportWindow.confirmButton.localToGlobal(new Point());
+                if(!exportWindow.modernFormatRadioButton.selected || !exportWindow.confirmButton.enabled || bottom.y>button.y)throw new Error("Modern format/options are missing or clipped.");
+                var bitmap:BitmapData=new BitmapData(Math.ceil(exportWindow.width),Math.ceil(exportWindow.height),true,0);try{bitmap.draw(exportWindow);write(fixtureRoot.resolvePath("export-modern.png"),bitmap.encode(bitmap.rect,new PNGEncoderOptions()));}finally{bitmap.dispose();}
+                exportWindow.format="obd";exportWindow.validateNow();if(!exportWindow.obdFormatRadioButton.selected || !exportWindow.confirmButton.enabled)throw new Error("Legacy OBD export format regressed.");exportWindow.close();
+                trace("PASS: modern appearances format, unclipped instructions and unchanged OBD choice");NativeApplication.nativeApplication.exit(0);
+            }catch(error:Error){fail(error);}
         }
         private function snapshot(name:String):void
         {

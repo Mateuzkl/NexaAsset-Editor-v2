@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mg:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark"
+    xmlns:mg="library://ns.mignari.com/mg" width="760" height="570" title="Export native assets to DAT/SPR"
+    creationComplete="start()" removedFromStage="shutdown()">
+    <fx:Script><![CDATA[
+        import flash.events.Event;
+        import flash.filesystem.File;
+        import ob.modern.ModernNativeSource;
+        import ob.modern.ModernAssetEvent;
+        import otlib.core.Version;
+        import otlib.core.VersionStorage;
+        import mx.collections.ArrayCollection;
+        public var source:ModernNativeSource;
+        public var category:String="item";
+        public var selection:Array=[];
+        [Bindable] private var hasSelection:Boolean=false;
+        [Bindable] public var convertedDirectory:File;
+        [Bindable] private var report:String="Opening source…";
+        [Bindable] private var busy:Boolean=true;
+        [Bindable] private var token:String;
+        private var picker:File;
+        private var requested:File;
+        private function start():void {
+            source.addEventListener(ModernAssetEvent.MESSAGE, message);busy=!source.ready;hasSelection=selection.length>0;
+            versions.dataProvider=new ArrayCollection(VersionStorage.getInstance().getList());
+            versions.selectedItem=VersionStorage.getInstance().getByValueString("10.98");
+            report="Export the current native working copy. Select a target and review compatibility losses.";
+        }
+        public function invalidateReview():void {
+            token=null;accept.selected=false;versions.closeDropDown(true);
+        }
+        public function review():void { if(!source.ready || busy)return;invalidateReview();var target:Version=versions.selectedItem as Version;if(!target){report="Select a target version.";return;}busy=true;var fields:Object={version:target.value,datSignature:target.datSignature,sprSignature:target.sprSignature,transparency:preserveAlpha.selected};if(selectedOnly.selected){fields.selection=selection;fields.category=category;}try{source.request("preflight",fields,reviewed);}catch(error:Error){busy=false;report=error.message;} }
+        private function reviewed(result:Object):void {
+            busy=false;token=result.token;report="DAT/SPR "+result.summary.version+" ("+result.summary.versionName+") · "+result.summary.appearances+" objects · "+result.summary.sprites+" tiles\n"+result.summary.notice+"\n";
+            for each(var loss:Object in result.summary.losses)report+="\n"+loss.field+" ("+loss.count+"): "+loss.reason;
+        }
+        private function exportFiles():void {
+            if(!token || !accept.selected || busy)return;
+            picker=new File(File.applicationDirectory.nativePath).parent;
+            picker.addEventListener(Event.SELECT, picked);picker.addEventListener(Event.CANCEL, cancelled);
+            try {picker.browseForDirectory("Select parent folder for a NEW legacy project");}catch(error:Error){releasePicker();report=error.message;}
+        }
+        private function picked(event:Event):void {
+            requested=picker.resolvePath("NexaLegacy-"+Version(versions.selectedItem).value+"-"+new Date().time);
+            releasePicker();exportTo(requested);
+        }
+        public function exportTo(directory:File):void {
+            if(!token || !accept.selected || busy)return;requested=directory;busy=true;
+            try{source.request("export",{token:token,target:requested.nativePath,acceptLosses:true},function(result:Object):void {busy=false;convertedDirectory=requested;report="Export completed: "+convertedDirectory.nativePath+"\nReport: "+result.report;token=null;dispatchEvent(new Event("nativeExportCompleted"));});}
+            catch(error:Error){busy=false;report=error.message;}
+        }
+        private function cancelled(event:Event):void {releasePicker();}
+        private function releasePicker():void {if(picker){picker.removeEventListener(Event.SELECT,picked);picker.removeEventListener(Event.CANCEL,cancelled);picker=null;}}
+        private function message(event:ModernAssetEvent):void {
+            var m:Object=event.message;
+            if(m.type=="inventory"){invalidateReview();report="The working copy changed. Review the conversion again before exporting.";}
+            else if(m.type=="error"){busy=false;token=null;report=m.message;}
+            else if(m.type=="progress"){report="Converting… "+m.processed+" / "+m.total;}
+        }
+        public function shutdown():void {releasePicker();if(source)source.removeEventListener(ModernAssetEvent.MESSAGE,message);}
+    ]]></fx:Script>
+    <s:VGroup left="16" right="16" top="16" bottom="16" gap="12">
+        <s:Label width="100%" text="Optional conversion. Original modern assets are never modified." color="0xF5BD45"/>
+        <s:HGroup width="100%">
+            <s:Label text="Target:"/>
+            <s:DropDownList id="versions" width="190" labelField="valueStr" enabled="{!busy}" change="invalidateReview()"/>
+            <s:CheckBox id="preserveAlpha" label="Preserve alpha (requires client support)" selected="true" enabled="{!busy}" change="invalidateReview()"/>
+        </s:HGroup>
+        <s:CheckBox id="selectedOnly" label="Selected objects only (other ID slots will be blank)" enabled="{!busy &amp;&amp; hasSelection}" change="invalidateReview()"/>
+        <s:TextArea id="reportText" width="100%" height="100%" editable="false" text="{report}"/>
+        <s:CheckBox id="accept" label="Accept the listed compatibility losses" enabled="{!busy &amp;&amp; token != null}"/>
+        <s:HGroup width="100%">
+            <s:Button label="Review conversion" enabled="{!busy}" click="review()"/>
+            <s:Button label="Export DAT/SPR" enabled="{!busy &amp;&amp; token != null &amp;&amp; accept.selected}" click="exportFiles()"/>
+            <s:Spacer width="100%"/>
+            <s:Button label="Open exported project" enabled="{convertedDirectory != null}" click="dispatchEvent(new Event('openConvertedLegacy'))"/>
+            <s:Button label="Close" click="close()"/>
+        </s:HGroup>
+    </s:VGroup>
+</mg:TitleWindow>

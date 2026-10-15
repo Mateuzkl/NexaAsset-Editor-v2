@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mg:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark" xmlns:mg="library://ns.mignari.com/mg"
+    width="690" height="610" title="Modern flag attributes" creationComplete="start()">
+    <fx:Script><![CDATA[
+        import mx.collections.ArrayCollection;
+        import mx.utils.ObjectProxy;
+        import ob.modern.ModernFlagEvent;
+        public var row:Object;
+        private var records:Array=[];
+        [Bindable] private var fields:ArrayCollection=new ArrayCollection();
+        [Bindable] private var choices:ArrayCollection=new ArrayCollection();
+        [Bindable] private var unknown:String="";
+        [Bindable] private var repeated:Boolean=false;
+        private function start():void {
+            title=row.label+" (#"+row.number+")";enabledFlag.selected=row.present;repeated=row.number==40;
+            for each(var record:Object in JSON.parse(JSON.stringify(row.instances))){var values:Array=[];for each(var value:Object in record.fields)values.push(new ObjectProxy(value));record.fields=values;records.push(record);}
+            refreshChoices();
+        }
+        private function refreshChoices():void {var values:Array=[];for(var i:int=0;i<records.length;i++)values.push("Record "+(i+1));choices.source=values;recordChoice.selectedIndex=Math.max(0,Math.min(recordChoice.selectedIndex,records.length-1));selectRecord();}
+        public function selectRecord():void {var index:int=recordChoice.selectedIndex;if(index<0 || index>=records.length)return;fields.source=records[index].fields;unknown=(records[index].unknown||[]).join("\n");recordChoice.closeDropDown(true);}
+        private function addRecord():void {if(records.length>=256)return;var record:Object=JSON.parse(JSON.stringify(row.instances[0])),values:Array=[];for each(var field:Object in record.fields){field.present=false;field.value="";values.push(new ObjectProxy(field));}record.index=-1;record.fields=values;record.unknown=[];records.push(record);refreshChoices();recordChoice.selectedIndex=records.length-1;selectRecord();}
+        private function removeRecord():void {if(records.length<=1)return;records.splice(recordChoice.selectedIndex,1);refreshChoices();}
+        public function apply():void {
+            var plain:Array=[];for each(var record:Object in records){var values:Array=[];for each(var field:Object in record.fields)values.push({number:int(field.number),present:Boolean(field.present),value:String(field.value)});plain.push({index:int(record.index),fields:values});}
+            dispatchEvent(new ModernFlagEvent(row.number,enabledFlag.selected,plain));close();
+        }
+    ]]></fx:Script>
+    <s:VGroup left="16" right="16" top="16" bottom="16" gap="10">
+        <s:Label width="100%" text="Changes affect the native working copy. Unrecognized subfields are preserved." color="0xF5BD45"/>
+        <s:CheckBox id="enabledFlag" label="Include this flag"/>
+        <s:HGroup width="100%" visible="{repeated}" includeInLayout="{repeated}">
+            <s:DropDownList id="recordChoice" width="200" dataProvider="{choices}" change="selectRecord()"/>
+            <s:Button label="Add NPC record" click="addRecord()"/><s:Button label="Remove record" click="removeRecord()"/>
+        </s:HGroup>
+        <s:List id="fieldList" width="100%" height="100%" dataProvider="{fields}">
+            <s:itemRenderer><fx:Component><s:ItemRenderer width="100%" height="108" autoDrawBackground="false">
+                <s:VGroup left="8" right="8" top="6" gap="4">
+                    <s:CheckBox label="{data.label}" selected="{data.present}" change="data.present=event.currentTarget.selected"/>
+                    <s:TextInput width="100%" text="{data.value}" enabled="{data.present}" change="data.value=event.currentTarget.text"/>
+                    <s:Label width="100%" text="{data.options || (data.kind=='text' ? 'UTF-8 text' : data.kind=='int' ? 'Signed 32-bit integer' : data.kind=='list' ? 'Comma-separated numeric IDs' : 'Unsigned 32-bit integer')}" maxDisplayedLines="1" toolTip="{data.options}" color="0xA0B2C4" fontSize="11"/>
+                </s:VGroup>
+            </s:ItemRenderer></fx:Component></s:itemRenderer>
+        </s:List>
+        <s:TextArea width="100%" height="70" editable="false" text="{unknown}" visible="{unknown.length>0}" includeInLayout="{unknown.length>0}"/>
+        <s:HGroup width="100%"><s:Button label="Apply to working copy" click="apply()"/><s:Spacer width="100%"/><s:Button label="Cancel" click="close()"/></s:HGroup>
+    </s:VGroup>
+</mg:TitleWindow>

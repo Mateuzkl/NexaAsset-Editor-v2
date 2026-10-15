@@ -23,6 +23,7 @@
 package otlib.components.renders
 {
     import ob.ui.NexaTheme;
+    import flash.display.BitmapData;
     import flash.display.GradientType;
     import flash.display.Graphics;
     import flash.events.ContextMenuEvent;
@@ -234,7 +235,8 @@ package otlib.components.renders
                 // Image
                 try
                 {
-                    _imageDisplay.source = item.getBitmap();
+                    var bitmap:BitmapData=item.getBitmap();
+                    _imageDisplay.source = bitmap ? bitmap.clone() : null;
                 }
                 catch (error:Error)
                 {

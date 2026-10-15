@@ -9,6 +9,8 @@
         [Bindable] public var canSave:Boolean = false;
         [Bindable] public var hasSelection:Boolean = false;
         [Bindable] public var hasClipboard:Boolean = false;
+        [Bindable] public var readOnly:Boolean = false;
+        [Bindable] public var nativeModern:Boolean=false;
         private function act(action:String):void { dispatchEvent(new NexaUiEvent(action)); }
     ]]></fx:Script>
     <s:HGroup left="12" right="12" top="7" bottom="7" gap="7" verticalAlign="middle">
@@ -16,20 +18,21 @@
             toolTip="{resourceManager.getString('strings','menu.open')} (Ctrl+O)" icon="{NexaIcons.OPEN}" click="act('open')"/>
         <s:Button id="saveButton" height="36" minWidth="88" label="{resourceManager.getString('strings','save')}"
             toolTip="{resourceManager.getString('strings','menu.compile')} (Ctrl+S)" icon="{NexaIcons.SAVE}" enabled="{canSave}" click="act('save')"/>
-        <s:Button id="compileAsButton" height="36" minWidth="130" label="{resourceManager.getString('strings','menu.compileAs')}"
+        <s:Button id="compileAsButton" height="36" minWidth="130" label="{nativeModern ? 'Save As…' : resourceManager.getString('strings','menu.compileAs')}"
             toolTip="{resourceManager.getString('strings','menu.compileAs')} (Ctrl+Shift+S)" icon="{NexaIcons.COMPILE_AS}" enabled="{loaded}" click="act('compileAs')"/>
         <s:Button id="exportButton" height="36" minWidth="96" label="{resourceManager.getString('strings','export')}"
-            toolTip="{resourceManager.getString('strings','exportObject')}" icon="{NexaIcons.EXPORT}" enabled="{loaded &amp;&amp; hasSelection}" click="act('export')"/>
+            toolTip="{resourceManager.getString('strings','exportObject')}" icon="{NexaIcons.EXPORT}" enabled="{loaded &amp;&amp; hasSelection &amp;&amp; !readOnly}" click="act('export')"/>
+        <s:Button id="nativeConvertButton" height="36" label="Convert DAT/SPR…" visible="{nativeModern}" includeInLayout="{nativeModern}" enabled="{loaded}" click="act('convertModern')"/>
         <s:Rect width="1" height="24"><s:fill><s:SolidColor color="0x2C3C4D"/></s:fill></s:Rect>
         <s:Button id="addButton" height="36" minWidth="116" label="{resourceManager.getString('strings','nexa.addObject')}"
-            toolTip="{addButton.label}" icon="{NexaIcons.ADD}" enabled="{loaded}" click="act('add')"/>
+            toolTip="{addButton.label}" icon="{NexaIcons.ADD}" enabled="{loaded &amp;&amp; !readOnly}" click="act('add')"/>
         <s:Button id="duplicateButton" height="36" minWidth="108" label="{resourceManager.getString('strings','duplicate')}"
-            toolTip="{duplicateButton.label}" icon="{NexaIcons.DUPLICATE}" enabled="{loaded &amp;&amp; hasSelection}" click="act('duplicate')"/>
+            toolTip="{duplicateButton.label}" icon="{NexaIcons.DUPLICATE}" enabled="{loaded &amp;&amp; hasSelection &amp;&amp; !readOnly}" click="act('duplicate')"/>
         <s:Button id="deleteButton" height="36" minWidth="96" label="{resourceManager.getString('strings','remove')}"
-            toolTip="{resourceManager.getString('strings','removeObject')}" icon="{NexaIcons.DELETE}" enabled="{loaded &amp;&amp; hasSelection}" click="act('delete')"/>
+            toolTip="{resourceManager.getString('strings','removeObject')}" icon="{NexaIcons.DELETE}" enabled="{loaded &amp;&amp; hasSelection &amp;&amp; !readOnly}" click="act('delete')"/>
         <s:Button id="copyButton" height="36" minWidth="88" label="{resourceManager.getString('strings','copy')}"
-            toolTip="{resourceManager.getString('strings','copyObject')}" icon="{NexaIcons.COPY}" enabled="{loaded &amp;&amp; hasSelection}" click="act('copy')"/>
+            toolTip="{resourceManager.getString('strings','copyObject')}" icon="{NexaIcons.COPY}" enabled="{loaded &amp;&amp; hasSelection &amp;&amp; !readOnly}" click="act('copy')"/>
         <s:Button id="pasteButton" height="36" minWidth="88" label="{resourceManager.getString('strings','paste')}"
-            toolTip="{resourceManager.getString('strings','pasteObject')}" icon="{NexaIcons.PASTE}" enabled="{loaded &amp;&amp; hasSelection &amp;&amp; hasClipboard}" click="act('paste')"/>
+            toolTip="{resourceManager.getString('strings','pasteObject')}" icon="{NexaIcons.PASTE}" enabled="{loaded &amp;&amp; hasSelection &amp;&amp; hasClipboard &amp;&amp; !readOnly}" click="act('paste')"/>
     </s:HGroup>
 </s:BorderContainer>

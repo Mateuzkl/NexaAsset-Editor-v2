@@ -261,7 +261,8 @@ package otlib.components.renders
                     {
                         item.croppedBitmap = BitmapUtils.cropToTransparency(item.getBitmap());
                     }
-                    _imageDisplay.source = item.croppedBitmap;
+                    // Renderers must not borrow a page bitmap beyond its lifetime.
+                    _imageDisplay.source = item.croppedBitmap ? item.croppedBitmap.clone() : null;
                 }
                 catch (error:Error)
                 {
