@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$ToolsRoot, [string]$RealAssets)
+param([string]$ToolsRoot, [string]$RealAssets, [switch]$ProbeOnly)
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
 if (-not $ToolsRoot) { $ToolsRoot = Join-Path (Split-Path -Parent $project) 'ObjectBuilder-tools' }
@@ -20,7 +20,10 @@ try {
     New-Item -ItemType Directory -Path $runRoot | Out-Null
     Write-Output "Test output: $runRoot"
     $arguments = @('-nodebug', (Join-Path $output 'AssetIoTests-app.xml'), '--', $runRoot)
-    if ($RealAssets) { $arguments += @((Resolve-Path -LiteralPath $RealAssets).Path, (Join-Path $project 'src/config')) }
+    if ($RealAssets) {
+        $arguments += @((Resolve-Path -LiteralPath $RealAssets).Path, (Join-Path $project 'src/config'))
+        if ($ProbeOnly) { $arguments += 'probe-only' }
+    }
     & (Join-Path $sdk 'bin/adl.exe') @arguments
     if ($LASTEXITCODE -ne 0) { throw "Asset tests failed. See $runRoot/result.txt" }
     Get-Content -LiteralPath (Join-Path $runRoot 'result.txt')

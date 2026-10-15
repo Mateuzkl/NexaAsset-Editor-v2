@@ -17,16 +17,19 @@ package
     import otlib.core.Version;
     import otlib.core.VersionStorage;
     import otlib.sprites.SpriteRecordComparison;
+    import otlib.sprites.MultiSpriteReader;
     import otlib.events.ProgressEvent;
     import otlib.resources.Resources;
     import otlib.sprites.SpriteReader;
     import otlib.sprites.SpriteStorage;
     import otlib.things.ThingTypeStorage;
     import otlib.utils.ClientInfoLoader;
+    import otlib.utils.AssetDirectoryFinder;
     import otlib.utils.OTFI;
     import otlib.utils.AssetOutputTransaction;
     import otlib.utils.AssetFeatureValidator;
     import otlib.utils.ClientInfo;
+    import otlib.utils.SpriteExtent;
     import otlib.storages.events.StorageEvent;
     import otlib.core.MetadataControllerStorage;
     import otlib.things.MetadataWriter;
@@ -67,12 +70,20 @@ package
                 testRoot.createDirectory();
                 testBitmaps();
                 testFormats();
+                testWindowRefill();
+                testSequentialFileParts();
                 testFeatureWarnings();
                 testTransaction();
                 testExtendedItems();
                 testImportFailures();
                 testQueueFailures();
-                if (event.arguments.length > 1) testReal(new File(event.arguments[1]), new File(event.arguments[2]));
+                if (event.arguments.length > 1)
+                {
+                    if (event.arguments.length > 3 && event.arguments[3] == "probe-only")
+                        testRealProbe(new File(event.arguments[1]), new File(event.arguments[2]));
+                    else
+                        testReal(new File(event.arguments[1]), new File(event.arguments[2]));
+                }
                 note("PASS: all tests (" + ((getTimer() - started) / 1000).toFixed(1) + "s)");
             }
             catch (error:Error) { exitCode = 1; note("FAIL: " + error.message + "\n" + error.getStackTrace()); }
@@ -241,9 +252,14 @@ package
             edit.open(multiRoot.resolvePath("spr_index.dat"), FileMode.UPDATE);
             edit.position = 12; edit.writeUnsignedInt(0); edit.close();
             var bad:Boolean = false;
-            try { reader.openSpriteFile(multiRoot.resolvePath("spr_index.dat")); } catch (error:Error) { bad = true; }
+            try
+            {
+                reader.openSpriteFile(multiRoot.resolvePath("spr_index.dat"));
+                reader.readSprite(1);
+            }
+            catch (error:Error) { bad = true; }
             finally { reader.closeSpriteFile(); }
-            check(bad, "Reject invalid multi-SPR locator.");
+            check(bad, "Reject invalid multi-SPR locator when that sprite is requested.");
 
             var legacySource:File = testRoot.resolvePath("legacy-source.spr"); fixture(legacySource, 65535);
             storage.load(legacySource, version(), f); lastProgress = 0;
@@ -258,6 +274,112 @@ package
             check(legacyInput.compile(legacyMulti, version(), f), "Legacy SPR -> multi-SPR."); legacyInput.unload();
             check(!progressError, progressError);
             note("PASS: 16/32-bit boundaries, transparency, monotonic progress, multi-SPR, merge, 25 close cycles, invalid locator");
+        }
+
+        private function testSequentialFileParts():void
+        {
+            var root:File = testRoot.resolvePath("sequential-fileparts");
+            var folder:File = root.resolvePath("FileParts");
+            folder.createDirectory();
+            sequentialPart(folder.resolvePath("part_1.spr"), 2, 10);
+            sequentialPart(folder.resolvePath("part_2.spr"), 1, 90);
+            var entry:File = SpriteReader.findMultiSpriteFile(root);
+            check(entry && entry.name == "part_1.spr" && SpriteReader.isMultiSpriteFile(entry),
+                "Detect index-less sequential FileParts input.");
+            var reader:SpriteReader = new SpriteReader(new ClientFeatures(true, false));
+            reader.openSpriteFile(entry);
+            check(reader.readSignature() == version().sprSignature && reader.readSpriteCount() == 3,
+                "Sequential FileParts aggregate count/signature.");
+            check(reader.readSprite(1).getPixels()[1] == 10 && reader.readSprite(2) == null &&
+                    reader.readSprite(3).getPixels()[1] == 90,
+                "Sequential logical IDs cross part boundaries and keep empty records.");
+            reader.closeSpriteFile();
+
+            var gap:File = testRoot.resolvePath("sequential-gap/FileParts");
+            gap.createDirectory();
+            sequentialPart(gap.resolvePath("part_1.spr"), 1, 10);
+            sequentialPart(gap.resolvePath("part_3.spr"), 1, 90);
+            var rejected:Boolean = false;
+            try { reader.openSpriteFile(gap.resolvePath("part_1.spr")); }
+            catch (error:Error) { rejected = true; }
+            finally { reader.closeSpriteFile(); }
+            check(rejected, "Reject gaps in sequential FileParts instead of silently shifting IDs.");
+
+            var incompleteRoot:File = testRoot.resolvePath("incomplete-multi");
+            var incompleteParts:File = incompleteRoot.resolvePath("FileParts"); incompleteParts.createDirectory();
+            sequentialPart(incompleteParts.resolvePath("part_1.spr"), 1, 10);
+            write(incompleteRoot.resolvePath("spr_parts.dat"), new ByteArray());
+            var multi:MultiSpriteReader = new MultiSpriteReader(false);
+            var clearError:Boolean = false;
+            try { multi.open(incompleteParts.resolvePath("part_1.spr")); }
+            catch (error:Error) { clearError = error.message.indexOf("Incomplete multi-SPR set") >= 0; }
+            finally { multi.close(); }
+            check(clearError, "Incomplete indexed multi-SPR must report missing index/manifest clearly.");
+            clearError = false;
+            try { multi.open(null); }
+            catch (missing:Error) { clearError = missing.message.indexOf("Missing multi-SPR index") >= 0; }
+            finally { multi.close(); }
+            check(clearError, "Null multi-SPR input must report a clear missing-entry error.");
+        }
+
+        private function sequentialPart(file:File, count:uint, color:uint):void
+        {
+            var bytes:ByteArray = new ByteArray(); bytes.endian = Endian.LITTLE_ENDIAN;
+            bytes.writeUnsignedInt(version().sprSignature); bytes.writeUnsignedInt(count);
+            var payload:Number = 8 + Number(count) * 4;
+            bytes.writeUnsignedInt(payload);
+            for (var i:uint = 2; i <= count; i++) bytes.writeUnsignedInt(0);
+            bytes.writeByte(255); bytes.writeByte(0); bytes.writeByte(255);
+            bytes.writeShort(7);
+            bytes.writeShort(0); bytes.writeShort(1);
+            bytes.writeByte(color); bytes.writeByte(20); bytes.writeByte(30);
+            write(file, bytes);
+        }
+
+        private function testWindowRefill():void
+        {
+            var count:uint = 300;
+            var bytes:ByteArray = new ByteArray(); bytes.endian = Endian.LITTLE_ENDIAN;
+            bytes.writeUnsignedInt(version().sprSignature); bytes.writeUnsignedInt(count);
+            for (var id:uint = 1; id <= count; id++) bytes.writeUnsignedInt(0);
+            for (id = 1; id <= count; id++)
+            {
+                var address:uint = bytes.length;
+                var returnPosition:uint = bytes.position;
+                bytes.position = 8 + Number(id - 1) * 4;
+                bytes.writeUnsignedInt(address);
+                bytes.position = returnPosition;
+                bytes.writeByte(255); bytes.writeByte(0); bytes.writeByte(255);
+                bytes.writeShort(4100); // 4-byte run header + 1,024 RGBA pixels
+                bytes.writeShort(0); bytes.writeShort(1024);
+                for (var pixel:uint = 0; pixel < 1024; pixel++)
+                {
+                    bytes.writeByte(0x12); bytes.writeByte(0x34); bytes.writeByte(0x56); bytes.writeByte(0xFF);
+                }
+            }
+            var file:File = testRoot.resolvePath("window-refill.spr"); write(file, bytes);
+            var features:ClientFeatures = new ClientFeatures(true, true);
+            var reader:SpriteReader = new SpriteReader(features);
+            reader.openSpriteFile(file);
+            try
+            {
+                for (id = 1; id <= count; id++)
+                {
+                    var sprite:otlib.sprites.Sprite = reader.readSprite(id);
+                    check(sprite != null, "Dense window fixture sprite missing: " + id);
+                    try
+                    {
+                        var decoded:ByteArray = sprite.getPixels();
+                        check(decoded.length == SpriteExtent.DEFAULT_DATA_SIZE && decoded[0] == 0xFF && decoded[1] == 0x12 &&
+                            decoded[2] == 0x34 && decoded[3] == 0x56,
+                            "Window fixture pixel mismatch at " + id + ": length=" + decoded.length +
+                            " rgba=" + decoded[0] + "," + decoded[1] + "," + decoded[2] + "," + decoded[3]);
+                    }
+                    finally { sprite.dispose(); }
+                }
+            }
+            finally { reader.closeSpriteFile(); }
+            note("PASS: sprite payload reads remain correct across a 1 MiB file-window refill");
         }
 
         private function testTransaction():void
@@ -356,6 +478,11 @@ package
         {
             var stream:FileStream = new FileStream();
             try { stream.open(file, FileMode.WRITE); stream.writeUTFBytes(text); } finally { stream.close(); }
+        }
+        private function write(file:File, bytes:ByteArray):void
+        {
+            var stream:FileStream = new FileStream();
+            try { stream.open(file, FileMode.WRITE); stream.writeBytes(bytes); } finally { stream.close(); }
         }
         private function readText(file:File):String
         {
@@ -475,11 +602,12 @@ package
 
         private function testReal(source:File, config:File):void
         {
+            source = AssetDirectoryFinder.resolve(source);
             VersionStorage.getInstance().load(config.resolvePath("versions.xml"));
             var probe:ClientInfoLoader = new ClientInfoLoader();
             probe.addEventListener(ErrorEvent.ERROR, capture);
-            var inputSpr:File = source.resolvePath("spr_index.dat");
-            if (!inputSpr.exists) inputSpr = source.resolvePath("Tibia.spr");
+            var inputSpr:File = source.resolvePath("Tibia.spr");
+            if (!inputSpr.exists) inputSpr = SpriteReader.findMultiSpriteFile(source);
             probe.load(source.resolvePath("Tibia.dat"), inputSpr, true);
             check(probe.clientInfo != null, "Real file probe: " + errorText);
             var v:Version = VersionStorage.getInstance().getFromClientInfo(probe.clientInfo);
@@ -524,6 +652,86 @@ package
                 "Real DAT counts preserved.");
             datReload.unload();
             note("PASS: real DAT/SPR compile, sampled pixels, reopen and close");
+        }
+
+        /** Read-only real-client validation: intentionally does not write or merge assets. */
+        private function testRealProbe(selected:File, config:File):void
+        {
+            var source:File = AssetDirectoryFinder.resolve(selected);
+            check(source && source.exists && source.isDirectory, "Client folder not found.");
+            VersionStorage.getInstance().load(config.resolvePath("versions.xml"));
+            var inputSpr:File = source.resolvePath("Tibia.spr");
+            if (!inputSpr.exists) inputSpr = SpriteReader.findMultiSpriteFile(source);
+            check(inputSpr != null, "Neither Tibia.spr nor a supported multi-SPR archive was found.");
+            note("Resolved real client: " + source.nativePath);
+            note("Resolved real SPR: " + inputSpr.nativePath);
+            var probe:ClientInfoLoader = new ClientInfoLoader();
+            probe.addEventListener(ErrorEvent.ERROR, capture);
+            probe.load(source.resolvePath("Tibia.dat"), inputSpr, true);
+            check(probe.clientInfo != null, "Real file probe: " + errorText);
+            var info:ClientInfo = probe.clientInfo;
+            check(info.clientVersion == 860, "Expected 8.60, detected " + info.clientVersionStr + ".");
+            check(info.multiSpr && info.features.extended, "Expected extended multi-SPR assets.");
+            var v:Version = VersionStorage.getInstance().getFromClientInfo(info);
+            check(v != null, "Could not resolve client version from DAT/SPR signatures.");
+            var things:ThingTypeStorage = new ThingTypeStorage(new ObjectBuilderSettings());
+            things.addEventListener(ErrorEvent.ERROR, capture);
+            things.load(source.resolvePath("Tibia.dat"), v, info.features);
+            check(things.loaded, "Real DAT load: " + errorText);
+            note("PASS: real 8.60 DAT loaded (items " + things.itemsCount + ", outfits " + things.outfitsCount + ")");
+
+            var sprites:SpriteStorage = new SpriteStorage();
+            sprites.addEventListener(ErrorEvent.ERROR, capture);
+            sprites.load(inputSpr, v, info.features);
+            check(sprites.loaded && sprites.spritesCount == info.maxSpriteId,
+                "Real multi-SPR logical count mismatch: " + errorText);
+            if (SpriteReader.isFilePartsEntry(inputSpr) && sprites.spritesCount >= 524)
+            {
+                var directPart:File = testRoot.resolvePath("direct-part-1.spr");
+                inputSpr.parent.resolvePath("part_1.spr").copyTo(directPart, true);
+                var directReader:SpriteReader = new SpriteReader(info.features);
+                try
+                {
+                    directReader.openSpriteFile(directPart);
+                    for (var directId:uint = 1; directId <= 524; directId++)
+                    {
+                        var directRecord:otlib.sprites.Sprite = directReader.readSprite(directId);
+                        if (directRecord)
+                        {
+                            try { directRecord.getPixels(); }
+                            finally { directRecord.dispose(); }
+                        }
+                    }
+                }
+                finally { directReader.closeSpriteFile(); }
+                note("PASS: direct part_1 sprite 524 decoded outside the multi-SPR aggregator");
+            }
+            var reader:SpriteReader = new SpriteReader(info.features);
+            var decoded:uint = 0;
+            try
+            {
+                reader.openSpriteFile(inputSpr);
+                for (var spriteId:uint = 1; spriteId <= sprites.spritesCount; spriteId++)
+                {
+                    var record:otlib.sprites.Sprite = reader.readSprite(spriteId);
+                    if (record)
+                    {
+                        try
+                        {
+                            var pixels:ByteArray = record.getPixels();
+                            check(pixels && pixels.length == SpriteExtent.DEFAULT_DATA_SIZE,
+                                "Invalid decoded pixel buffer for sprite " + spriteId);
+                            pixels.clear();
+                        }
+                        finally { record.dispose(); }
+                        decoded++;
+                    }
+                    if (spriteId % 65536 == 0) note("Validated real SPR records through " + spriteId + "/" + sprites.spritesCount);
+                }
+            }
+            finally { reader.closeSpriteFile(); }
+            note("PASS: every real SPR ID decoded (" + decoded + " non-empty records of " + sprites.spritesCount + ")");
+            sprites.unload(); things.unload();
         }
 
         private function samePixels(a:ByteArray, b:ByteArray):Boolean

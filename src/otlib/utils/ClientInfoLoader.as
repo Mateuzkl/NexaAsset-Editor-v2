@@ -45,6 +45,7 @@ package otlib.utils
             m_clientInfo = null;
             try
             {
+                spr = SpriteReader.normalizeMultiSpriteFile(spr);
                 if (!dat || !spr || !dat.exists || !spr.exists)
                     throw new Error("DAT/SPR files not found.");
                 var info:ClientInfo = new ClientInfo();
@@ -74,11 +75,12 @@ package otlib.utils
                     info.maxMissileId = stream.readUnsignedShort();
                 }
                 finally { try { stream.close(); } catch (closeError:Error) {} }
-                var multi:Boolean = spr.name.toLowerCase() == "spr_index.dat";
+                var multi:Boolean = SpriteReader.isMultiSpriteFile(spr);
+                var indexedMulti:Boolean = spr.name.toLowerCase() == "spr_index.dat";
                 if (multi) info.features.extended = true;
                 // Read the signature first to choose version-dependent header width.
                 var signature:uint;
-                if (!multi)
+                if (!indexedMulti)
                 {
                     try
                     {
