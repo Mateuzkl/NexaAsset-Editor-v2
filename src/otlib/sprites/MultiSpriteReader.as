@@ -78,21 +78,9 @@ package otlib.sprites
                 count = _index.readUnsignedInt();
                 if (!count || count != total || _index.length != 12 + Number(count) * 4)
                     throw new Error("Multi-SPR logical count/index length mismatch.");
-                if (progress != null) progress(0, count, "Loading SPR index");
-                var lastProgress:int = getTimer();
-                for (var id:uint = 1; id <= count; id++)
-                {
-                    var locator:uint = _index.readUnsignedInt();
-                    var part:uint = locator >>> 16;
-                    var local:uint = locator & 65535;
-                    if (!part || part > num || !local || local > _counts[part - 1])
-                        throw new Error("Invalid multi-SPR locator at logical sprite " + id);
-                    if (progress != null && (getTimer() - lastProgress >= 100 || id == count))
-                    {
-                        progress(id, count, "Loading SPR index");
-                        lastProgress = getTimer();
-                    }
-                }
+                // Locator validation is lazy in readSpriteRecord(). Walking every
+                // entry here blocks the UI for large indexed archives (1M+ sprites).
+                if (progress != null) progress(count, count, "SPR index ready");
             }
             catch (error:Error) { close(); throw error; }
         }
@@ -114,6 +102,8 @@ package otlib.sprites
                 var locator:uint = _index.readUnsignedInt();
                 part = locator >>> 16;
                 local = locator & 65535;
+                if (!part || part > _files.length || !local || local > uint(_counts[part - 1]))
+                    throw new Error("Invalid multi-SPR locator at logical sprite " + id);
             }
             else
             {

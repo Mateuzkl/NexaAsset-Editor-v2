@@ -252,9 +252,14 @@ package
             edit.open(multiRoot.resolvePath("spr_index.dat"), FileMode.UPDATE);
             edit.position = 12; edit.writeUnsignedInt(0); edit.close();
             var bad:Boolean = false;
-            try { reader.openSpriteFile(multiRoot.resolvePath("spr_index.dat")); } catch (error:Error) { bad = true; }
+            try
+            {
+                reader.openSpriteFile(multiRoot.resolvePath("spr_index.dat"));
+                reader.readSprite(1);
+            }
+            catch (error:Error) { bad = true; }
             finally { reader.closeSpriteFile(); }
-            check(bad, "Reject invalid multi-SPR locator.");
+            check(bad, "Reject invalid multi-SPR locator when that sprite is requested.");
 
             var legacySource:File = testRoot.resolvePath("legacy-source.spr"); fixture(legacySource, 65535);
             storage.load(legacySource, version(), f); lastProgress = 0;
