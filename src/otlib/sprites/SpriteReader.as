@@ -39,6 +39,7 @@ package otlib.sprites
         private var m_transparency:Boolean;
         private var m_headerSize:uint;
         private var m_fileSize:Number;
+        private var m_sourceFile:File;
         private var m_count:uint;
         private var m_multi:MultiSpriteReader;
         private var m_offsets:ByteArray;
@@ -90,6 +91,7 @@ package otlib.sprites
                     m_multi.open(file, progress);
                     return;
                 }
+                m_sourceFile = file;
                 open(file, FileMode.READ);
                 m_fileSize = file.size;
                 if (m_fileSize < m_headerSize)
@@ -117,6 +119,7 @@ package otlib.sprites
             try { close(); } catch (error:Error) {}
             m_count = 0;
             m_fileSize = 0;
+            m_sourceFile = null;
             if (m_offsets) m_offsets.clear();
             if (m_window) m_window.clear();
             m_offsets = null; m_window = null; m_windowStart = -1;
@@ -169,17 +172,28 @@ package otlib.sprites
                 ensureWindow(address, 5 + length);
                 sprite.compressedPixels.writeBytes(m_window, address - m_windowStart + 5, length);
             }
-
             return sprite;
         }
 
         private function ensureWindow(address:Number, length:uint):void
         {
             if (m_windowStart >= 0 && address >= m_windowStart && address + length <= m_windowStart + m_window.length) return;
-            m_window.clear();
+            // Replace rather than reuse the large ByteArray: AIR can retain stale
+            // backing-buffer data after a seek/refill, corrupting later sprite RLE.
+            m_window = new ByteArray();
+            m_window.endian = Endian.LITTLE_ENDIAN;
             m_windowStart = address;
-            position = address;
-            readBytes(m_window, 0, Math.min(1024 * 1024, m_fileSize - address));
+            // Read each new window through a fresh file handle. On AIR, seeking
+            // the long-lived FileStream after a 1 MiB read can return stale bytes
+            // from its previous window even though position reports the new seek.
+            var windowStream:FileStream = new FileStream();
+            try
+            {
+                windowStream.open(m_sourceFile, FileMode.READ);
+                windowStream.position = address;
+                windowStream.readBytes(m_window, 0, Math.min(1024 * 1024, m_fileSize - address));
+            }
+            finally { try { windowStream.close(); } catch (closeWindow:Error) {} }
         }
 
         public function detectTransparency():Boolean

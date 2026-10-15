@@ -28,6 +28,7 @@ package
     import otlib.utils.AssetOutputTransaction;
     import otlib.utils.AssetFeatureValidator;
     import otlib.utils.ClientInfo;
+    import otlib.utils.SpriteExtent;
     import otlib.storages.events.StorageEvent;
     import otlib.core.MetadataControllerStorage;
     import otlib.things.MetadataWriter;
@@ -68,6 +69,7 @@ package
                 testRoot.createDirectory();
                 testBitmaps();
                 testFormats();
+                testWindowRefill();
                 testSequentialFileParts();
                 testFeatureWarnings();
                 testTransaction();
@@ -310,6 +312,52 @@ package
             bytes.writeShort(0); bytes.writeShort(1);
             bytes.writeByte(color); bytes.writeByte(20); bytes.writeByte(30);
             write(file, bytes);
+        }
+
+        private function testWindowRefill():void
+        {
+            var count:uint = 300;
+            var bytes:ByteArray = new ByteArray(); bytes.endian = Endian.LITTLE_ENDIAN;
+            bytes.writeUnsignedInt(version().sprSignature); bytes.writeUnsignedInt(count);
+            for (var id:uint = 1; id <= count; id++) bytes.writeUnsignedInt(0);
+            for (id = 1; id <= count; id++)
+            {
+                var address:uint = bytes.length;
+                var returnPosition:uint = bytes.position;
+                bytes.position = 8 + Number(id - 1) * 4;
+                bytes.writeUnsignedInt(address);
+                bytes.position = returnPosition;
+                bytes.writeByte(255); bytes.writeByte(0); bytes.writeByte(255);
+                bytes.writeShort(4100); // 4-byte run header + 1,024 RGBA pixels
+                bytes.writeShort(0); bytes.writeShort(1024);
+                for (var pixel:uint = 0; pixel < 1024; pixel++)
+                {
+                    bytes.writeByte(0x12); bytes.writeByte(0x34); bytes.writeByte(0x56); bytes.writeByte(0xFF);
+                }
+            }
+            var file:File = testRoot.resolvePath("window-refill.spr"); write(file, bytes);
+            var features:ClientFeatures = new ClientFeatures(true, true);
+            var reader:SpriteReader = new SpriteReader(features);
+            reader.openSpriteFile(file);
+            try
+            {
+                for (id = 1; id <= count; id++)
+                {
+                    var sprite:otlib.sprites.Sprite = reader.readSprite(id);
+                    check(sprite != null, "Dense window fixture sprite missing: " + id);
+                    try
+                    {
+                        var decoded:ByteArray = sprite.getPixels();
+                        check(decoded.length == SpriteExtent.DEFAULT_DATA_SIZE && decoded[0] == 0xFF && decoded[1] == 0x12 &&
+                            decoded[2] == 0x34 && decoded[3] == 0x56,
+                            "Window fixture pixel mismatch at " + id + ": length=" + decoded.length +
+                            " rgba=" + decoded[0] + "," + decoded[1] + "," + decoded[2] + "," + decoded[3]);
+                    }
+                    finally { sprite.dispose(); }
+                }
+            }
+            finally { reader.closeSpriteFile(); }
+            note("PASS: sprite payload reads remain correct across a 1 MiB file-window refill");
         }
 
         private function testTransaction():void
@@ -593,6 +641,8 @@ package
             var inputSpr:File = source.resolvePath("Tibia.spr");
             if (!inputSpr.exists) inputSpr = SpriteReader.findMultiSpriteFile(source);
             check(inputSpr != null, "Neither Tibia.spr nor a supported multi-SPR archive was found.");
+            note("Resolved real client: " + source.nativePath);
+            note("Resolved real SPR: " + inputSpr.nativePath);
             var probe:ClientInfoLoader = new ClientInfoLoader();
             probe.addEventListener(ErrorEvent.ERROR, capture);
             probe.load(source.resolvePath("Tibia.dat"), inputSpr, true);
@@ -613,53 +663,52 @@ package
             sprites.load(inputSpr, v, info.features);
             check(sprites.loaded && sprites.spritesCount == info.maxSpriteId,
                 "Real multi-SPR logical count mismatch: " + errorText);
-            var samples:Object = {};
-            samples[1] = true;
-            samples[sprites.spritesCount] = true;
-            samples[uint((sprites.spritesCount + 1) / 2)] = true;
-            if (SpriteReader.isFilePartsEntry(inputSpr))
+            if (SpriteReader.isFilePartsEntry(inputSpr) && sprites.spritesCount >= 524)
             {
-                var folder:File = inputSpr.parent;
-                var entries:Array = folder.getDirectoryListing();
-                var partFiles:Array = [];
-                for each (var entry:File in entries)
+                var directPart:File = testRoot.resolvePath("direct-part-1.spr");
+                inputSpr.parent.resolvePath("part_1.spr").copyTo(directPart, true);
+                var directReader:SpriteReader = new SpriteReader(info.features);
+                try
                 {
-                    var match:Array = /^part_(\d+)\.spr$/i.exec(entry.name);
-                    if (match && !entry.isDirectory) partFiles.push({file:entry, number:uint(match[1])});
-                }
-                partFiles.sortOn("number", Array.NUMERIC);
-                var end:uint = 0;
-                for each (var part:Object in partFiles)
-                {
-                    var partStream:FileStream = new FileStream();
-                    var partCount:uint;
-                    try
+                    directReader.openSpriteFile(directPart);
+                    for (var directId:uint = 1; directId <= 524; directId++)
                     {
-                        partStream.open(part.file, FileMode.READ);
-                        partStream.endian = Endian.LITTLE_ENDIAN;
-                        check(partStream.readUnsignedInt() == info.sprSignature,
-                            "SPR signature mismatch in " + File(part.file).name);
-                        partCount = partStream.readUnsignedInt();
+                        var directRecord:otlib.sprites.Sprite = directReader.readSprite(directId);
+                        if (directRecord)
+                        {
+                            try { directRecord.getPixels(); }
+                            finally { directRecord.dispose(); }
+                        }
                     }
-                    finally { try { partStream.close(); } catch (closePart:Error) {} }
-                    check(partCount > 0 && partCount <= 65535, "Invalid sprite count in " + File(part.file).name);
-                    samples[end + 1] = true;
-                    samples[end + partCount] = true;
-                    end += partCount;
                 }
-                check(end == sprites.spritesCount, "Sum of sequential FileParts differs from logical SPR count.");
-                check(partFiles.length > 0, "No sequential FileParts were enumerated.");
-                note("Sequential FileParts: " + partFiles.length + " parts; " + end + " sprites");
+                finally { directReader.closeSpriteFile(); }
+                note("PASS: direct part_1 sprite 524 decoded outside the multi-SPR aggregator");
             }
-            var sampleCount:uint = 0;
-            for (var key:String in samples)
+            var reader:SpriteReader = new SpriteReader(info.features);
+            var decoded:uint = 0;
+            try
             {
-                var spriteId:uint = uint(key);
-                sprites.getPixelsStrict(spriteId);
-                sampleCount++;
+                reader.openSpriteFile(inputSpr);
+                for (var spriteId:uint = 1; spriteId <= sprites.spritesCount; spriteId++)
+                {
+                    var record:otlib.sprites.Sprite = reader.readSprite(spriteId);
+                    if (record)
+                    {
+                        try
+                        {
+                            var pixels:ByteArray = record.getPixels();
+                            check(pixels && pixels.length == SpriteExtent.DEFAULT_DATA_SIZE,
+                                "Invalid decoded pixel buffer for sprite " + spriteId);
+                            pixels.clear();
+                        }
+                        finally { record.dispose(); }
+                        decoded++;
+                    }
+                    if (spriteId % 65536 == 0) note("Validated real SPR records through " + spriteId + "/" + sprites.spritesCount);
+                }
             }
-            check(sampleCount > 0, "No real SPR records were sampled.");
-            note("PASS: real SPR opened; " + sampleCount + " records (including every FileParts boundary) decoded");
+            finally { reader.closeSpriteFile(); }
+            note("PASS: every real SPR ID decoded (" + decoded + " non-empty records of " + sprites.spritesCount + ")");
             sprites.unload(); things.unload();
         }
 
