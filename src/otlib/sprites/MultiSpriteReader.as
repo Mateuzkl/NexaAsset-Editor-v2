@@ -29,12 +29,21 @@ package otlib.sprites
             close();
             try
             {
-                indexFile = SpriteReader.normalizeMultiSpriteFile(indexFile);
+                if (!indexFile)
+                    throw new Error("Missing multi-SPR index or FileParts entry.");
+                var normalizedFile:File = SpriteReader.normalizeMultiSpriteFile(indexFile);
+                if (!normalizedFile)
+                    throw new Error("Incomplete multi-SPR set: spr_index.dat and spr_parts.dat must both exist beside FileParts/part_1.spr.");
+                indexFile = normalizedFile;
+                if (!indexFile.exists || indexFile.isDirectory)
+                    throw new Error("Missing multi-SPR index or FileParts entry: " + indexFile.nativePath);
                 if (SpriteReader.isFilePartsEntry(indexFile))
                 {
                     openSequentialParts(indexFile, progress);
                     return;
                 }
+                if (!indexFile.parent)
+                    throw new Error("Invalid multi-SPR index path: no containing folder.");
                 var root:File = indexFile.parent;
                 var parts:ByteArray = readFile(root.resolvePath("spr_parts.dat"));
                 if (parts.length < 8 || parts.readUTFBytes(4) != "SPMT")

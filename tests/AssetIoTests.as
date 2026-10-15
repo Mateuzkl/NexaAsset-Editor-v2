@@ -17,6 +17,7 @@ package
     import otlib.core.Version;
     import otlib.core.VersionStorage;
     import otlib.sprites.SpriteRecordComparison;
+    import otlib.sprites.MultiSpriteReader;
     import otlib.events.ProgressEvent;
     import otlib.resources.Resources;
     import otlib.sprites.SpriteReader;
@@ -298,6 +299,22 @@ package
             catch (error:Error) { rejected = true; }
             finally { reader.closeSpriteFile(); }
             check(rejected, "Reject gaps in sequential FileParts instead of silently shifting IDs.");
+
+            var incompleteRoot:File = testRoot.resolvePath("incomplete-multi");
+            var incompleteParts:File = incompleteRoot.resolvePath("FileParts"); incompleteParts.createDirectory();
+            sequentialPart(incompleteParts.resolvePath("part_1.spr"), 1, 10);
+            write(incompleteRoot.resolvePath("spr_parts.dat"), new ByteArray());
+            var multi:MultiSpriteReader = new MultiSpriteReader(false);
+            var clearError:Boolean = false;
+            try { multi.open(incompleteParts.resolvePath("part_1.spr")); }
+            catch (error:Error) { clearError = error.message.indexOf("Incomplete multi-SPR set") >= 0; }
+            finally { multi.close(); }
+            check(clearError, "Incomplete indexed multi-SPR must report missing index/manifest clearly.");
+            clearError = false;
+            try { multi.open(null); }
+            catch (missing:Error) { clearError = missing.message.indexOf("Missing multi-SPR index") >= 0; }
+            finally { multi.close(); }
+            check(clearError, "Null multi-SPR input must report a clear missing-entry error.");
         }
 
         private function sequentialPart(file:File, count:uint, color:uint):void
