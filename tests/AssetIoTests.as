@@ -23,6 +23,7 @@ package
     import otlib.sprites.SpriteStorage;
     import otlib.things.ThingTypeStorage;
     import otlib.utils.ClientInfoLoader;
+    import otlib.utils.AssetDirectoryFinder;
     import otlib.utils.OTFI;
     import otlib.utils.AssetOutputTransaction;
     import otlib.utils.AssetFeatureValidator;
@@ -67,12 +68,19 @@ package
                 testRoot.createDirectory();
                 testBitmaps();
                 testFormats();
+                testSequentialFileParts();
                 testFeatureWarnings();
                 testTransaction();
                 testExtendedItems();
                 testImportFailures();
                 testQueueFailures();
-                if (event.arguments.length > 1) testReal(new File(event.arguments[1]), new File(event.arguments[2]));
+                if (event.arguments.length > 1)
+                {
+                    if (event.arguments.length > 3 && event.arguments[3] == "probe-only")
+                        testRealProbe(new File(event.arguments[1]), new File(event.arguments[2]));
+                    else
+                        testReal(new File(event.arguments[1]), new File(event.arguments[2]));
+                }
                 note("PASS: all tests (" + ((getTimer() - started) / 1000).toFixed(1) + "s)");
             }
             catch (error:Error) { exitCode = 1; note("FAIL: " + error.message + "\n" + error.getStackTrace()); }
@@ -260,6 +268,50 @@ package
             note("PASS: 16/32-bit boundaries, transparency, monotonic progress, multi-SPR, merge, 25 close cycles, invalid locator");
         }
 
+        private function testSequentialFileParts():void
+        {
+            var root:File = testRoot.resolvePath("sequential-fileparts");
+            var folder:File = root.resolvePath("FileParts");
+            folder.createDirectory();
+            sequentialPart(folder.resolvePath("part_1.spr"), 2, 10);
+            sequentialPart(folder.resolvePath("part_2.spr"), 1, 90);
+            var entry:File = SpriteReader.findMultiSpriteFile(root);
+            check(entry && entry.name == "part_1.spr" && SpriteReader.isMultiSpriteFile(entry),
+                "Detect index-less sequential FileParts input.");
+            var reader:SpriteReader = new SpriteReader(new ClientFeatures(true, false));
+            reader.openSpriteFile(entry);
+            check(reader.readSignature() == version().sprSignature && reader.readSpriteCount() == 3,
+                "Sequential FileParts aggregate count/signature.");
+            check(reader.readSprite(1).getPixels()[1] == 10 && reader.readSprite(2) == null &&
+                    reader.readSprite(3).getPixels()[1] == 90,
+                "Sequential logical IDs cross part boundaries and keep empty records.");
+            reader.closeSpriteFile();
+
+            var gap:File = testRoot.resolvePath("sequential-gap/FileParts");
+            gap.createDirectory();
+            sequentialPart(gap.resolvePath("part_1.spr"), 1, 10);
+            sequentialPart(gap.resolvePath("part_3.spr"), 1, 90);
+            var rejected:Boolean = false;
+            try { reader.openSpriteFile(gap.resolvePath("part_1.spr")); }
+            catch (error:Error) { rejected = true; }
+            finally { reader.closeSpriteFile(); }
+            check(rejected, "Reject gaps in sequential FileParts instead of silently shifting IDs.");
+        }
+
+        private function sequentialPart(file:File, count:uint, color:uint):void
+        {
+            var bytes:ByteArray = new ByteArray(); bytes.endian = Endian.LITTLE_ENDIAN;
+            bytes.writeUnsignedInt(version().sprSignature); bytes.writeUnsignedInt(count);
+            var payload:Number = 8 + Number(count) * 4;
+            bytes.writeUnsignedInt(payload);
+            for (var i:uint = 2; i <= count; i++) bytes.writeUnsignedInt(0);
+            bytes.writeByte(255); bytes.writeByte(0); bytes.writeByte(255);
+            bytes.writeShort(7);
+            bytes.writeShort(0); bytes.writeShort(1);
+            bytes.writeByte(color); bytes.writeByte(20); bytes.writeByte(30);
+            write(file, bytes);
+        }
+
         private function testTransaction():void
         {
             var root:File = testRoot.resolvePath("transaction"); root.createDirectory();
@@ -356,6 +408,11 @@ package
         {
             var stream:FileStream = new FileStream();
             try { stream.open(file, FileMode.WRITE); stream.writeUTFBytes(text); } finally { stream.close(); }
+        }
+        private function write(file:File, bytes:ByteArray):void
+        {
+            var stream:FileStream = new FileStream();
+            try { stream.open(file, FileMode.WRITE); stream.writeBytes(bytes); } finally { stream.close(); }
         }
         private function readText(file:File):String
         {
@@ -475,11 +532,12 @@ package
 
         private function testReal(source:File, config:File):void
         {
+            source = AssetDirectoryFinder.resolve(source);
             VersionStorage.getInstance().load(config.resolvePath("versions.xml"));
             var probe:ClientInfoLoader = new ClientInfoLoader();
             probe.addEventListener(ErrorEvent.ERROR, capture);
-            var inputSpr:File = source.resolvePath("spr_index.dat");
-            if (!inputSpr.exists) inputSpr = source.resolvePath("Tibia.spr");
+            var inputSpr:File = source.resolvePath("Tibia.spr");
+            if (!inputSpr.exists) inputSpr = SpriteReader.findMultiSpriteFile(source);
             probe.load(source.resolvePath("Tibia.dat"), inputSpr, true);
             check(probe.clientInfo != null, "Real file probe: " + errorText);
             var v:Version = VersionStorage.getInstance().getFromClientInfo(probe.clientInfo);
@@ -524,6 +582,85 @@ package
                 "Real DAT counts preserved.");
             datReload.unload();
             note("PASS: real DAT/SPR compile, sampled pixels, reopen and close");
+        }
+
+        /** Read-only real-client validation: intentionally does not write or merge assets. */
+        private function testRealProbe(selected:File, config:File):void
+        {
+            var source:File = AssetDirectoryFinder.resolve(selected);
+            check(source && source.exists && source.isDirectory, "Client folder not found.");
+            VersionStorage.getInstance().load(config.resolvePath("versions.xml"));
+            var inputSpr:File = source.resolvePath("Tibia.spr");
+            if (!inputSpr.exists) inputSpr = SpriteReader.findMultiSpriteFile(source);
+            check(inputSpr != null, "Neither Tibia.spr nor a supported multi-SPR archive was found.");
+            var probe:ClientInfoLoader = new ClientInfoLoader();
+            probe.addEventListener(ErrorEvent.ERROR, capture);
+            probe.load(source.resolvePath("Tibia.dat"), inputSpr, true);
+            check(probe.clientInfo != null, "Real file probe: " + errorText);
+            var info:ClientInfo = probe.clientInfo;
+            check(info.clientVersion == 860, "Expected 8.60, detected " + info.clientVersionStr + ".");
+            check(info.multiSpr && info.features.extended, "Expected extended multi-SPR assets.");
+            var v:Version = VersionStorage.getInstance().getFromClientInfo(info);
+            check(v != null, "Could not resolve client version from DAT/SPR signatures.");
+            var things:ThingTypeStorage = new ThingTypeStorage(new ObjectBuilderSettings());
+            things.addEventListener(ErrorEvent.ERROR, capture);
+            things.load(source.resolvePath("Tibia.dat"), v, info.features);
+            check(things.loaded, "Real DAT load: " + errorText);
+            note("PASS: real 8.60 DAT loaded (items " + things.itemsCount + ", outfits " + things.outfitsCount + ")");
+
+            var sprites:SpriteStorage = new SpriteStorage();
+            sprites.addEventListener(ErrorEvent.ERROR, capture);
+            sprites.load(inputSpr, v, info.features);
+            check(sprites.loaded && sprites.spritesCount == info.maxSpriteId,
+                "Real multi-SPR logical count mismatch: " + errorText);
+            var samples:Object = {};
+            samples[1] = true;
+            samples[sprites.spritesCount] = true;
+            samples[uint((sprites.spritesCount + 1) / 2)] = true;
+            if (SpriteReader.isFilePartsEntry(inputSpr))
+            {
+                var folder:File = inputSpr.parent;
+                var entries:Array = folder.getDirectoryListing();
+                var partFiles:Array = [];
+                for each (var entry:File in entries)
+                {
+                    var match:Array = /^part_(\d+)\.spr$/i.exec(entry.name);
+                    if (match && !entry.isDirectory) partFiles.push({file:entry, number:uint(match[1])});
+                }
+                partFiles.sortOn("number", Array.NUMERIC);
+                var end:uint = 0;
+                for each (var part:Object in partFiles)
+                {
+                    var partStream:FileStream = new FileStream();
+                    var partCount:uint;
+                    try
+                    {
+                        partStream.open(part.file, FileMode.READ);
+                        partStream.endian = Endian.LITTLE_ENDIAN;
+                        check(partStream.readUnsignedInt() == info.sprSignature,
+                            "SPR signature mismatch in " + File(part.file).name);
+                        partCount = partStream.readUnsignedInt();
+                    }
+                    finally { try { partStream.close(); } catch (closePart:Error) {} }
+                    check(partCount > 0 && partCount <= 65535, "Invalid sprite count in " + File(part.file).name);
+                    samples[end + 1] = true;
+                    samples[end + partCount] = true;
+                    end += partCount;
+                }
+                check(end == sprites.spritesCount, "Sum of sequential FileParts differs from logical SPR count.");
+                check(partFiles.length > 0, "No sequential FileParts were enumerated.");
+                note("Sequential FileParts: " + partFiles.length + " parts; " + end + " sprites");
+            }
+            var sampleCount:uint = 0;
+            for (var key:String in samples)
+            {
+                var spriteId:uint = uint(key);
+                sprites.getPixelsStrict(spriteId);
+                sampleCount++;
+            }
+            check(sampleCount > 0, "No real SPR records were sampled.");
+            note("PASS: real SPR opened; " + sampleCount + " records (including every FileParts boundary) decoded");
+            sprites.unload(); things.unload();
         }
 
         private function samePixels(a:ByteArray, b:ByteArray):Boolean

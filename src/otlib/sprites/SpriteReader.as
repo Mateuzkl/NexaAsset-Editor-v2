@@ -70,10 +70,21 @@ package otlib.sprites
 
         public function openSpriteFile(file:File, progress:Function = null):void
         {
+            openSpriteFileInternal(file, progress, true);
+        }
+
+        /** Open one physical chunk from an index-less FileParts archive. */
+        internal function openStandardSpriteFile(file:File, progress:Function = null):void
+        {
+            openSpriteFileInternal(file, progress, false);
+        }
+
+        private function openSpriteFileInternal(file:File, progress:Function, detectMulti:Boolean):void
+        {
             closeSpriteFile();
             try
             {
-                if (file.name.toLowerCase() == "spr_index.dat")
+                if (detectMulti && isMultiSpriteFile(file))
                 {
                     m_multi = new MultiSpriteReader(m_transparency);
                     m_multi.open(file, progress);
@@ -219,11 +230,44 @@ package otlib.sprites
         /** A bounded structural probe. Ambiguous headers retain the caller's hint. */
         public static function probeHeader(file:File, preferred:Boolean):Object
         {
-            if (file.name.toLowerCase() == "spr_index.dat") return {extended:true, known:true};
+            if (isMultiSpriteFile(file)) return {extended:true, known:true};
             var shortValid:Boolean = validHeader(file, false);
             var longValid:Boolean = validHeader(file, true);
             if (!shortValid && !longValid) throw new Error("Invalid SPR header/address table.");
             return {extended:shortValid == longValid ? preferred : longValid, known:shortValid != longValid};
+        }
+
+        public static function isFilePartsEntry(file:File):Boolean
+        {
+            return file && file.name.toLowerCase() == "part_1.spr" &&
+                file.parent && file.parent.name.toLowerCase() == "fileparts";
+        }
+
+        public static function isMultiSpriteFile(file:File):Boolean
+        {
+            return file && (file.name.toLowerCase() == "spr_index.dat" || isFilePartsEntry(file));
+        }
+
+        public static function normalizeMultiSpriteFile(file:File):File
+        {
+            if (!isFilePartsEntry(file)) return file;
+            var root:File = file.parent.parent;
+            var index:File = root.resolvePath("spr_index.dat");
+            var manifest:File = root.resolvePath("spr_parts.dat");
+            if (index.exists || manifest.exists)
+                return index.exists && !index.isDirectory && manifest.exists && !manifest.isDirectory ? index : null;
+            return file;
+        }
+
+        public static function findMultiSpriteFile(root:File):File
+        {
+            if (!root || !root.exists || !root.isDirectory) return null;
+            var index:File = root.resolvePath("spr_index.dat");
+            var manifest:File = root.resolvePath("spr_parts.dat");
+            if (index.exists || manifest.exists)
+                return index.exists && !index.isDirectory && manifest.exists && !manifest.isDirectory ? index : null;
+            var first:File = root.resolvePath("FileParts/part_1.spr");
+            return first.exists && !first.isDirectory ? first : null;
         }
 
         private static function validHeader(file:File, extended:Boolean):Boolean
