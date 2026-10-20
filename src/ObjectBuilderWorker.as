@@ -798,6 +798,7 @@ package
 
             // Complete
             sendCommand(new ProgressCommand(ProgressBarID.METADATA, 3, 3, "Saving complete"));
+            sendCommand(new HideProgressBarCommand(ProgressBarID.METADATA));
 
             clientCompileComplete();
 
@@ -2946,6 +2947,7 @@ package
 
             function completeHandler(event:Event):void
             {
+                sendCommand(new HideProgressBarCommand(ProgressBarID.METADATA));
                 sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
 
                 var spriteDataList:Vector.<SpriteData> = loader.spriteDataList;
@@ -2964,6 +2966,7 @@ package
 
             function errorHandler(event:ErrorEvent):void
             {
+                sendCommand(new HideProgressBarCommand(ProgressBarID.METADATA));
                 sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
                 Log.error(event.text);
             }
@@ -3229,6 +3232,7 @@ package
         {
             sendClientInfo();
             sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
+            sendCommand(new HideProgressBarCommand(ProgressBarID.METADATA));
             Log.info(Resources.getString("compileComplete"));
         }
 
