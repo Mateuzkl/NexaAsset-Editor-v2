@@ -66,6 +66,9 @@ THE SOFTWARE.
             private var m_extendedChanged:Boolean;
             private var m_multiSpr:Boolean;
             [Bindable] public var extendedItems:Boolean;
+            public var metadataController:String = "default";
+            [Bindable] public var sourceSpriteSize:uint = 32;
+            public function get outputSpriteSize():uint { return sourceSpriteSize == 64 && tileSizeList.selectedIndex == 1 ? 32 : sourceSpriteSize; }
             public function get multiSpr():Boolean { return m_multiSpr; }
             public function set multiSpr(value:Boolean):void
             {
@@ -604,6 +607,16 @@ THE SOFTWARE.
         </mg:GroupBox>
 
         <!-- client options -->
+        <s:VGroup width="100%" gap="4" visible="{sourceSpriteSize == 64}" includeInLayout="{sourceSpriteSize == 64}">
+            <s:Label text="Sprite tile dimensions"/>
+            <s:DropDownList id="tileSizeList" width="100%" selectedIndex="0" requireSelection="true">
+                <s:dataProvider><s:ArrayList>
+                    <fx:String>Keep 64x64 — compatible client required</fx:String>
+                    <fx:String>32x32 — lossless split; save copy in another folder</fx:String>
+                </s:ArrayList></s:dataProvider>
+            </s:DropDownList>
+            <s:Label width="100%" text="32x32 divides each tile into four without resizing artwork. Frames, groups and physical offsets are preserved. The original project stays open and is not marked saved by exporting a copy."/>
+        </s:VGroup>
         <s:VGroup width="100%" gap="4">
             <s:Label text="Output format / sprite IDs"/>
             <s:DropDownList id="outputFormatList" width="100%" requireSelection="true"

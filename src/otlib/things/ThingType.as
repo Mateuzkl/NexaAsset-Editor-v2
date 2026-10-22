@@ -107,6 +107,8 @@ package otlib.things
         public var unwrappable:Boolean;
         public var topEffect:Boolean;
         public var usable:Boolean;
+        /** Wot-specific boolean 0x28. Its semantics are unknown; never alias it to a standard flag. */
+        public var wotFlag28:Boolean;
 
         /** Item name from items.otb or items.xml (server-side name) */
         public var name:String;
@@ -514,6 +516,7 @@ package otlib.things
             target.unwrappable = source.unwrappable;
             target.topEffect = source.topEffect;
             target.usable = source.usable;
+            target.wotFlag28 = source.wotFlag28;
         }
     }
 }

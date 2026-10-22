@@ -28,6 +28,7 @@ package otlib.sprites
     import flash.utils.Endian;
     import flash.utils.ByteArray;
     import otlib.core.ClientFeatures;
+    import otlib.utils.SpriteExtent;
 
     public class SpriteReader extends FileStream implements ISpriteReader
     {
@@ -196,7 +197,23 @@ package otlib.sprites
             finally { try { windowStream.close(); } catch (closeWindow:Error) {} }
         }
 
-        public function detectTransparency():Boolean
+        public function detectTransparency(spriteSize:uint = 0):Boolean
+        {
+            var previousSize:uint = SpriteExtent.DEFAULT_SIZE;
+            var previousDataSize:uint = SpriteExtent.DEFAULT_DATA_SIZE;
+            if (spriteSize)
+            {
+                if ([32,64,128,256].indexOf(spriteSize) < 0) throw new Error("Unsupported sprite dimension.");
+                SpriteExtent.DEFAULT_SIZE = spriteSize;
+                SpriteExtent.DEFAULT_DATA_SIZE = spriteSize * spriteSize * 4;
+            }
+            var result:Boolean;
+            try { result = detectTransparencyAtCurrentSize(); }
+            finally { SpriteExtent.DEFAULT_SIZE = previousSize; SpriteExtent.DEFAULT_DATA_SIZE = previousDataSize; }
+            return result;
+        }
+
+        private function detectTransparencyAtCurrentSize():Boolean
         {
             var preferred:uint = 0, opposite:uint = 0;
             transparencyKnown = false;

@@ -41,7 +41,8 @@ package ob.commands.files
                 serverItemsFormat:String,
                 serverItemsBinaryPeer:String,
                 version:Version,
-                features:ClientFeatures)
+                features:ClientFeatures,
+                outputSpriteSize:uint = 0)
         {
             super(datFile.nativePath,
                     sprFile.nativePath,
@@ -49,7 +50,8 @@ package ob.commands.files
                     serverItemsFormat,
                     serverItemsBinaryPeer,
                     version,
-                    features);
+                    features,
+                    outputSpriteSize);
         }
     }
 }

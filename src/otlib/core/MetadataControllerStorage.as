@@ -33,6 +33,7 @@ package otlib.core
             // Register default controller (version-based selection)
             _defaultController = new MetadataControllerDescriptor("default", null, null);
             _controllers.push(_defaultController);
+            _controllers.push(new MetadataControllerDescriptor("wot64", MetadataReader6, MetadataWriter6));
         }
 
         public static function getInstance():MetadataControllerStorage
@@ -99,6 +100,7 @@ package otlib.core
          */
         public function createReader(controllerName:String, version:uint):MetadataReader
         {
+            if (controllerName == "wot64" && version <= 986) throw new Error("The Wot flag profile requires the 10.x+ DAT layout. Select a compatible output profile.");
             var desc:MetadataControllerDescriptor = getByName(controllerName);
 
             // If custom controller with specific class
@@ -128,6 +130,7 @@ package otlib.core
          */
         public function createWriter(controllerName:String, version:uint):MetadataWriter
         {
+            if (controllerName == "wot64" && version <= 986) throw new Error("The Wot flag profile requires the 10.x+ DAT layout. Custom flag 0x28 cannot be silently discarded.");
             var desc:MetadataControllerDescriptor = getByName(controllerName);
 
             // If custom controller with specific class

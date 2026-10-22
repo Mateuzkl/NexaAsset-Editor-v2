@@ -29,7 +29,7 @@ package otlib.utils
     public final class AssetDirectoryFinder
     {
         private static const MAX_DIRECTORIES:uint = 512;
-        private static const MAX_DEPTH:uint = 2;
+        private static const MAX_DEPTH:uint = 5;
 
         public static function resolve(selected:File):File
         {
@@ -44,11 +44,12 @@ package otlib.utils
                 {
                     visited++;
                     if (visited > MAX_DIRECTORIES) return selected;
-                    if (hasClientAssets(directory)) matches.push(directory);
+                    try { if (hasClientAssets(directory)) matches.push(directory); }
+                    catch (unreadable:Error) { continue; }
                     if (depth < MAX_DEPTH)
                     {
                         for each (var child:File in directory.getDirectoryListing())
-                            if (child.isDirectory) next.push(child);
+                            if (child.isDirectory && child.name.charAt(0) != ".") next.push(child);
                     }
                 }
                 if (matches.length == 1) return matches[0];
@@ -67,7 +68,7 @@ package otlib.utils
             {
                 for each (var entry:File in directory.getDirectoryListing())
                 {
-                    if (!entry.isDirectory && entry.extension.toLowerCase() == "spr" &&
+                    if (!entry.isDirectory && entry.extension && entry.extension.toLowerCase() == "spr" &&
                             !SpriteReader.isFilePartsEntry(entry))
                     {
                         spr = entry;

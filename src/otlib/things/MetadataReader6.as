@@ -254,11 +254,16 @@ package otlib.things
                         break;
 
                     default:
+                        if (flag == 0x28 && features && features.metadataController == "wot64")
+                        {
+                            type.wotFlag28 = true;
+                            break;
+                        }
                         throw new Error(Resources.getString("readUnknownFlag",
                                     flag.toString(16),
                                     previusFlag.toString(16),
                                     Resources.getString(type.category),
-                                    type.id));
+                                    type.id) + " at byte " + (position - 1));
                 }
             }
 

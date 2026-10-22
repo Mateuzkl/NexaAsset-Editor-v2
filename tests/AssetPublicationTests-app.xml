@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<application xmlns="http://ns.adobe.com/air/application/51.2">
+  <id>org.nexa.tests.publication</id><versionNumber>1.0.0</versionNumber>
+  <filename>AssetPublicationTests</filename>
+  <initialWindow><content>AssetPublicationTests.swf</content><visible>false</visible><width>64</width><height>64</height></initialWindow>
+  <supportedProfiles>extendedDesktop</supportedProfiles>
+</application>

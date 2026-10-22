@@ -49,7 +49,6 @@ package otlib.sprites
         private var _rect:Rectangle;
 
         private static const TRANSPARENT_COLOR:uint = 0x11;
-        private static const RGB_SIZE:uint = 3072; // 32 * 32 * 3
 
         // --------------------------------------
         // Getters / Setters
@@ -196,6 +195,7 @@ package otlib.sprites
          */
         public function getRGBData(target:ByteArray = null):ByteArray
         {
+            var RGB_SIZE:uint = SpriteExtent.DEFAULT_SIZE * SpriteExtent.DEFAULT_SIZE * 3;
             var rgb:ByteArray = target ? target : new ByteArray();
             rgb.length = RGB_SIZE;
             rgb.position = 0;
