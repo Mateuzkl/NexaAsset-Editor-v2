@@ -52,6 +52,7 @@ package otlib.sprites
     import otlib.utils.ChangeResult;
     import otlib.utils.SpriteUtils;
     import otlib.utils.SpriteExtent;
+    import otlib.utils.SpriteRetiler;
     import otlib.utils.AssetOutputTransaction;
     import otlib.core.VersionStorage;
     import otlib.things.ThingType;
@@ -634,7 +635,7 @@ package otlib.sprites
                 {
                     tmpFile = file.parent.resolvePath(".ob-" + getTimer() + "-" + uint(Math.random() * uint.MAX_VALUE) + ".spr");
                     if (tmpFile.exists) throw new Error("SPR staging path already exists.");
-                    writeSprFile(tmpFile, version, compileFeatures, 1, _spritesCount, 0);
+                    writeSprFile(tmpFile, version, compileFeatures, 1, outputCount, 0);
                     if (equal && _reader) { _reader.closeSpriteFile(); readerClosed = true; }
                     // Do not delete the destination before a completed staging file exists.
                     var stagedPath:File = new File(tmpFile.nativePath);
@@ -664,12 +665,16 @@ package otlib.sprites
             return done;
         }
 
-        public function compileToStaging(file:File, version:Version, features:ClientFeatures):Boolean
+        private var _outputSpriteSize:uint;
+        private function get splitting():Boolean { return _outputSpriteSize == 32 && SpriteExtent.DEFAULT_SIZE == 64; }
+        private function get outputCount():uint { return splitting ? _spritesCount * 4 : _spritesCount; }
+        public function compileToStaging(file:File, version:Version, features:ClientFeatures, spriteSize:uint = 0):Boolean
         {
             _exporting = true;
+            _outputSpriteSize = spriteSize;
             var result:Boolean;
             try { result = compile(file, version, features); }
-            finally { _exporting = false; }
+            finally { _exporting = false; _outputSpriteSize = 0; }
             return result;
         }
 
@@ -682,7 +687,8 @@ package otlib.sprites
 
         public function validateOutput(features:ClientFeatures):void
         {
-            if (!features.extended && _spritesCount > 65535)
+            if (splitting && _spritesCount > 0x3fffffff) throw new Error("Retiled sprite count exceeds 32 bits.");
+            if (!features.extended && outputCount > 65535)
                 throw new Error("16-bit SPR supports at most 65,535 sprites. Select 32-bit or multi-SPR; no sprites were discarded.");
         }
 
@@ -693,7 +699,10 @@ package otlib.sprites
             var addresses:ByteArray = new ByteArray(); addresses.endian = Endian.LITTLE_ENDIAN;
             var records:ByteArray = new ByteArray(); records.endian = Endian.LITTLE_ENDIAN;
             var lastProgress:int = getTimer();
-            reportProgress(completed, _spritesCount);
+            var split:Boolean = splitting;
+            var all:uint = outputCount;
+            var cachedId:uint, cachedPixels:ByteArray;
+            reportProgress(completed, all);
             try
             {
                 stream.open(file, FileMode.WRITE);
@@ -709,10 +718,26 @@ package otlib.sprites
                 {
                     var id:uint = first + local - 1;
                     // Strict read: never compile an error-placeholder over damaged source data.
-                    var sprite:Sprite = _sprites[id] !== undefined ? _sprites[id] : _reader.readSprite(id);
+                    var borrowed:Boolean = _sprites[id] !== undefined;
+                    var sprite:Sprite = split ? null : borrowed ? _sprites[id] : _reader.readSprite(id);
+                    var fromReader:Sprite = borrowed ? null : sprite;
                     var converted:Sprite = null;
                     try
                     {
+                        if (split)
+                        {
+                            var sourceId:uint = uint((id - 1) / 4) + 1;
+                            if (cachedId != sourceId)
+                            {
+                                if (cachedPixels) cachedPixels.clear();
+                                cachedPixels = getPixelsStrict(sourceId); cachedId = sourceId;
+                            }
+                            var piece:ByteArray = SpriteRetiler.split64(cachedPixels, (id - 1) % 4);
+                            SpriteExtent.DEFAULT_SIZE = 32; SpriteExtent.DEFAULT_DATA_SIZE = 4096;
+                            try { sprite = new Sprite(id, features.transparency); sprite.setPixels(piece); }
+                            finally { SpriteExtent.DEFAULT_SIZE = 64; SpriteExtent.DEFAULT_DATA_SIZE = 16384; piece.clear(); }
+                            fromReader = sprite;
+                        }
                         if (sprite && !sprite.isEmpty && sprite.transparent != features.transparency)
                         {
                             converted = sprite.withTransparency(features.transparency);
@@ -735,10 +760,10 @@ package otlib.sprites
                             }
                         }
                     }
-                    finally { if (converted) converted.dispose(); }
+                    finally { if (converted) converted.dispose(); if (fromReader) fromReader.dispose(); }
                     if (getTimer() - lastProgress >= 100 || local == count)
                     {
-                        reportProgress(completed + local, _spritesCount);
+                        reportProgress(completed + local, all);
                         lastProgress = getTimer();
                     }
                 }
@@ -747,7 +772,7 @@ package otlib.sprites
                 stream.position = header;
                 if (addresses.length) stream.writeBytes(addresses);
             }
-            finally { try { stream.close(); } catch (error:Error) {} addresses.clear(); records.clear(); }
+            finally { try { stream.close(); } catch (error:Error) {} addresses.clear(); records.clear(); if (cachedPixels) cachedPixels.clear(); }
         }
 
         private function reportProgress(value:uint, total:uint):void
@@ -768,14 +793,14 @@ package otlib.sprites
                 partsDir.createDirectory();
                 var parts:ByteArray = new ByteArray(); parts.endian = Endian.LITTLE_ENDIAN;
                 var index:ByteArray = new ByteArray(); index.endian = Endian.LITTLE_ENDIAN;
-                var num:uint = Math.ceil(_spritesCount / 65535);
+                var num:uint = Math.ceil(outputCount / 65535);
                 if (!num || num > 10000) throw new Error("Unsupported multi-SPR part count.");
                 parts.writeUTFBytes("SPMT"); parts.writeUnsignedInt(num);
-                index.writeUTFBytes("SPIX"); index.writeUnsignedInt(1); index.writeUnsignedInt(_spritesCount);
+                index.writeUTFBytes("SPIX"); index.writeUnsignedInt(1); index.writeUnsignedInt(outputCount);
                 var completed:uint = 0;
                 for (var p:uint = 1; p <= num; p++)
                 {
-                    var n:uint = Math.min(65535, _spritesCount - completed);
+                    var n:uint = Math.min(65535, outputCount - completed);
                     writeSprFile(partsDir.resolvePath("part_" + p + ".spr"), version, features, completed + 1, n, completed);
                     parts.writeUnsignedInt(version.sprSignature); parts.writeUnsignedInt(n);
                     for (var id:uint = 1; id <= n; id++) index.writeUnsignedInt((p << 16) | id);

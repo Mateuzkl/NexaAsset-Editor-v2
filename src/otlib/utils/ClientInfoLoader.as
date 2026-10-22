@@ -106,6 +106,12 @@ package otlib.utils
                 var version:Version = VersionStorage.getInstance().getBySignatures(info.datSignature, signature);
                 if (!version) throw new Error("Unsupported DAT/SPR signatures.");
                 info.features.applyVersionDefaults(version.value);
+                if (info.spriteSize && ([32,64,128,256].indexOf(info.spriteSize) < 0 || info.spriteDataSize != info.spriteSize * info.spriteSize * 4))
+                    throw new Error("Invalid OTFI sprite dimensions.");
+                // This signature pair is shared with the custom 13.10 profile,
+                // not proof that Wot is an official 13.10 client release.
+                if (info.spriteSize == 64 && info.datSignature == 0x4A10 && signature == 0x59E48E02 && info.features.metadataController == "default")
+                    info.features.metadataController = "wot64";
                 var header:Object = SpriteReader.probeHeader(spr, info.features.extended);
                 info.features.extended = header.extended;
                 info.extendedKnown = header.known;
@@ -120,7 +126,7 @@ package otlib.utils
                     // A folder may contain an older RGB archive and a newer RGBA export.
                     // Only override a stale descriptor when sampled records unambiguously
                     // validate in the opposite encoding; empty/ambiguous records do not vote.
-                    info.features.transparency = reader.detectTransparency();
+                    info.features.transparency = reader.detectTransparency(info.spriteSize);
                     info.transparencyKnown = reader.transparencyKnown;
                     info.transparencyConflict = reader.transparencyConflict;
                 }

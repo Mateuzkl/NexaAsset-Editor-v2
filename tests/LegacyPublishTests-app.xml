@@ -1,0 +1,5 @@
+<application xmlns="http://ns.adobe.com/air/application/51.2">
+    <id>org.nexa.tests.legacypublish</id><filename>LegacyPublishTests</filename><versionNumber>1.0.0</versionNumber>
+    <initialWindow><content>LegacyPublishTests.swf</content><visible>false</visible><width>1600</width><height>900</height></initialWindow>
+    <supportedProfiles>extendedDesktop</supportedProfiles>
+</application>

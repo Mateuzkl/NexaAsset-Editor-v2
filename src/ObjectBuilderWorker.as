@@ -154,6 +154,8 @@ package
     import otlib.core.SpriteDimensionStorage;
     import otlib.utils.SpriteExtent;
     import otlib.utils.AssetOutputTransaction;
+    import otlib.utils.AssetPublication;
+    import ob.commands.CompileFinishedCommand;
     import ob.commands.SetSpriteDimensionCommand;
     import ob.commands.things.ConvertFrameGroupsCommand;
     import ob.commands.things.ConvertFrameGroupsResultCommand;
@@ -177,6 +179,8 @@ package
         private var _features:ClientFeatures;
         private var _errorMessage:String;
         private var _compiled:Boolean;
+        private var _compileInProgress:Boolean;
+        private var _publication:AssetPublication;
         private var _isTemporary:Boolean;
         private var _thingListAmount:uint;
         private var _spriteListAmount:uint;
@@ -208,7 +212,7 @@ package
 
         public function get clientLoaded():Boolean
         {
-            return (_things && _things.loaded && _sprites && _sprites.loaded);
+            return (!_publication && _things && _things.loaded && _sprites && _sprites.loaded);
         }
 
         public function get otbLoaded():Boolean
@@ -266,6 +270,7 @@ package
             if (!_datFile)
             {
                 Log.warn("Cannot compile in SPR-only mode. Use Compile As instead.");
+                sendCommand(new CompileFinishedCommand(false));
                 return;
             }
 
@@ -678,7 +683,25 @@ package
                 serverItemsFormat:String,
                 serverItemsBinaryPeer:String,
                 version:Version,
-                features:ClientFeatures):void
+                features:ClientFeatures, outputSpriteSize:uint = 0):void
+        {
+            if (_compileInProgress) return;
+            _compileInProgress = true;
+            try { prepareCompile(datPath, sprPath, serverItemsPath, serverItemsFormat, serverItemsBinaryPeer, version, features, outputSpriteSize); }
+            catch (error:Error) { Log.error("Asset compilation failed: " + error.message, error.getStackTrace()); }
+            finally
+            {
+                if (!_publication && _compileInProgress)
+                {
+                    _compileInProgress = false;
+                    sendCommand(new HideProgressBarCommand(ProgressBarID.METADATA));
+                    sendCommand(new CompileFinishedCommand(false));
+                }
+            }
+        }
+
+        private function prepareCompile(datPath:String, sprPath:String, serverItemsPath:String,
+                serverItemsFormat:String, serverItemsBinaryPeer:String, version:Version, features:ClientFeatures, outputSpriteSize:uint):void
         {
             // ... skipped
             if (isNullOrEmpty(datPath))
@@ -698,6 +721,11 @@ package
 
             var dat:File = new File(datPath);
             var spr:File = new File(sprPath);
+            if (!outputSpriteSize) outputSpriteSize = SpriteExtent.DEFAULT_SIZE;
+            var retile:Boolean = outputSpriteSize != SpriteExtent.DEFAULT_SIZE;
+            if (retile && !(SpriteExtent.DEFAULT_SIZE == 64 && outputSpriteSize == 32)) throw new Error("Archive retiling supports 64x64 to 32x32 only.");
+            if (retile && FileUtil.equals(dat.parent, _datFile.parent)) throw new Error("Choose a different output folder for lossless 32x32 conversion. The 64x64 working copy stays open and unchanged.");
+            if (features.metadataController == "wot64" && version.value <= 986) throw new Error("Wot custom flag 0x28 requires a 10.x+ Wot DAT profile. Export supported individual objects as standard 32x32 OBD for older clients.");
             features = features.clone();
             features.applyVersionDefaults(version.value);
             if (spr.name.toLowerCase() == "spr_index.dat")
@@ -714,7 +742,6 @@ package
             var stagedDat:File = stage.resolvePath(dat.name);
             var stagedSpr:File = stage.resolvePath(spr.name);
             var publicationAttempted:Boolean = false;
-            var committed:Boolean = false;
             var readerSuspended:Boolean = false;
             try
             {
@@ -727,14 +754,14 @@ package
 
             // 1/3 Saving DAT
             sendCommand(new ProgressCommand(ProgressBarID.METADATA, 0, 3, "Saving DAT"));
-            if (!_things.compileToStaging(stagedDat, version, features))
+            if (!_things.compileToStaging(stagedDat, version, features, outputSpriteSize))
             {
                 return;
             }
 
             // 2/3 Saving SPR
             sendCommand(new ProgressCommand(ProgressBarID.METADATA, 1, 3, "Saving SPR"));
-            if (!_sprites.compileToStaging(stagedSpr, version, features))
+            if (!_sprites.compileToStaging(stagedSpr, version, features, outputSpriteSize))
             {
                 return;
             }
@@ -779,38 +806,71 @@ package
             // Save .otfi file
             var dir:File = FileUtil.getDirectory(dat);
             var otfiFile:File = stage.resolvePath(FileUtil.getName(dat) + ".otfi");
-            var otfi:OTFI = new OTFI(features, dat.name, spr.name, SpriteExtent.DEFAULT_SIZE, SpriteExtent.DEFAULT_DATA_SIZE);
+            var otfi:OTFI = new OTFI(features, dat.name, spr.name, outputSpriteSize, outputSpriteSize * outputSpriteSize * 4);
             if (!otfi.save(otfiFile)) throw new Error("Unable to write the staged OTFI descriptor.");
             var names:Array = [dat.name];
             if (spr.name.toLowerCase() == "spr_index.dat") names = names.concat(["FileParts", "spr_parts.dat", "spr_index.dat"]);
             else names.push(spr.name);
             names.push(otfiFile.name);
-            sendCommand(new ProgressCommand(ProgressBarID.METADATA, 2, 3, "Publishing assets"));
+            sendCommand(new ProgressCommand(ProgressBarID.METADATA, 0, names.length * 2 + 1, "Closing source sprite reader"));
             _sprites.closeReader(); readerSuspended = true;
             publicationAttempted = true;
-            var backup:File = AssetOutputTransaction.publish(stage, dir, names);
-            committed = true;
-            _things.bindCompiledFile(dat, version, features);
-            _sprites.bindCompiledFile(spr, version, features);
-            readerSuspended = false;
-            _datFile = dat; _sprFile = spr; _version = version; _features = features.clone();
-            if (backup) Log.info("Previous assets retained at " + backup.nativePath);
-
-            // Complete
-            sendCommand(new ProgressCommand(ProgressBarID.METADATA, 3, 3, "Saving complete"));
-
-            clientCompileComplete();
-
-            if (structureChanged)
-                sendCommand(new NeedToReloadCommand(features));
-            else
-                sendClientInfo();
+            _publication = new AssetPublication(stage, dir, names, published, publicationFailed,
+                function(done:uint, total:uint, label:String):void {
+                    sendCommand(new ProgressCommand(ProgressBarID.METADATA, done, total + 1, label));
+                });
+            _publication.start();
             }
             finally
             {
-                if (readerSuspended) _sprites.resumeReader();
+                if (readerSuspended && !publicationAttempted) _sprites.resumeReader();
                 // Recovery artifacts are retained if publication did not finish.
-                if ((!publicationAttempted || committed) && stage.exists) stage.deleteDirectory(true);
+                if (!publicationAttempted && stage.exists) stage.deleteDirectory(true);
+            }
+
+            function published(backup:File):void
+            {
+                try
+                {
+                    if (retile)
+                    {
+                        _sprites.resumeReader(); readerSuspended = false;
+                        _publication = null; _compileInProgress = false;
+                        if (stage.exists) stage.deleteDirectory(true);
+                        sendCommand(new CompileFinishedCommand(true, dir.nativePath));
+                        Log.info("Lossless 32x32 copy saved at " + dir.nativePath + ". Original 64x64 working copy remains open; open the output folder to edit the copy.");
+                        return;
+                    }
+                    // Requests are admitted again only once both stores are rebound.
+                    _things.bindCompiledFile(dat, version, features);
+                    _sprites.bindCompiledFile(spr, version, features);
+                    readerSuspended = false;
+                    _datFile = dat; _sprFile = spr; _version = version; _features = features.clone();
+                    _publication = null;
+                    sendCommand(new ProgressCommand(ProgressBarID.METADATA, 1, 1, "Saving complete"));
+                    if (stage.exists) stage.deleteDirectory(true);
+                    _compileInProgress = false;
+                    sendCommand(new CompileFinishedCommand(true));
+                    clientCompileComplete();
+                    if (backup) Log.info("Previous assets retained at " + backup.nativePath);
+                    if (structureChanged) sendCommand(new NeedToReloadCommand(features));
+                }
+                catch (error:Error)
+                {
+                    _publication = null; _compileInProgress = false;
+                    sendCommand(new CompileFinishedCommand(false));
+                    Log.error("Assets were published but could not be rebound. Reopen the output project. " + error.message);
+                }
+            }
+
+            function publicationFailed(error:Error):void
+            {
+                _publication = null; _compileInProgress = false;
+                try { if (readerSuspended) _sprites.resumeReader(); }
+                catch (reopenError:Error) { Log.error("Source reader could not be reopened: " + reopenError.message); }
+                sendCommand(new HideProgressBarCommand(ProgressBarID.METADATA));
+                sendCommand(new CompileFinishedCommand(false));
+                Log.error("Asset publication failed: " + error.message);
             }
         }
 
@@ -1272,8 +1332,8 @@ package
                 for each(var sourceId:uint in ids) {
                     var sourceThing:ThingType=_things.getThingType(sourceId,category);if(!sourceThing)throw new Error("Legacy object not found: "+sourceId);
                     for each(var sourceGroup:FrameGroup in sourceThing.frameGroups)if(sourceGroup) {
-                        if(sourceGroup.width>2 || sourceGroup.height>2)throw new Error("Modern sprites support at most 64 pixels per axis.");
-                        pixelBytes+=Number(sourceGroup.spriteIndex.length)*4096;
+                        if(sourceGroup.width * SpriteExtent.DEFAULT_SIZE > 64 || sourceGroup.height * SpriteExtent.DEFAULT_SIZE > 64)throw new Error("Modern sprites support at most 64 physical pixels per axis; this object is larger. Export standard OBD instead to preserve its size.");
+                        pixelBytes+=Number(sourceGroup.spriteIndex.length)*SpriteExtent.DEFAULT_DATA_SIZE;
                         if(pixelBytes>32*1024*1024)throw new Error("Selected pixels exceed 32 MiB. Export a smaller selection.");
                     }
                 }
@@ -2946,6 +3006,7 @@ package
 
             function completeHandler(event:Event):void
             {
+                sendCommand(new HideProgressBarCommand(ProgressBarID.METADATA));
                 sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
 
                 var spriteDataList:Vector.<SpriteData> = loader.spriteDataList;
@@ -2964,6 +3025,7 @@ package
 
             function errorHandler(event:ErrorEvent):void
             {
+                sendCommand(new HideProgressBarCommand(ProgressBarID.METADATA));
                 sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
                 Log.error(event.text);
             }
@@ -3229,6 +3291,7 @@ package
         {
             sendClientInfo();
             sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
+            sendCommand(new HideProgressBarCommand(ProgressBarID.METADATA));
             Log.info(Resources.getString("compileComplete"));
         }
 
@@ -3241,6 +3304,8 @@ package
             {
                 info.clientVersion = _version.value;
                 info.clientVersionStr = _version.valueStr;
+                info.spriteSize = SpriteExtent.DEFAULT_SIZE;
+                info.spriteDataSize = SpriteExtent.DEFAULT_DATA_SIZE;
                 info.datSignature = _things.signature;
                 info.minItemId = ThingTypeStorage.MIN_ITEM_ID;
                 info.maxItemId = _things.itemsCount;

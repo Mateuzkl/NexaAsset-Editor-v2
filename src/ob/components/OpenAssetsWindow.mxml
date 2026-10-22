@@ -93,6 +93,7 @@ THE SOFTWARE.
             private var m_serverItemsDirectoryChanged:Boolean;
             private var m_attributeServer:String = null;
             private var m_expectedInfo:ClientInfo;
+            public function get metadataController():String { return m_expectedInfo ? m_expectedInfo.features.metadataController : "default"; }
             
             // --------------------------------------
             // Getters / Setters

@@ -51,6 +51,7 @@ package otlib.obd
     import otlib.things.ThingType;
     import otlib.utils.OTFormat;
     import otlib.utils.SpriteExtent;
+    import otlib.utils.SpriteRetiler;
 
     public class OBDEncoder
     {
@@ -76,6 +77,28 @@ package otlib.obd
         {
             if (!data)
                 throw new NullArgumentError("data");
+            if (data.thing.wotFlag28) throw new Error("Wot custom flag 0x28 has no standard OBD representation. Save this object in the Wot DAT project to preserve it.");
+            var size:uint = SpriteExtent.DEFAULT_SIZE, dataSize:uint = SpriteExtent.DEFAULT_DATA_SIZE;
+            var temporary:ThingData;
+            var result:ByteArray;
+            try
+            {
+                if (size != 32) { temporary = SpriteRetiler.data(data, size, 32); data = temporary; }
+                SpriteExtent.DEFAULT_SIZE = 32; SpriteExtent.DEFAULT_DATA_SIZE = 4096;
+                result = encodeStandard(data);
+            }
+            finally
+            {
+                SpriteExtent.DEFAULT_SIZE = size; SpriteExtent.DEFAULT_DATA_SIZE = dataSize;
+                if (temporary) SpriteRetiler.dispose(temporary);
+            }
+            return result;
+        }
+
+        private function encodeStandard(data:ThingData):ByteArray
+        {
+            for each (var group:FrameGroup in data.thing.frameGroups)
+                if (group && group.getTotalSprites() > 4096) throw new Error("Standard OBD supports at most 4096 tiles per frame group. Save the complete DAT project instead.");
 
             if (data.obdVersion == OBDVersions.OBD_VERSION_3)
                 return encodeV3(data);
@@ -88,6 +111,24 @@ package otlib.obd
         }
 
         public function decode(bytes:ByteArray):ThingData
+        {
+            var size:uint = SpriteExtent.DEFAULT_SIZE, dataSize:uint = SpriteExtent.DEFAULT_DATA_SIZE;
+            var decoded:ThingData, result:ThingData;
+            try
+            {
+                SpriteExtent.DEFAULT_SIZE = 32; SpriteExtent.DEFAULT_DATA_SIZE = 4096;
+                decoded = decodeStandard(bytes);
+                result = size == 32 ? decoded : SpriteRetiler.data(decoded, 32, size);
+            }
+            finally
+            {
+                SpriteExtent.DEFAULT_SIZE = size; SpriteExtent.DEFAULT_DATA_SIZE = dataSize;
+                if (decoded && size != 32) SpriteRetiler.dispose(decoded);
+            }
+            return result;
+        }
+
+        private function decodeStandard(bytes:ByteArray):ThingData
         {
             if (!bytes)
                 throw new NullArgumentError("bytes");

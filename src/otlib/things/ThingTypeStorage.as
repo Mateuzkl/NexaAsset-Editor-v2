@@ -486,12 +486,14 @@ package otlib.things
             return done;
         }
 
-        public function compileToStaging(file:File, version:Version, features:ClientFeatures):Boolean
+        private var _retileOutput:Boolean;
+        public function compileToStaging(file:File, version:Version, features:ClientFeatures, spriteSize:uint = 0):Boolean
         {
             _exporting = true;
+            _retileOutput = spriteSize == 32 && otlib.utils.SpriteExtent.DEFAULT_SIZE == 64;
             var result:Boolean;
             try { result = compile(file, version, features); }
-            finally { _exporting = false; }
+            finally { _exporting = false; _retileOutput = false; }
             return result;
         }
 
@@ -1160,7 +1162,7 @@ package otlib.things
                 var thing:ThingType = list[id];
                 if (thing)
                 {
-
+                    if (_retileOutput) thing = otlib.utils.SpriteRetiler.archiveThing(thing);
                     if (!writer.writeProperties(thing))
                         return false;
 
@@ -1188,7 +1190,7 @@ package otlib.things
                 var item:ThingType = list[id];
                 if (item)
                 {
-
+                    if (_retileOutput) item = otlib.utils.SpriteRetiler.archiveThing(item);
                     if (!writer.writeItemProperties(item))
                         return false;
 

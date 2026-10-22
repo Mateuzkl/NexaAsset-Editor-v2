@@ -84,6 +84,7 @@ package otlib.things
                 writeShort(type.bonesOffsetY[Direction.WEST]);
             }
 
+            writeWotExtension(type);
             writeByte(MetadataFlags6.LAST_FLAG);
             return true;
         }
@@ -261,8 +262,17 @@ package otlib.things
                 writeShort(type.bonesOffsetY[Direction.WEST]);
             }
 
+            writeWotExtension(type);
             writeByte(MetadataFlags6.LAST_FLAG);
             return true;
+        }
+
+        private function writeWotExtension(type:ThingType):void
+        {
+            if (!type.wotFlag28) return;
+            if (!features || features.metadataController != "wot64")
+                throw new Error("Wot flag 0x28 requires the wot64 metadata profile; it cannot be silently discarded.");
+            writeByte(0x28);
         }
     }
 }

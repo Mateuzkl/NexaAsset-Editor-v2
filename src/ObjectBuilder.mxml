@@ -113,6 +113,7 @@ THE SOFTWARE.
             import ob.commands.LoadVersionsCommand;
             import ob.commands.LoadSpriteDimensionsCommand;
             import ob.commands.NeedToReloadCommand;
+            import ob.commands.CompileFinishedCommand;
             import ob.commands.ProgressBarID;
             import ob.commands.ProgressCommand;
             import ob.commands.SetClientInfoCommand;
@@ -271,6 +272,8 @@ THE SOFTWARE.
             private var _showSpritesPanel:Boolean = true;
             private var _showPanelChanged:Boolean;
             private var _progressWidget:ReadableProgressWidget;
+            private var _legacyCompiling:Boolean;
+            public function get legacyCompiling():Boolean { return _legacyCompiling; }
             private var _progressPhase:String;
             private var _progressStarted:int;
             private var _category:String;
@@ -543,6 +546,7 @@ THE SOFTWARE.
             
             public function sendCommand(command:WorkerCommand):void
             {
+                if (_legacyCompiling && !(command is SettingsCommand)) return;
                 if (_nativeSource && !(command is ob.commands.things.ExportNativeObjectCommand))
                 {
                     var source:ModernNativeSource = _nativeSource;
@@ -591,7 +595,9 @@ THE SOFTWARE.
                     else { statusLabel.text = "This legacy operation is not available in the native working copy. Use Convert DAT/SPR to continue in legacy format."; appendLog(statusLabel.text); }
                     return;
                 }
-                _communicator.sendCommand(command);
+                if (command is CompileCommand || command is CompileAsCommand) _legacyCompiling = true;
+                try { _communicator.sendCommand(command); }
+                catch (error:Error) { if (_legacyCompiling) compileFinishedCallback(false); throw error; }
             }
             
             public function setSpriteExtend(dimension:SpriteDimension):void
@@ -637,7 +643,7 @@ THE SOFTWARE.
 
             public function createNewProject():void
             {
-                if (_locked)
+                if (_locked || _legacyCompiling)
                     return;
             
                 _locked = true;
@@ -671,6 +677,7 @@ THE SOFTWARE.
             
             public function openProject(directory:File = null):void
             {
+                if (_legacyCompiling) return;
                 if (_locked)
                     return;
             
@@ -753,6 +760,7 @@ THE SOFTWARE.
             
             public function compileProject():void
             {
+                if (_legacyCompiling) return;
                 if (_nativeSource) { saveNativeProject(); return; }
                 if (!clientLoaded)
                     return;
@@ -771,6 +779,7 @@ THE SOFTWARE.
             
             public function compileProjectAs():void
             {
+                if (_legacyCompiling) return;
                 if (_nativeSource) { openNativeSave(); return; }
                 if (!clientLoaded || _locked)
                     return;
@@ -785,6 +794,8 @@ THE SOFTWARE.
                 window.improvedAnimations = _clientInfo.improvedAnimations;
                 window.frameGroups = _clientInfo.frameGroups;
                 window.extendedItems = _clientInfo.features.extendedItems;
+                window.metadataController = _clientInfo.features.metadataController;
+                window.sourceSpriteSize = SpriteExtent.DEFAULT_SIZE;
                 window.multiSpr = _clientInfo.multiSpr;
                 window.filesName = isNullOrEmpty(_filesName) ? "Tibia" : _filesName;
                 window.serverItemsLoaded = _otbLoaded;
@@ -810,13 +821,14 @@ THE SOFTWARE.
                                     window.serverItemsFormat,
                                     window.serverItemsBinaryPeer,
                                     window.version,
-                                    features));
+                                    features, window.outputSpriteSize));
                     }
                 }
             }
             
             public function unloadProject():void
             {
+                if (_legacyCompiling) return;
                 if (!clientLoaded)
                     return;
             
@@ -1135,6 +1147,7 @@ THE SOFTWARE.
             }
             public function openNativeProject(directory:File, helper:File = null):void
             {
+                if (_legacyCompiling) return;
                 if(!canSwitchAssetProject())return;
                 clear();
                 _communicator.sendCommand(new UnloadFilesCommand());
@@ -1671,6 +1684,7 @@ THE SOFTWARE.
             
             public function clear():void
             {
+                if (_legacyCompiling) return;
                 cancelPendingThingRequest();
                 _thingData = null;
                 _thingDataChanged = false;
@@ -1780,6 +1794,7 @@ THE SOFTWARE.
                 _communicator.registerCallback(UpdateThingPropertiesCommand, updateThingPropertiesCallback);
                 _communicator.registerCallback(SetSpriteListCommand, function(ids:Vector.<uint>, sprites:Vector.<SpriteData>, force:Boolean):void { setSpriteListCallback(ids, sprites, force); });
                 _communicator.registerCallback(NeedToReloadCommand, needToReloadCallback);
+                _communicator.registerCallback(CompileFinishedCommand, compileFinishedCallback);
             }
             
             // --------------------------------------
@@ -2552,7 +2567,15 @@ THE SOFTWARE.
             private function hideProgressBarCallback(id:String):void
             {
                 if (_progressWidget)
-                    _progressWidget.progress(id, 100, 100, null);
+                {
+                    var widget:ReadableProgressWidget = _progressWidget;
+                    widget.progress(id, 100, 100, null);
+                    // Close the widget when the save/compile bar explicitly hides
+                    if (_progressWidget == widget && !_legacyCompiling && (id == ProgressBarID.METADATA || id == ProgressBarID.DEFAULT))
+                    {
+                        widget.close();
+                    }
+                }
             }
             
             private function progressCallback(id:String, loaded:uint, total:uint, label:String):void
@@ -2564,10 +2587,10 @@ THE SOFTWARE.
                 {
                     _progressWidget = new ReadableProgressWidget();
                     _progressWidget.width = 560;
-                    _progressWidget.addEventListener(Event.CLOSE, function closeHandler(event:Event):void
+                    var created:ReadableProgressWidget = _progressWidget;
+                    created.addEventListener(Event.CLOSE, function closeHandler(event:Event):void
                         {
-                            _locked = false;
-                            _progressWidget = null;
+                            if (_progressWidget == created) { _locked = false; _progressWidget = null; }
                         });
                     _progressWidget.open(this);
                     _locked = true;
@@ -2579,24 +2602,39 @@ THE SOFTWARE.
                     _progressPhase = phase;
                     _progressStarted = flash.utils.getTimer();
                 }
-                if (total > 3)
+                // Show % for operations with 2+ steps (includes save stages total=3)
+                if (total >= 2)
                 {
-                    var units:uint = total - 1; // Last unit is reserved for publishing/flush.
+                    var isLong:Boolean = total > 3;
+                    var units:uint = total;
                     var done:uint = Math.min(loaded, units);
                     var percent:int = Math.floor(Number(done) * 100 / Math.max(1, units));
                     var elapsed:Number = (flash.utils.getTimer() - _progressStarted) / 1000;
-                    label = phase + "  " + percent + "%  (" + done + " / " + units + ")";
-                    if (elapsed >= 2 && done > 0 && done < units)
+                    label = phase + "  " + percent + "%";
+                    if (isLong) label += "  (" + done + " / " + units + ")";
+                    if (isLong && elapsed >= 2 && done > 0 && done < units)
                         label += "  ~" + Math.ceil(elapsed * (units - done) / done) + "s remaining";
-                    else if (done == units) label += "  Finalizing...";
+                    else if (done == units) label += "  Finalizando...";
                 }
                 _progressWidget.progress(id, loaded, total, label);
                 if (_progressWidget) _progressWidget.fitLabelText();
+                // Auto-close METADATA bar when it reaches 100%
+                if (_progressWidget && !_legacyCompiling && id == ProgressBarID.METADATA && total > 0 && loaded >= total)
+                {
+                    _progressWidget.close();
+                }
+            }
+
+            private function compileFinishedCallback(success:Boolean, copyPath:String = null):void
+            {
+                _legacyCompiling = false;
+                if (_progressWidget) _progressWidget.close();
+                statusLabel.text = success ? copyPath ? "32x32 copy saved: " + copyPath + " (original remains open)" : "Assets saved" : "Save did not complete. Review the error; edits and recovery files are preserved.";
             }
             
             private function logCallback(level:uint, message:String, stack:String, id:uint):void
             {
-                if (_progressWidget)
+                if (_progressWidget && !_legacyCompiling)
                     _progressWidget.close();
             
                 if (level != Log.INFO)
@@ -2782,6 +2820,7 @@ THE SOFTWARE.
             
             protected function applicationClosingHandler(event:Event):void
             {
+                if (_legacyCompiling) { event.preventDefault(); statusLabel.text = "Wait for asset publication or recovery before closing."; return; }
                 if(_legacyModernExport){event.preventDefault();statusLabel.text="Wait for the modern project export before closing.";return;}
                 if(_nativeSource && (_nativeSaving || clientChanged || _nativeSource.busy || _nativeObjectExportActive)){
                     event.preventDefault();
