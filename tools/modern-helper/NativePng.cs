@@ -12,7 +12,9 @@ public static class NativePng
         AssetSet.RejectLinks(file);byte[] bytes=AssetSet.ReadBounded(file,1024*1024);
         return Read(bytes);
     }
-    public static Pixels Read(byte[] bytes)
+    public static Pixels Read(byte[] bytes) => Decode(bytes, false);
+    public static Pixels ReadArtSheet(byte[] bytes) => Decode(bytes, true);
+    private static Pixels Decode(byte[] bytes, bool artSheet)
     {
         if(bytes.Length>1024*1024)throw new InvalidDataException("PNG input exceeds 1 MiB.");
         if(bytes.Length<33 || !bytes.AsSpan(0,8).SequenceEqual(new byte[]{137,80,78,71,13,10,26,10}))throw new InvalidDataException("Invalid PNG signature.");
@@ -28,7 +30,8 @@ public static class NativePng
                 case "IHDR":
                     if(width!=0 || size!=13)throw new InvalidDataException("Invalid/duplicate PNG IHDR.");
                     width=BinaryPrimitives.ReadInt32BigEndian(data);height=BinaryPrimitives.ReadInt32BigEndian(data[4..]);depth=data[8];type=data[9];
-                    if(width is not (32 or 64)||height is not (32 or 64)||data[10]!=0||data[11]!=0||data[12]!=0||type is not (0 or 2 or 3 or 4 or 6)||!(depth==8 || (type is 0 or 3 && depth is 1 or 2 or 4)))throw new InvalidDataException("Use a non-interlaced 32/64-pixel PNG (8-bit RGB/RGBA/grayscale, or 1/2/4/8-bit palette/grayscale).");break;
+                    bool validSize = artSheet ? width > 0 && height > 0 && width <= 1024 && height <= 1024 && (long)width * height <= 262144 : width is (32 or 64) && height is (32 or 64);
+                    if(!validSize||data[10]!=0||data[11]!=0||data[12]!=0||type is not (0 or 2 or 3 or 4 or 6)||!(depth==8 || (type is 0 or 3 && depth is 1 or 2 or 4)))throw new InvalidDataException("Use a non-interlaced 32/64-pixel PNG (8-bit RGB/RGBA/grayscale, or 1/2/4/8-bit palette/grayscale).");break;
                 case "PLTE":if(idat||palette!=null||size==0||size>768||size%3!=0)throw new InvalidDataException("Invalid PNG palette.");palette=data.ToArray();break;
                 case "tRNS":if(idat||alpha!=null||size>256||type is 4 or 6)throw new InvalidDataException("Invalid PNG transparency chunk.");alpha=data.ToArray();break;
                 case "IDAT":if(idatEnded)throw new InvalidDataException("Non-consecutive PNG image chunks.");compressed.Write(data);idat=true;break;

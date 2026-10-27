@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace NexaModern;
 
 /// <summary>Session-only edits. The original catalog, protobuf and sheets are never opened for writing.</summary>
-public sealed class NativeWorkspace(AssetSet assets,SheetCache cache)
+public sealed partial class NativeWorkspace(AssetSet assets,SheetCache cache)
 {
     public long Revision { get; private set; }
     private Appearance? clipboard;

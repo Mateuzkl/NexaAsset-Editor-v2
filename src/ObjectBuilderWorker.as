@@ -56,6 +56,9 @@ package
 
     import nail.utils.FileQueueHelper;
 
+    import ob.studio.LegacyStudioAdapter;
+    import ob.commands.StudioCommand;
+    import ob.commands.StudioResultCommand;
     import ob.commands.FindResultCommand;
     import ob.commands.HideProgressBarCommand;
     import ob.commands.LoadVersionsCommand;
@@ -168,6 +171,8 @@ package
         // PROPERTIES
         // --------------------------------------------------------------------------
 
+        private var _studioRevision:Number=0;
+        private var _studioAdapter:LegacyStudioAdapter;
         private var _communicator:IWorkerCommunicator;
         private var _things:ThingTypeStorage;
         private var _sprites:SpriteStorage;
@@ -365,6 +370,7 @@ package
             _communicator.registerClass(Version);
             _communicator.registerClass(ClientFeatures);
 
+            _communicator.registerCallback(ob.commands.StudioCommand, studioCommandCallback);
             _communicator.registerCallback(SettingsCommand, settingsCallback);
 
             _communicator.registerCallback(LoadVersionsCommand, loadClientVersionsCallback);
@@ -3238,6 +3244,7 @@ package
 
         public function sendClientInfo():void
         {
+            _studioRevision++;
             var info:ClientInfo = new ClientInfo();
             info.loaded = clientLoaded;
 
@@ -3688,6 +3695,15 @@ package
                 if (_things.loaded && _sprites.loaded)
                     clientLoadComplete();
             }
+        }
+
+        private function studioCommandCallback(id:String,method:String,payload:String):void {
+            try {
+                if(!_studioAdapter||!_studioAdapter.owns(_things))_studioAdapter=new LegacyStudioAdapter(_things,_sprites,_features);
+                var result:Object=_studioAdapter.execute(method,JSON.parse(payload),_studioRevision);
+                if(method=="commit_art"){sendClientInfo();sendThingList(Vector.<uint>([result.selected]),result.category,true);sendSpriteList(Vector.<uint>([result.sprite]),true);}
+                sendCommand(new ob.commands.StudioResultCommand(id,JSON.stringify(result)));
+            }catch(error:Error){sendCommand(new ob.commands.StudioResultCommand(id,null,error.message));}
         }
 
         protected function storageChangeHandler(event:StorageEvent):void
