@@ -103,11 +103,12 @@ public sealed class StudioService(IEditorBridge bridge)
                 pixels = ArtDocument.FromArgb(Convert.FromBase64String(sprite.GetProperty("argb").GetString()!));
             }
             var created = ArtDocument.Create(projectSession!, info.GetProperty("revision").GetInt64(), w, h, pixels, S(args, "category", "item"), S(args, "name")); if (created.State.Category == "outfit") ArtDocument.SetAnimation(created.State, 1, 4, null); created.TargetTransparency = !info.TryGetProperty("transparency", out var alpha) || alpha.GetBoolean(); documents.Add(created.Id, created);
-            await Changed(created); return created.Info();
+            await Changed(created, true); return created.Info();
         }
         var doc = Document(S(args, "editId"));
-        if (method is "get_edit_preview" or "ui_snapshot") return doc.Preview(I(args, "frame"), local);
+        if (method is "get_edit_preview" or "ui_snapshot") return doc.Preview(I(args, "frame"), local, local && args.TryGetProperty("includeSheet", out var showSheet) && showSheet.GetBoolean());
         if (method == "cancel_edit") { documents.Remove(doc.Id); if (generation?.Document == doc) generation.Cancellation.Cancel(); await bridge.EmitAsync(new { type = "changed", editId = doc.Id, closed = true }); return new { cancelled = !doc.Committed, closed = true, appliedAssetPreserved = doc.Committed }; }
+        if (method == "get_edit_sheet") return doc.Sheet();
         if (method == "export_spritesheet")
         {
             int columns = I(args, "columns", doc.State.Directions), rows = (doc.State.Frames.Count + columns - 1) / Math.Max(1, columns);
@@ -234,5 +235,5 @@ public sealed class StudioService(IEditorBridge bridge)
         });
         await Changed(doc); return doc.Info();
     }
-    private Task Changed(ArtDocument doc) => bridge.EmitAsync(new { type = "changed", editId = doc.Id, documentRevision = doc.Revision, category = doc.State.Category, name = doc.State.Name, approvalRequested = doc.ApprovalRequested, committed = doc.Committed });
+    private Task Changed(ArtDocument doc, bool created = false) => bridge.EmitAsync(new { type = "changed", created, editId = doc.Id, documentRevision = doc.Revision, category = doc.State.Category, name = doc.State.Name, approvalRequested = doc.ApprovalRequested, committed = doc.Committed });
 }

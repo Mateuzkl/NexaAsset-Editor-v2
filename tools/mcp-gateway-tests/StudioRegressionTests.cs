@@ -51,7 +51,16 @@ internal static class StudioRegressionTests
         });
         document.Edit(1, state => ArtDocument.SetAnimation(state, 3, 4, null));
         for (int i = 0; i < 12; i++) Check(document.State.Frames[i].Layers[0].Rgba[0] == 10 + i / 4 && document.State.Frames[i].Duration == 100 + i / 4 * 20, "1→4 mixed time/directions/timings");
+        var sheetReview = J(document.Sheet());
+        Check(sheetReview.GetProperty("columns").GetInt32() == 4 && sheetReview.GetProperty("rows").GetInt32() == 3, "Outfit sheet axes changed");
+        Check(sheetReview.GetProperty("directionOrder").EnumerateArray().Select(d => d.GetString()).SequenceEqual(new[] { "north", "east", "south", "west" }), "Native direction order changed");
+        foreach (var cell in sheetReview.GetProperty("cells").EnumerateArray()) {
+            int index = cell.GetProperty("index").GetInt32();
+            Check(cell.GetProperty("time").GetInt32() == index / 4 && cell.GetProperty("direction").GetInt32() == index % 4 && Convert.FromBase64String(cell.GetProperty("rgba").GetString()!)[0] == 10 + index / 4, "Sheet review remapped cell pixels/times");
+        }
+        object retainedSheet = document.Sheet(), retainedPreview = document.Preview(11, true, true);
         document.Edit(2, state => ArtDocument.SetAnimation(state, 5, 1, null));
+        Check(J(retainedSheet).GetProperty("cells").GetArrayLength() == 12 && J(retainedPreview).GetProperty("timeline")[11].GetProperty("direction").GetInt32() == 3, "Deferred response observed a newer draft state");
         for (int i = 0; i < 5; i++) Check(document.State.Frames[i].Layers[0].Rgba[0] == 10 + Math.Min(i, 2), "4→1/extended time mapping");
         document.Edit(3, state => ArtDocument.SetAnimation(state, 1, 1, null));
         document.History(4, false); Check(document.State.Frames.Count == 5, "Animation resize undo");

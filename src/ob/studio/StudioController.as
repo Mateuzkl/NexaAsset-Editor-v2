@@ -59,6 +59,11 @@ package ob.studio {
         /** Closing the window preserves drafts but disables access, revokes provider consent and rotates the bearer. */
         public function suspend():void {if(!ready)return;call("ui_suspend",{},function(result:Object,error:String):void {enabled=false;if(!error)token=result.token;status=error||"MCP paused · reopen Pixel Art Studio to enable";dispatchEvent(new Event("status"));});}
         public function copyConfiguration():void {Clipboard.generalClipboard.setData(ClipboardFormats.TEXT_FORMAT,"[mcp_servers.nexaasset]\nurl = \""+endpoint+"\"\nbearer_token_env_var = \"NEXA_MCP_TOKEN\"\n");}
+        /** Hand a configured local client its ephemeral connection over a private pipe, without using the global clipboard. */
+        public function writeClientConnection(destination:IDataOutput):void {
+            if(!ready||!enabled)throw new Error("Enable the local MCP connection before starting its client.");
+            destination.writeUTFBytes(JSON.stringify({endpoint:endpoint,token:token})+"\n");
+        }
         public function copyToken():void {if(token.length)Clipboard.generalClipboard.setData(ClipboardFormats.TEXT_FORMAT,token);}
         private function stderr(event:ProgressEvent):void {if(process)process.standardError.readUTFBytes(process.standardError.bytesAvailable);}
         private function ioError(event:IOErrorEvent):void {fail("Studio process pipe failed.");}

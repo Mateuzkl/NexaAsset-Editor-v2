@@ -46,6 +46,8 @@ public sealed class StudioTools(StudioService studio)
         var document = metadata.GetProperty("document");
         return ImageResult(metadata, Convert.FromBase64String(metadata.GetProperty("rgba").GetString()!), document.GetProperty("width").GetInt32(), document.GetProperty("height").GetInt32());
     }
+    [McpServerTool(Name = "nexa_get_edit_sheet", ReadOnly = true), Description("Review every draft cell together. Returns exact flattened RGBA per cell, time/direction/duration and native directionOrder north/east/south/west. Outfit columns are directions; rows are time steps. No provider/API key is needed for MCP pixel drawing.")]
+    public Task<object> Sheet(string editId, CancellationToken ct) => Read("get_edit_sheet", new { editId }, ct);
     private static CallToolResult ImageResult(JsonElement metadata, byte[] rgba, int width, int height) => new()
     {
         StructuredContent = metadata,

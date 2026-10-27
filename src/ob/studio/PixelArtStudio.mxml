@@ -15,6 +15,7 @@
         [Bindable] public var snapshot:Object;
         [Bindable] private var busy:Boolean=false;
         [Bindable] private var canApply:Boolean=false;
+        [Bindable] private var providerConfigured:Boolean=false;
         [Bindable] private var generating:Boolean=false;
         [Bindable] private var report:String="Starting Studio…";
         private var frame:int=0;
@@ -44,7 +45,7 @@
             canvas.addEventListener("undo",function(e:Event):void{mutate("undo_edit");});canvas.addEventListener("redo",function(e:Event):void{mutate("ui_redo");});
             try{controller.start();if(controller.ready)ready(null);}catch(error:Error){report=error.message;}
         }
-        private function ready(event:Event):void {statusChanged(null);controller.call("ui_provider_consent",{consent:false});reloadDrafts(function():void {if(!editId.length)createDraft(32,0);});}
+        private function ready(event:Event):void {statusChanged(null);controller.call("ui_provider_consent",{consent:false},function(value:Object,error:String):void {if(!dead&&!error)providerConfigured=value.providerConfigured;});reloadDrafts(function():void {if(!editId.length)createDraft(32,0);});}
         private function statusChanged(event:Event):void {connection.text=controller.status;mcpToggle.selected=controller.enabled;}
         /** One UI operation and one coalesced preview at a time; callbacks never release another request's busy state. */
         private function invoke(method:String,args:Object,callback:Function=null,onError:Function=null):void {
@@ -80,7 +81,7 @@
         private function changed(event:StudioEvent):void {
             reloadDrafts();
             if(event.message.closed){if(event.message.editId==editId){editId="";snapshot=null;canApply=false;}return;}
-            if(event.message.approvalRequested&&!event.message.committed)pendingApproval=event.message.editId;
+            if(followMcp.selected&&(event.message.created||event.message.approvalRequested&&!event.message.committed))pendingApproval=event.message.editId;
             if(event.message.editId==editId){requestedRevision=Math.max(requestedRevision,Number(event.message.documentRevision));refreshPending=true;}
             pumpRefresh();
         }
@@ -91,16 +92,21 @@
             if(pendingStroke){submitStroke();return;}
             if(pendingApproval.length){selectDraft(pendingApproval);pendingApproval="";refreshPending=true;}
             if(!refreshPending||!editId.length)return;refreshPending=false;snapshotFlight=true;
-            var ownId:String=editId,ownFrame:int=frame,ownLayer:int=layer,ownGeneration:uint=generation;
+            var ownId:String=editId,ownFrame:int=frame,ownLayer:int=layer,ownGeneration:uint=generation;var ownSheet:Boolean=sheetToggle.selected;
             snapshotRequests++;maximumSnapshotRequests=Math.max(maximumSnapshotRequests,snapshotRequests);
-            invoke("ui_snapshot",{editId:ownId,frame:ownFrame},function(value:Object):void {
+            invoke("ui_snapshot",{editId:ownId,frame:ownFrame,includeSheet:ownSheet&&(!snapshot||!sheet.matches(ownId,Number(snapshot.document.documentRevision))||requestedRevision>Number(snapshot.document.documentRevision))},function(value:Object):void {
                 snapshotFlight=false;snapshotRequests--;
-                if(ownId!=editId||ownFrame!=frame||ownLayer!=layer||ownGeneration!=generation||canvas.drawing||pendingStroke){refreshPending=true;return;}
+                if(ownId!=editId||ownFrame!=frame||ownLayer!=layer||ownGeneration!=generation||ownSheet!=sheetToggle.selected||canvas.drawing||pendingStroke){refreshPending=true;return;}
                 if(Number(value.document.documentRevision)<requestedRevision){refreshPending=true;return;}
                 refreshPending=false;snapshot=value;canApply=!value.document.committed;updating=true;
                 layer=Math.min(layer,value.layers.length-1);canvas.load(value,layer);
                 category.selectedItem=value.document.category;
                 frames.maximum=value.document.frameCount-1;frames.value=frame;durations.value=value.duration;
+                timePosition.maximum=value.document.frameCount/value.document.directions-1;timePosition.value=int(frame/value.document.directions);
+                directionPosition.enabled=value.document.directions==4;directionPosition.selectedIndex=value.document.directions==4?frame%4:0;
+                if(value.sheet){sheet.viewportWidth=artViewport.width;sheet.viewportHeight=artViewport.height;sheet.load(ownId,Number(value.document.documentRevision),value.sheet);}
+                if(ownSheet&&!sheet.matches(ownId,Number(value.document.documentRevision))){refreshPending=true;requestedRevision=Math.max(requestedRevision,Number(value.document.documentRevision));}
+                sheet.selectedCell=frame;
                 directions.selectedIndex=value.document.directions==4?1:0;timeFrames.value=value.document.frameCount/value.document.directions;
                 layerList.dataProvider=new ArrayCollection(value.layers);layerList.selectedIndex=layer;
                 visibleLayer.selected=value.layers[layer].visible;lockedLayer.selected=value.layers[layer].locked;opacity.value=value.layers[layer].opacity;layerName.text=value.layers[layer].name;
@@ -148,6 +154,9 @@
         private function saveLayer():void {mutate("update_layer",{name:layerName.text,visible:visibleLayer.selected,locked:lockedLayer.selected,opacity:int(opacity.value)});}
         private function frameChanged():void {if(updating||busy||canvas.drawing||pendingStroke)return;frame=int(frames.value);layer=0;generation++;refresh();}
         private function setAnimation():void {mutate("set_animation",{frames:int(timeFrames.value),directions:directions.selectedIndex==1?4:1,duration:int(durations.value)});frame=0;generation++;}
+        private function sheetModeChanged():void {if(canvas.drawing||pendingStroke){sheetToggle.selected=false;return;}generation++;refresh();}
+        private function sheetCellSelected():void {if(busy||canvas.drawing||pendingStroke)return;playback.stop();frame=sheet.selectedCell;layer=0;generation++;sheetToggle.selected=false;refresh();}
+        private function positionChanged():void {if(updating||busy||canvas.drawing||pendingStroke||!snapshot)return;playback.stop();frame=int(timePosition.value)*snapshot.document.directions+(snapshot.document.directions==4?directionPosition.selectedIndex:0);layer=0;generation++;refresh();}
         private function tick(event:TimerEvent):void {if(!snapshot||busy||canvas.drawing||pendingStroke)return;var count:int=snapshot.document.frameCount,dirs:int=snapshot.document.directions;frame=(frame+dirs)%count;playback.delay=snapshot.duration/speed.value;refresh();}
         private function togglePlay():void {if(playback.running)playback.stop();else playback.start();}
         private function apply():void {if(!snapshot||busy||snapshot.document.committed)return;mutate("ui_apply");}
@@ -185,7 +194,7 @@
             if(!dead&&(canvas.drawing||pendingStroke||busy)){report="Finish the current operation or resolve your retained stroke before closing. Drafts remain available when reopening this project.";return;}
             super.close();
         }
-        public function shutdown():void {if(dead)return;dead=true;generation++;controller.suspend();playback.stop();playback.removeEventListener(TimerEvent.TIMER,tick);releasePicker();controller.removeEventListener("ready",ready);controller.removeEventListener("status",statusChanged);controller.removeEventListener("studioChanged",changed);canvas.dispose();original.dispose();}
+        public function shutdown():void {if(dead)return;dead=true;generation++;controller.suspend();playback.stop();playback.removeEventListener(TimerEvent.TIMER,tick);releasePicker();controller.removeEventListener("ready",ready);controller.removeEventListener("status",statusChanged);controller.removeEventListener("studioChanged",changed);canvas.dispose();sheet.dispose();original.dispose();}
     ]]></fx:Script>
     <s:VGroup left="12" right="12" top="12" bottom="12" gap="8">
         <s:HGroup width="100%" verticalAlign="middle">
@@ -199,7 +208,8 @@
             <s:Button label="32×32 +" enabled="{!busy}" click="createDraft(32)"/>
             <s:Button label="64×64 +" enabled="{!busy}" click="createDraft(64)"/>
             <s:Button label="{tr('reference')}" enabled="{!busy}" click="createDraft(32,referenceSpriteId)"/>
-            <s:DropDownList id="drafts" enabled="{!busy &amp;&amp; !canvas.drawing &amp;&amp; !pendingStroke}" width="290" labelField="label" change="draftChanged()"/>
+            <s:CheckBox id="followMcp" label="{tr('followMcp')}" selected="true"/>
+            <s:DropDownList id="drafts" enabled="{!busy &amp;&amp; !canvas.drawing &amp;&amp; !pendingStroke}" width="260" labelField="label" change="draftChanged()"/>
             <s:Button label="{tr('refresh')}" enabled="{!busy}" click="refresh()"/>
             <s:Spacer width="100%"/>
             <s:Button label="{tr('openArt')}" enabled="{!busy}" click="browse('load')"/>
@@ -216,10 +226,12 @@
                     <s:Label text="Zoom"/>
                     <s:NumericStepper minimum="1" maximum="16" value="8" width="58" change="canvas.setZoom(int(event.currentTarget.value))"/>
                     <s:CheckBox label="{tr('grid')}" selected="true" change="canvas.grid=event.currentTarget.selected;canvas.draw()"/>
+                    <s:CheckBox id="sheetToggle" label="{tr('sheetView')}" enabled="{!busy &amp;&amp; !canvas.drawing &amp;&amp; !pendingStroke}" change="sheetModeChanged()"/>
                     <s:CheckBox id="onion" label="Onion" change="canvas.onion=onion.selected;refresh()"/>
                 </s:HGroup>
-                <s:BorderContainer width="100%" height="100%" backgroundColor="0x101C28">
-                    <s:Scroller width="100%" height="100%"><s:Group><art:PixelCanvas id="canvas" enabled="{!busy &amp;&amp; !strokeConflict &amp;&amp; !pendingStroke &amp;&amp; canApply}" stroke="stroke()" strokeFinished="pumpRefresh()" picked="picked()"/></s:Group></s:Scroller>
+                <s:BorderContainer id="artViewport" width="100%" height="100%" backgroundColor="0x101C28">
+                    <s:Scroller width="100%" height="100%" visible="{!sheetToggle.selected}" includeInLayout="{!sheetToggle.selected}"><s:Group><art:PixelCanvas id="canvas" enabled="{!busy &amp;&amp; !strokeConflict &amp;&amp; !pendingStroke &amp;&amp; canApply}" stroke="stroke()" strokeFinished="pumpRefresh()" picked="picked()"/></s:Group></s:Scroller>
+                    <s:Scroller width="100%" height="100%" visible="{sheetToggle.selected}" includeInLayout="{sheetToggle.selected}"><s:Group><art:PixelSheet id="sheet" enabled="{!busy}" cellSelected="sheetCellSelected()"/></s:Group></s:Scroller>
                 </s:BorderContainer>
                 <s:HGroup width="100%"><s:Label id="cellInfo"/><s:Spacer width="100%"/><s:Label text="{canvas.coordinate}"/></s:HGroup>
                 <s:HGroup width="100%">
@@ -249,6 +261,10 @@
                 </s:HGroup>
                 <s:HGroup><s:Button label="{tr('duplicateLayer')}" click="mutate('add_layer',{duplicate:true})"/><s:Button label="{tr('merge')}" click="mutate('update_layer',{merge:true})"/></s:HGroup>
                 <s:Label text="{tr('timeline')}"/>
+                <s:HGroup verticalAlign="middle" enabled="{!busy &amp;&amp; !canvas.drawing &amp;&amp; !pendingStroke}">
+                    <s:Label text="{tr('timePosition')}"/><s:NumericStepper id="timePosition" minimum="0" maximum="0" width="64" change="positionChanged()"/>
+                    <s:DropDownList id="directionPosition" width="115" selectedIndex="0" change="positionChanged()"><s:dataProvider><s:ArrayList><fx:String>N / North</fx:String><fx:String>E / East</fx:String><fx:String>S / South</fx:String><fx:String>W / West</fx:String></s:ArrayList></s:dataProvider></s:DropDownList>
+                </s:HGroup>
                 <s:HGroup verticalAlign="middle">
                     <s:Label text="Cell"/><s:NumericStepper id="frames" enabled="{!busy &amp;&amp; !canvas.drawing &amp;&amp; !pendingStroke}" minimum="0" maximum="0" width="64" change="frameChanged()"/>
                     <s:Button label="▶ / Ⅱ" click="togglePlay()"/>
@@ -260,8 +276,12 @@
                     <s:NumericStepper id="durations" minimum="10" maximum="10000" value="100" width="78"/><s:Label text="ms"/>
                     <s:Button label="OK" click="setAnimation()"/>
                 </s:HGroup>
-                <s:CheckBox id="providerConsent" label="{tr('providerConsent')}" width="100%" change="controller.call('ui_provider_consent',{consent:providerConsent.selected})"/>
-                <s:HGroup width="100%"><s:TextInput id="aiPrompt" width="100%" maxChars="2048"/><s:Button label="AI" enabled="{!busy &amp;&amp; !generating &amp;&amp; providerConsent.selected}" click="mutate('generate_variation',{prompt:aiPrompt.text})"/></s:HGroup>
+                <s:Label text="{tr('mcpDrawing')}" width="100%" maxDisplayedLines="3"/>
+                <s:CheckBox id="advancedProvider" label="{tr('advancedProvider')}" visible="{providerConfigured}" includeInLayout="{providerConfigured}"/>
+                <s:VGroup width="100%" visible="{providerConfigured &amp;&amp; advancedProvider.selected}" includeInLayout="{providerConfigured &amp;&amp; advancedProvider.selected}">
+                    <s:CheckBox id="providerConsent" label="{tr('providerConsent')}" width="100%" change="controller.call('ui_provider_consent',{consent:providerConsent.selected})"/>
+                    <s:HGroup width="100%"><s:TextInput id="aiPrompt" width="100%" maxChars="2048"/><s:Button label="AI" enabled="{!busy &amp;&amp; !generating &amp;&amp; providerConsent.selected}" click="mutate('generate_variation',{prompt:aiPrompt.text})"/></s:HGroup>
+                </s:VGroup>
                 <s:Label text="{tr('original')}"/>
                 <s:Scroller width="100%" height="110"><s:Group><art:PixelCanvas id="original" mouseEnabled="false" mouseChildren="false"/></s:Group></s:Scroller>
                 <s:Label text="B pencil · E erase · I picker · G fill · Esc selection" width="100%"/>

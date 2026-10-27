@@ -150,16 +150,24 @@ public sealed class ArtDocument
     /// <summary>Return shared draft identity, destination, geometry and revision metadata.</summary>
     public object Info() => new { editId = Id, projectSessionId = ProjectSessionId, baseRevision = BaseRevision, documentRevision = Revision, structureRevision = StructureRevision, State.Category, State.Name, State.Width, State.Height, State.Directions, frameCount = State.Frames.Count, approvalRequested = ApprovalRequested, committed = Committed, dirty = !Committed, canUndo = undo.Count > 0, canRedo = redo.Count > 0 };
     /// <summary>Return a bounded preview; raw painting layers are restricted to the private AIR caller.</summary>
-    public object Preview(int frame, bool includeLayers = false)
+    public object Preview(int frame, bool includeLayers = false, bool includeSheet = false)
     {
         var rgba = Composite(State, frame);
         int changed = 0;
         if (Reference?.Length == rgba.Length) for (int p = 0; p < rgba.Length; p += 4) { if (!rgba.AsSpan(p, 4).SequenceEqual(Reference.AsSpan(p, 4))) changed++; }
         else changed = State.Width * State.Height;
-        return new { document = Info(), frame, duration = State.Frames[frame].Duration, rgba = Convert.ToBase64String(rgba), reference = Reference == null || Reference.Length != rgba.Length ? null : Convert.ToBase64String(Reference), sha256 = Convert.ToHexString(SHA256.HashData(rgba)), changedPixels = changed,
-            layers = State.Frames[frame].Layers.Select((l, i) => new { index = i, l.Name, l.Visible, l.Locked, l.Opacity, rgba = includeLayers ? Convert.ToBase64String(l.Rgba) : null }),
-            timeline = State.Frames.Select((f, i) => new { cell = i, time = i / State.Directions, direction = i % State.Directions, f.Duration }),
+        return new { document = Info(), sheet = includeSheet ? Sheet() : null, frame, duration = State.Frames[frame].Duration, rgba = Convert.ToBase64String(rgba), reference = Reference == null || Reference.Length != rgba.Length ? null : Convert.ToBase64String(Reference), sha256 = Convert.ToHexString(SHA256.HashData(rgba)), changedPixels = changed,
+            layers = State.Frames[frame].Layers.Select((l, i) => new { index = i, l.Name, l.Visible, l.Locked, l.Opacity, rgba = includeLayers ? Convert.ToBase64String(l.Rgba) : null }).ToArray(),
+            timeline = State.Frames.Select((f, i) => new { cell = i, time = i / State.Directions, direction = i % State.Directions, f.Duration }).ToArray(),
             warnings = new[] { "Apply creates a NEW asset with one native raster layer. Originals and outfit masks are not replaced. Save/Compile remains a separate editor action.", TargetTransparency ? "Target supports RGBA. Editable layer bytes remain in .nexaart." : "RGB SPR target: nonzero alpha becomes opaque; alpha-zero RGB is not retained by SPR. Preserve .nexaart for exact editable pixels." } };
+    }
+    /// <summary>Return all flattened cells in time/direction order for MCP and local atlas review.</summary>
+    public object Sheet()
+    {
+        int columns = State.Directions == 4 ? 4 : Math.Min(8, State.Frames.Count);
+        return new { document = Info(), columns, rows = (State.Frames.Count + columns - 1) / columns, cellWidth = State.Width, cellHeight = State.Height, directions = State.Directions,
+            directionOrder = State.Directions == 4 ? new[] { "north", "east", "south", "west" } : new[] { "default" },
+            cells = State.Frames.Select((f, i) => new { index = i, time = i / State.Directions, direction = i % State.Directions, duration = f.Duration, rgba = Convert.ToBase64String(Composite(State, i)) }).ToArray() };
     }
     /// <summary>Apply a bounded exact RGBA batch to a candidate state.</summary>
     public static void SetPixels(ArtState state, int frame, int layer, JsonElement pixels)
@@ -235,7 +243,7 @@ public sealed class ArtDocument
     }
     /// <summary>Rasterize the reviewed draft into its stored destination category.</summary>
     public object CommitPacket() => new { schemaVersion = 1, projectSessionId = ProjectSessionId, expectedRevision = BaseRevision, editId = Id, category = State.Category, name = State.Name, width = State.Width, height = State.Height, directions = State.Directions,
-        frames = State.Frames.Select((f, i) => new { duration = f.Duration, rgba = Convert.ToBase64String(Composite(State, i)) }) };
+        frames = State.Frames.Select((f, i) => new { duration = f.Duration, rgba = Convert.ToBase64String(Composite(State, i)) }).ToArray() };
     /// <summary>Serialize editable state, destination and exact layer pixels for a local export.</summary>
     public byte[] Sidecar() => JsonSerializer.SerializeToUtf8Bytes(State, Json);
     /// <summary>Validate and load an editable sidecar as a single undoable operation.</summary>

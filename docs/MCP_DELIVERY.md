@@ -6,7 +6,7 @@ Branch: `feature/mcp-pixel-art-studio`. Baseline preservado: `0d7fccc`.
 
 O NexaAsset mantém AS3/Flex/AIR e seus fluxos existentes. Um Studio real permite pintar sprites, trabalhar em camadas e tempos/direções e compartilhar o mesmo draft com clientes MCP. A ponte lê o projeto que está aberto. Não há edição paralela dos binários de assets pelo gateway.
 
-- Gateway .NET 10 com SDK oficial MCP 2.3.0, 26 ferramentas, resources e imagens PNG em respostas de preview/sprite.
+- Gateway .NET 10 com SDK oficial MCP 2.3.0, 27 ferramentas, resources e imagens PNG em respostas de preview/sprite.
 - HTTP loopback autenticado, porta/token por instância, desligado por padrão, checagens de Host/Origin, limites de payload/fila/memória, cancelamento e timeout.
 - RGBA straight, preservação de bytes de camadas, paleta exata, flips, 90°, offset, PNG validado, composição e histórico limitado.
 - Canvas: lápis/pincel, borracha, conta-gotas, linha, retângulo, elipse, balde, seleção/movimento/copiar/colar, grade, zoom inteiro e atalhos.

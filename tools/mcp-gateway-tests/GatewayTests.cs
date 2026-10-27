@@ -32,6 +32,10 @@ internal static class GatewayTests
         string editId = draft.GetProperty("editId").GetString()!;
         await Call(client, "nexa_set_animation", new { editId, expectedDocumentRevision = 0, parameters = new { frames = 4, directions = 4, duration = 100 } });
         var edited = await Call(client, "nexa_set_pixels", new { editId, expectedDocumentRevision = 1, parameters = new { pixels = new[] { new { x = 1, y = 1, rgba = new[] { 23, 85, 171, 127 } } } } });
+        var fullSheet = await Call(client, "nexa_get_edit_sheet", new { editId });
+        Check(fullSheet.GetProperty("columns").GetInt32() == 4 && fullSheet.GetProperty("rows").GetInt32() == 4 && fullSheet.GetProperty("cells").GetArrayLength() == 16, "MCP outfit sheet preview missing");
+        Console.WriteLine(JsonSerializer.Serialize(new { state = "drawing", editId }));
+        Check(await Console.In.ReadLineAsync() == "continue", "Editor did not observe live MCP drawing before approval");
         var requested = await Call(client, "nexa_commit_edit", new { editId, expectedDocumentRevision = edited.GetProperty("documentRevision").GetInt64(), parameters = new { } });
         Check(requested.GetProperty("status").GetString() == "awaiting-human-approval", "MCP bypassed approval");
         Console.WriteLine(JsonSerializer.Serialize(new { passed = true, editId, format = info.GetProperty("format").GetString() }));

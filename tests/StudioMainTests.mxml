@@ -51,14 +51,11 @@
             external=new NativeProcess();external.addEventListener(ProgressEvent.STANDARD_OUTPUT_DATA,function(e:ProgressEvent):void{externalOutput+=external.standardOutput.readUTFBytes(external.standardOutput.bytesAvailable);});
             external.addEventListener(ProgressEvent.STANDARD_ERROR_DATA,function(e:ProgressEvent):void{externalError+=external.standardError.readUTFBytes(external.standardError.bytesAvailable);});
             external.addEventListener(NativeProcessExitEvent.EXIT,function(e:NativeProcessExitEvent):void{externalExit=e.exitCode;});external.start(info);
-            var clipboard:Object=Clipboard.generalClipboard.hasFormat(ClipboardFormats.TEXT_FORMAT)?Clipboard.generalClipboard.getData(ClipboardFormats.TEXT_FORMAT):null;
-            studio.copyToken();var token:String=String(Clipboard.generalClipboard.getData(ClipboardFormats.TEXT_FORMAT));
-            external.standardInput.writeUTFBytes(JSON.stringify({endpoint:studio.endpoint,token:token})+"\n");
-            if(clipboard!=null)Clipboard.generalClipboard.setData(ClipboardFormats.TEXT_FORMAT,clipboard);else Clipboard.generalClipboard.clearData(ClipboardFormats.TEXT_FORMAT);
+            studio.writeClientConnection(external.standardInput);
         }
-        private function capture():void {
+        private function capture(name:String=null):void {
             window.validateNow();var bitmap:BitmapData=new BitmapData(window.width,window.height,false,0x101C28);bitmap.draw(window,new Matrix());
-            var stream:FileStream=new FileStream();try{stream.open(testRoot.resolvePath(mode==0?"studio-modern.png":"studio-legacy.png"),FileMode.WRITE);stream.writeBytes(bitmap.encode(bitmap.rect,new PNGEncoderOptions()));}finally{stream.close();bitmap.dispose();}
+            var stream:FileStream=new FileStream();try{stream.open(testRoot.resolvePath(name||(mode==0?"studio-modern.png":"studio-legacy.png")),FileMode.WRITE);stream.writeBytes(bitmap.encode(bitmap.rect,new PNGEncoderOptions()));}finally{stream.close();bitmap.dispose();}
         }
         private function tick(event:TimerEvent):void {
             try {
@@ -73,7 +70,12 @@
                     studio=new StudioController();studio.editor=this;studio.start(gateway);openPixelArtStudio();window=findWindow();check(window!=null,"Integrated Studio window missing");phase=2;
                 }else if(phase==2&&studio.ready&&window.snapshot){studio.setEnabled(true);phase=3;}
                 else if(phase==3&&studio.enabled){launchClient();phase=4;}
-                else if(phase==4&&externalExit!=-999){
+                else if(phase==4&&externalExit==-999&&externalOutput.indexOf("\n")>=0){
+                    var progress:Object=JSON.parse(externalOutput);check(progress.state=="drawing","Missing external drawing checkpoint");draftId=progress.editId;externalOutput="";phase=17;
+                }else if(phase==17&&window.snapshot&&window.snapshot.document.editId==draftId&&window.snapshot.document.documentRevision==2){
+                    check(!window.snapshot.document.approvalRequested,"Live drawing only appeared after approval");
+                    record("PASS: Follow MCP displays drawing before approval mode="+mode);external.standardInput.writeUTFBytes("continue\n");phase=4;
+                }else if(phase==4&&externalExit!=-999){
                     check(externalExit==0,"External MCP client failed: "+externalError+externalOutput);
                     var result:Object=JSON.parse(externalOutput);check(result.passed,"External client did not finish");draftId=result.editId;
                     check(clientInfo.maxOutfitId==originalMax,"Remote request mutated the editor before approval");
@@ -81,6 +83,17 @@
                 }else if(phase==5&&window.snapshot&&window.snapshot.document.editId==draftId&&window.snapshot.document.approvalRequested){
                     check(window.editId==draftId&&window.snapshot.document.category=="outfit","Approval did not automatically select its typed draft");
                     check(window.snapshot.document.width==32&&window.snapshot.document.height==64&&window.snapshot.document.frameCount==16,"Outfit geometry/timeline missing");
+                    window.sheetToggle.selected=true;window.sheetToggle.dispatchEvent(new Event(Event.CHANGE));phase=14;
+                }else if(phase==14&&window.snapshot.sheet){
+                    check(window.snapshot.sheet.columns==4&&window.snapshot.sheet.rows==4,"Outfit sheet preview axes");
+                    check(window.sheet.cellAt(1,25)==0&&window.sheet.cellAt(window.sheet.width/4+1,24+(window.sheet.height-24)/4+1)==5&&window.sheet.cellAt(32*window.sheet.zoom+2,25)==-1,"Sheet cell hit mapping/gutters");
+                    capture(mode==0?"outfit-sheet-modern.png":"outfit-sheet-legacy.png");
+                    record("PASS: MCP sheet axes N/E/S/W and click time/direction navigation mode="+mode);
+                    window.sheet.selectedCell=6;window.sheet.dispatchEvent(new Event("cellSelected"));phase=15;
+                }else if(phase==15&&window.snapshot.frame==6){
+                    check(window.timePosition.value==1&&window.directionPosition.selectedIndex==2&&!window.sheetToggle.selected,"Sheet click selected the wrong time/direction");
+                    window.timePosition.value=0;window.directionPosition.selectedIndex=0;window.timePosition.dispatchEvent(new Event(Event.CHANGE));phase=16;
+                }else if(phase==16&&window.snapshot.frame==0){
                     // Hold a real canvas drag while another client changes a disjoint pixel.
                     window.canvas.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_DOWN,true));
                     check(window.canvas.drawing,"Canvas did not start drawing");
