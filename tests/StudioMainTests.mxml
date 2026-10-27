@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<local:ObjectBuilder xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:local="*">
+    <fx:Style source="../src/ObjectBuilder.css"/>
+    <fx:Script><![CDATA[
+        import flash.desktop.*;
+        import flash.events.*;
+        import flash.filesystem.*;
+        import flash.utils.*;
+        import flash.display.*;
+        import flash.geom.Matrix;
+        import mx.events.FlexEvent;
+        import ob.studio.*;
+        import ob.commands.files.LoadFilesCommand;
+        import otlib.utils.ClientInfoLoader;
+        import otlib.core.VersionStorage;
+        import otlib.resources.Resources;
+        private var clock:Timer=new Timer(150);
+        private var started:int;
+        private var phase:int=0;
+        private var mode:int=0;
+        private var testRoot:File;
+        private var gateway:File;
+        private var clientExecutable:File;
+        private var helper:File;
+        private var window:PixelArtStudio;
+        private var external:NativeProcess;
+        private var externalOutput:String="";
+        private var externalError:String="";
+        private var externalExit:int=-999;
+        private var draftId:String;
+        private var originalMax:uint;
+        private var newId:uint;
+        private var clientInfoLoader:ClientInfoLoader;
+        override protected function applicationInvokeHandler(event:InvokeEvent):void {
+            testRoot=new File(event.arguments[0]);gateway=new File(event.arguments[1]);helper=new File(event.arguments[2]);clientExecutable=new File(event.arguments[3]);
+        }
+        override protected function applicationCompleteHandler(event:FlexEvent):void {
+            super.applicationCompleteHandler(event);started=getTimer();
+            systemManager.loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR,function(e:UncaughtErrorEvent):void{e.preventDefault();fail(e.error is Error?Error(e.error).getStackTrace():String(e.error));});
+            clock.addEventListener(TimerEvent.TIMER,tick);clock.start();
+        }
+        private function check(value:Boolean,message:String):void {if(!value)throw new Error(message);}
+        private function fail(message:String):void {trace("FAIL Studio AIR: "+message);clock.stop();if(external&&external.running)external.exit(true);clear();NativeApplication.nativeApplication.exit(1);}
+        private function findWindow():PixelArtStudio {for(var i:int=0;i<systemManager.rawChildren.numChildren;i++)if(systemManager.rawChildren.getChildAt(i) is PixelArtStudio)return systemManager.rawChildren.getChildAt(i) as PixelArtStudio;return null;}
+        private function launchClient():void {
+            externalOutput=externalError="";externalExit=-999;
+            var info:NativeProcessStartupInfo=new NativeProcessStartupInfo();info.executable=clientExecutable;info.arguments=Vector.<String>(["--live"]);info.workingDirectory=clientExecutable.parent;
+            external=new NativeProcess();external.addEventListener(ProgressEvent.STANDARD_OUTPUT_DATA,function(e:ProgressEvent):void{externalOutput+=external.standardOutput.readUTFBytes(external.standardOutput.bytesAvailable);});
+            external.addEventListener(ProgressEvent.STANDARD_ERROR_DATA,function(e:ProgressEvent):void{externalError+=external.standardError.readUTFBytes(external.standardError.bytesAvailable);});
+            external.addEventListener(NativeProcessExitEvent.EXIT,function(e:NativeProcessExitEvent):void{externalExit=e.exitCode;});external.start(info);
+            var clipboard:Object=Clipboard.generalClipboard.hasFormat(ClipboardFormats.TEXT_FORMAT)?Clipboard.generalClipboard.getData(ClipboardFormats.TEXT_FORMAT):null;
+            studio.copyToken();var token:String=String(Clipboard.generalClipboard.getData(ClipboardFormats.TEXT_FORMAT));
+            external.standardInput.writeUTFBytes(JSON.stringify({endpoint:studio.endpoint,token:token})+"\n");
+            if(clipboard!=null)Clipboard.generalClipboard.setData(ClipboardFormats.TEXT_FORMAT,clipboard);else Clipboard.generalClipboard.clearData(ClipboardFormats.TEXT_FORMAT);
+        }
+        private function capture():void {
+            window.validateNow();var bitmap:BitmapData=new BitmapData(window.width,window.height,false,0x101C28);bitmap.draw(window,new Matrix());
+            var stream:FileStream=new FileStream();try{stream.open(testRoot.resolvePath(mode==0?"studio-modern.png":"studio-legacy.png"),FileMode.WRITE);stream.writeBytes(bitmap.encode(bitmap.rect,new PNGEncoderOptions()));}finally{stream.close();bitmap.dispose();}
+        }
+        private function tick(event:TimerEvent):void {
+            try {
+                check(getTimer()-started<180000,"Timeout at phase "+phase+" mode "+mode);
+                if(phase==0&&visible&&running&&testRoot){
+                    if(mode==1){resourceManager.localeChain=["pt_BR"];Resources.locale="pt_BR";}
+                    if(mode==0){LegacyStudioTests.run(testRoot);openNativeProject(testRoot.resolvePath("native-source"),helper);}
+                    else {clientInfoLoader=new ClientInfoLoader();clientInfoLoader.addEventListener(ErrorEvent.ERROR,function(e:ErrorEvent):void{fail(e.text);});clientInfoLoader.addEventListener(Event.COMPLETE,function(e:Event):void{var info:otlib.utils.ClientInfo=clientInfoLoader.clientInfo;var folder:File=testRoot.resolvePath("legacy-source");sendCommand(new LoadFilesCommand(folder.resolvePath("Tibia.dat"),folder.resolvePath("Tibia.spr"),VersionStorage.getInstance().getBySignatures(info.datSignature,info.sprSignature),null,info.features));});clientInfoLoader.load(testRoot.resolvePath("legacy-source/Tibia.dat"),testRoot.resolvePath("legacy-source/Tibia.spr"),true);}
+                    phase=1;
+                }else if(phase==1&&clientLoaded&&thingData){
+                    originalMax=clientInfo.maxItemId;
+                    studio=new StudioController();studio.editor=this;studio.start(gateway);openPixelArtStudio();window=findWindow();check(window!=null,"Integrated Studio window missing");phase=2;
+                }else if(phase==2&&studio.ready&&window.snapshot){studio.setEnabled(true);phase=3;}
+                else if(phase==3&&studio.enabled){launchClient();phase=4;}
+                else if(phase==4&&externalExit!=-999){
+                    check(externalExit==0,"External MCP client failed: "+externalError+externalOutput);
+                    var result:Object=JSON.parse(externalOutput);check(result.passed,"External client did not finish");draftId=result.editId;
+                    check(clientInfo.maxItemId==originalMax,"Remote request mutated the editor before approval");
+                    window.editId=draftId;window.refresh();phase=5;
+                }else if(phase==5&&window.snapshot&&window.snapshot.document.editId==draftId&&window.snapshot.document.approvalRequested){
+                    // Exercise the same canvas stroke event used by a human, then approve through the real button.
+                    var at:int=(2*32+2)*4;window.canvas.pixels[at]=51;window.canvas.pixels[at+1]=102;window.canvas.pixels[at+2]=153;window.canvas.pixels[at+3]=255;
+                    window.canvas.dispatchEvent(new Event("stroke"));phase=6;
+                }else if(phase==6&&window.snapshot.document.documentRevision==2){capture();window.applyButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=7;}
+                else if(phase==7&&clientInfo.maxItemId==originalMax+1&&window.snapshot.document.committed){
+                    check(clientChanged,"Studio insertion did not update dirty state");newId=originalMax+1;
+                    studioEditorRequest("get_frame",{category:"item",assetId:newId,group:0,frame:0,direction:0,layer:0},function(frame:Object,error:String=null):void {
+                        if(error){fail(error);return;}var spriteId:uint=frame.spriteId!==undefined?uint(frame.spriteId):uint(frame.references[0]);
+                        studioEditorRequest("get_sprite",{spriteId:spriteId},function(sprite:Object,error:String=null):void {
+                            if(error){fail(error);return;}var pixels:ByteArray=StudioPixels.decode(sprite.argb);var ai:int=(1*32+1)*4,human:int=(2*32+2)*4;
+                            check(pixels[ai]==127&&pixels[ai+1]==23&&pixels[ai+2]==85&&pixels[ai+3]==171,"External MCP pixels changed channels/alpha");
+                            check(pixels[human]==255&&pixels[human+1]==51&&pixels[human+2]==102&&pixels[human+3]==153,"Human canvas pixels were not committed");pixels.clear();phase=9;
+                        });
+                    });phase=8;
+                }else if(phase==9){compileProject();phase=10;}
+                else if(phase==10&&!nativeSaving&&!clientChanged&&!locked){
+                    trace("PASS: real AIR "+(mode==0?"modern":"legacy")+" + external official MCP client: read, draw, preview, remote approval request, manual canvas edit, Apply, exact stored pixels, dirty state and Save/Compile");
+                    clear();window=null;
+                    if(mode==0){mode=1;phase=0;}else{clock.stop();trace("PASS: Studio live integration; screenshots: "+testRoot.nativePath);NativeApplication.nativeApplication.exit(0);}
+                }
+            }catch(error:Error){fail(error.getStackTrace()||error.message);}
+        }
+    ]]></fx:Script>
+</local:ObjectBuilder>
