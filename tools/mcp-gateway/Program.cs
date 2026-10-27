@@ -9,7 +9,7 @@ using NexaAsset.Mcp;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 builder.Logging.ClearProviders(); // stdout is exclusively the private AIR JSONL channel. No secrets in HTTP logs.
-builder.WebHost.ConfigureKestrel(o => { o.Listen(IPAddress.Loopback, 0); o.Limits.MaxRequestBodySize = 1024 * 1024; o.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10); o.Limits.MaxConcurrentConnections = 16; });
+builder.WebHost.ConfigureKestrel(o => { o.Listen(IPAddress.Loopback, 0); o.Limits.MaxRequestBodySize = 3 * 1024 * 1024; o.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10); o.Limits.MaxConcurrentConnections = 16; });
 var bridge = new EditorBridge();
 using var providerClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(22) };
 var providerUrl = Environment.GetEnvironmentVariable("NEXA_ART_PROVIDER_URL");
@@ -17,8 +17,8 @@ IArtGenerationProvider? provider = Uri.TryCreate(providerUrl, UriKind.Absolute, 
 var studio = new StudioService(bridge) { Provider = provider };
 builder.Services.AddSingleton(bridge); builder.Services.AddSingleton(studio);
 builder.Services.AddMcpServer().WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless).WithTools<StudioTools>().WithResources<StudioResources>();
-var app = builder.Build();
-byte[] secret = RandomNumberGenerator.GetBytes(32); string bearer = Convert.ToHexString(secret);
+await using var app = builder.Build();
+
 using var limiter = new TokenBucketRateLimiter(new() { TokenLimit = 60, TokensPerPeriod = 30, ReplenishmentPeriod = TimeSpan.FromSeconds(1), AutoReplenishment = true, QueueLimit = 0 });
 app.Use(async (ctx, next) =>
 {
@@ -27,21 +27,21 @@ app.Use(async (ctx, next) =>
     string auth = ctx.Request.Headers.Authorization.ToString();
     byte[] supplied;
     try { supplied = auth.StartsWith("Bearer ", StringComparison.Ordinal) ? Convert.FromHexString(auth[7..]) : []; } catch (FormatException) { supplied = []; }
-    if (!CryptographicOperations.FixedTimeEquals(supplied, secret)) { ctx.Response.StatusCode = 401; return; }
+    if (!CryptographicOperations.FixedTimeEquals(supplied, studio.Secret)) { ctx.Response.StatusCode = 401; return; }
     if (!studio.Enabled) { ctx.Response.StatusCode = 403; return; }
     using var lease = limiter.AttemptAcquire(); if (!lease.IsAcquired) { ctx.Response.StatusCode = 429; return; }
-    Interlocked.Increment(ref studio.Connections);
     await next(ctx);
 });
 app.MapMcp("/mcp");
 await app.StartAsync();
 string address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
-await bridge.EmitAsync(new { type = "ready", protocolVersion = 1, endpoint = address + "/mcp", token = bearer, enabled = false });
-using var input = new BufferedStream(Console.OpenStandardInput(), 65536);
+await bridge.EmitAsync(new { type = "ready", protocolVersion = 1, endpoint = address + "/mcp", token = Convert.ToHexString(studio.Secret), enabled = false });
+using var input = Console.OpenStandardInput();
+var lines = new BoundedJsonLineReader(input);
 var tasks = new List<Task>();
 try
 {
-    while (await EditorBridge.ReadLineAsync(input, app.Lifetime.ApplicationStopping) is { } line)
+    while (await lines.ReadLineAsync(app.Lifetime.ApplicationStopping) is { } line)
     {
         using var parsed = JsonDocument.Parse(line, new() { MaxDepth = 64 }); var message = parsed.RootElement.Clone();
         if (message.GetProperty("type").GetString() == "editorResponse") { bridge.Accept(message); continue; }
@@ -51,7 +51,7 @@ try
     }
 }
 catch (OperationCanceledException) { }
-finally { bridge.Close(); await app.StopAsync(); }
+finally { bridge.Close(); await app.StopAsync(); await Task.WhenAll(tasks); }
 async Task Handle(JsonElement message)
 {
     string? id = message.GetProperty("id").GetString();

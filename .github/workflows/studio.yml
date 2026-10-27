@@ -1,0 +1,19 @@
+name: Studio MCP regression tests
+on:
+  pull_request:
+  push:
+    branches: [main, feature/mcp-pixel-art-studio]
+permissions:
+  contents: read
+jobs:
+  mcp-core:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test MCP, pixels, animations, providers and native assets
+        shell: pwsh
+        run: ./tests/run-mcp.ps1 -CoreOnly

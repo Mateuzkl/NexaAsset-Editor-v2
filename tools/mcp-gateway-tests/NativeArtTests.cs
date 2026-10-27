@@ -15,7 +15,7 @@ internal static class NativeArtTests
         File.WriteAllBytes(Path.Combine(nativeRoot, "sheet.lzma"), NativeSave.EncodeSheet(new(384, 384, new byte[384 * 384 * 4])));
         File.WriteAllText(Path.Combine(nativeRoot, "catalog-content.json"), "[{\"type\":\"appearances\",\"file\":\"appearances.dat\"},{\"type\":\"sprite\",\"file\":\"sheet.lzma\",\"spritetype\":0,\"firstspriteid\":1,\"lastspriteid\":3}]");
         var assets = new AssetSet(nativeRoot); var cache = new SheetCache(assets); var workspace = new NativeWorkspace(assets, cache);
-        var animated = ArtDocument.Create("A", 0, 64, 32);
+        var animated = ArtDocument.Create("A", 0, 64, 32, category: "outfit");
         animated.Edit(0, s => {
             s.Directions = 4;
             s.Frames = Enumerable.Range(0, 12).Select(i => {
@@ -24,7 +24,7 @@ internal static class NativeArtTests
             }).ToList();
         });
         string file = Path.Combine(session, "art-" + animated.Id + ".json");
-        byte[] packet = JsonSerializer.SerializeToUtf8Bytes(animated.CommitPacket("outfit"), ArtDocument.Json);
+        byte[] packet = JsonSerializer.SerializeToUtf8Bytes(animated.CommitPacket(), ArtDocument.Json);
         File.WriteAllBytes(file, packet); string hash = Convert.ToHexString(SHA256.HashData(packet));
         Reject(() => workspace.CommitArtFile(file, "BAD", session, 0), "checksum");
         Reject(() => workspace.CommitArtFile(file, hash, nativeRoot, 0), "path escape");

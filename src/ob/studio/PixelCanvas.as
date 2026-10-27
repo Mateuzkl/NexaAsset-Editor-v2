@@ -9,6 +9,7 @@ package ob.studio {
 
     /** Editable straight RGBA layer. BitmapData is a disposable display surface only. */
     [Event(name="stroke",type="flash.events.Event")]
+    [Event(name="strokeFinished",type="flash.events.Event")]
     [Event(name="picked",type="flash.events.Event")]
     public class PixelCanvas extends UIComponent {
         [Bindable] public var coordinate:String="";
@@ -20,7 +21,12 @@ package ob.studio {
         public var previous:ByteArray;
         public var layer:int=0;
         public var documentRevision:Number=0;
-        public var drawing:Boolean=false;
+        [Bindable] public var drawing:Boolean=false;
+        public var strokePixels:Array=[];
+        private var basePixels:ByteArray;
+        private var decoded:Array=[];
+        private var renderPending:Boolean=false;
+        private var disposed:Boolean=false;
         public var pixels:ByteArray;
         public var composed:ByteArray;
         public var imageWidth:int=32;
@@ -37,19 +43,26 @@ package ob.studio {
         private var copyW:int,copyH:int;
         public function PixelCanvas(){super();addChild(display);tabEnabled=true;addEventListener(MouseEvent.MOUSE_DOWN,down);addEventListener(MouseEvent.MOUSE_MOVE,pointerMove);addEventListener(KeyboardEvent.KEY_DOWN,key);addEventListener(Event.REMOVED_FROM_STAGE,removed);}
         public function load(snapshot:Object,selected:int):void {
-            if(dragging)return;
+            if(dragging||strokePixels.length)throw new Error("Finish or resolve the pending stroke before loading another snapshot.");
             imageWidth=snapshot.document.width;imageHeight=snapshot.document.height;documentRevision=snapshot.document.documentRevision;
             layers=snapshot.layers;layer=Math.max(0,Math.min(selected,layers.length-1));
-            if(pixels)pixels.clear();pixels=StudioPixels.decode(layers[layer].rgba);draw();
+            for each(var old:ByteArray in decoded)old.clear();decoded=[];
+            for each(var row:Object in layers)decoded.push(StudioPixels.decode(row.rgba));
+            if(pixels)pixels.clear();pixels=new ByteArray();pixels.writeBytes(decoded[layer]);
+            if(basePixels)basePixels.clear();basePixels=new ByteArray();basePixels.writeBytes(pixels);
+            selection=null;draw();
         }
         public function setZoom(value:int):void {zoom=Math.max(1,Math.min(16,value));draw();}
-        public function draw():void {
+        /** Coalesce pointer events to one composition per AIR render frame. */
+        public function draw():void {if(disposed||renderPending)return;renderPending=true;callLater(render);}
+        public function render():void {
+            if(disposed)return;renderPending=false;
             width=imageWidth*zoom;height=imageHeight*zoom;
             if(!surface||surface.width!=imageWidth||surface.height!=imageHeight){if(surface)surface.dispose();surface=new BitmapData(imageWidth,imageHeight,true,0);display.bitmapData=surface;}
-            if(composed)composed.clear();composed=new ByteArray();composed.length=imageWidth*imageHeight*4;
-            var all:Array=[];for(var i:int=0;i<layers.length;i++)all.push(i==layer?pixels:StudioPixels.decode(layers[i].rgba));
+            if(!composed)composed=new ByteArray();composed.length=imageWidth*imageHeight*4;
+            var all:Array=decoded;var i:int;
             for(var at:int=0;at<composed.length;at+=4){var r:int=0,g:int=0,b:int=0,a:int=0,hasBase:Boolean=false;
-                for(i=0;i<all.length;i++){if(!layers[i].visible||int(layers[i].opacity)==0)continue;var raw:ByteArray=all[i],sa:int=(raw[at+3]*int(layers[i].opacity)+127)/255;
+                for(i=0;i<all.length;i++){if(!layers[i].visible||int(layers[i].opacity)==0)continue;var raw:ByteArray=i==layer?pixels:all[i],sa:int=(raw[at+3]*int(layers[i].opacity)+127)/255;
                     if(sa==0){if(!hasBase){r=raw[at];g=raw[at+1];b=raw[at+2];}hasBase=true;continue;}hasBase=true;var n:int=sa*255+a*(255-sa);
                     r=(raw[at]*sa*255+r*a*(255-sa)+int(n/2))/n;g=(raw[at+1]*sa*255+g*a*(255-sa)+int(n/2))/n;b=(raw[at+2]*sa*255+b*a*(255-sa)+int(n/2))/n;a=(n+127)/255;
                 }composed[at]=r;composed[at+1]=g;composed[at+2]=b;composed[at+3]=a;
@@ -57,7 +70,6 @@ package ob.studio {
                 if(onion&&previous&&previous.length==composed.length&&a==0){r=previous[at];g=previous[at+1];b=previous[at+2];a=int(previous[at+3]/3);}
                 surface.setPixel32(x,y,(uint(a)<<24)|(uint(r)<<16)|(uint(g)<<8)|uint(b));
             }
-            for(i=0;i<all.length;i++)if(i!=layer)ByteArray(all[i]).clear();
             display.smoothing=false;display.scaleX=display.scaleY=zoom;
             graphics.clear();for(y=0;y<imageHeight;y+=4)for(x=0;x<imageWidth;x+=4){graphics.beginFill(((x/4+y/4)%2)?0x263746:0x172633);graphics.drawRect(x*zoom,y*zoom,4*zoom,4*zoom);graphics.endFill();}
             // Graphics under the bitmap provide transparency checks; grid/selection use a top overlay.
@@ -72,7 +84,7 @@ package ob.studio {
         private function px():int{return Math.max(0,Math.min(imageWidth-1,int(mouseX/zoom)));}
         private function py():int{return Math.max(0,Math.min(imageHeight-1,int(mouseY/zoom)));}
         private function down(event:MouseEvent):void {
-            if(!pixels||!layers.length)return;setFocus();sx=lx=px();sy=ly=py();
+            if(!enabled||disposed||!pixels||!layers.length||strokePixels.length)return;setFocus();sx=lx=px();sy=ly=py();
             if(tool=="picker"){var at:int=(sy*imageWidth+sx)*4;color=(uint(composed[at])<<24)|(uint(composed[at+1])<<16)|(uint(composed[at+2])<<8)|uint(composed[at+3]);dispatchEvent(new Event("picked"));return;}
             if(layers[layer].locked&&tool!="select")return;
             dragging=true;drawing=true;pointerStage=stage;pointerStage.addEventListener(MouseEvent.MOUSE_UP,up);
@@ -95,8 +107,21 @@ package ob.studio {
                 if(rx==0||ry==0)line(sx,sy,x,y);else for(var i:int=0;i<720;i++){var a:Number=i*Math.PI/360;dot(Math.round(cx+rx*Math.cos(a)),Math.round(cy+ry*Math.sin(a)));}
             }else if(tool=="select")selection=new Rectangle(Math.min(sx,x),Math.min(sy,y),Math.abs(x-sx)+1,Math.abs(y-sy)+1);
             else if(tool=="move"&&selection)moveSelection(x-sx,y-sy);
-            drawing=false;draw();if(tool!="select")dispatchEvent(new Event("stroke"));
+            drawing=false;draw();if(tool!="select")publishStroke();else dispatchEvent(new Event("strokeFinished"));
         }
+        /** Keep a sparse before/after delta so unrelated MCP pixel edits can merge atomically. */
+        private function publishStroke():void {
+            captureStroke();
+            dispatchEvent(new Event("stroke"));
+        }
+        public function captureStroke():Array {publishStrokeDelta();return strokePixels;}
+        private function publishStrokeDelta():void {
+            // Synthetic integrations can modify the RGBA buffer and dispatch the same stroke event.
+            if(strokePixels.length)return;
+            for(var at:int=0;pixels&&basePixels&&at<pixels.length;at+=4)if(pixels[at]!=basePixels[at]||pixels[at+1]!=basePixels[at+1]||pixels[at+2]!=basePixels[at+2]||pixels[at+3]!=basePixels[at+3])
+                strokePixels.push({x:int(at/4)%imageWidth,y:int(at/4/imageWidth),before:[basePixels[at],basePixels[at+1],basePixels[at+2],basePixels[at+3]],rgba:[pixels[at],pixels[at+1],pixels[at+2],pixels[at+3]]});
+        }
+        public function acknowledgeStroke():void {strokePixels=[];}
         private function dot(x:int,y:int):void {
             var size:int=(tool=="pencil"||tool=="eraser")?brushSize:1;
             for(var yy:int=0;yy<size;yy++)for(var xx:int=0;xx<size;xx++){
@@ -114,10 +139,11 @@ package ob.studio {
             var rect:Rectangle=selection||new Rectangle(0,0,imageWidth,imageHeight);if(copied)copied.clear();copied=new ByteArray();copyW=rect.width;copyH=rect.height;
             for(var y:int=0;y<copyH;y++)for(var x:int=0;x<copyW;x++){var at:int=((int(rect.y)+y)*imageWidth+int(rect.x)+x)*4;copied.writeBytes(pixels,at,4);}copied.position=0;
         }
-        public function pasteSelection():void {if(!copied||layers[layer].locked)return;pasteAt(selection?selection.x:0,selection?selection.y:0);draw();dispatchEvent(new Event("stroke"));}
+        public function pasteSelection():void {if(!enabled||disposed||drawing||strokePixels.length||!copied||!layers.length||layers[layer].locked)return;pasteAt(selection?selection.x:0,selection?selection.y:0);draw();publishStroke();}
         private function pasteAt(ox:int,oy:int):void {for(var y:int=0;y<copyH;y++)for(var x:int=0;x<copyW;x++){var tx:int=x+ox,ty:int=y+oy;if(tx<0||ty<0||tx>=imageWidth||ty>=imageHeight)continue;var at:int=(ty*imageWidth+tx)*4,source:int=(y*copyW+x)*4;for(var c:int=0;c<4;c++)pixels[at+c]=copied[source+c];}}
         private function moveSelection(dx:int,dy:int):void {copySelection();for(var y:int=selection.y;y<selection.bottom;y++)for(var x:int=selection.x;x<selection.right;x++){var at:int=(y*imageWidth+x)*4;for(var c:int=0;c<4;c++)pixels[at+c]=0;}pasteAt(selection.x+dx,selection.y+dy);selection=selection.clone();selection.offset(dx,dy);selection=selection.intersection(new Rectangle(0,0,imageWidth,imageHeight));}
         private function key(event:KeyboardEvent):void {
+            if(!enabled)return;
             if(event.ctrlKey&&event.keyCode==Keyboard.C){copySelection();event.preventDefault();}
             else if(event.ctrlKey&&event.keyCode==Keyboard.V){pasteSelection();event.preventDefault();}
             else if(event.ctrlKey&&event.keyCode==Keyboard.Z){dispatchEvent(new Event(event.shiftKey?"redo":"undo"));event.preventDefault();}
@@ -125,6 +151,6 @@ package ob.studio {
             else if(event.keyCode==Keyboard.B)tool="pencil";else if(event.keyCode==Keyboard.E)tool="eraser";else if(event.keyCode==Keyboard.I)tool="picker";else if(event.keyCode==Keyboard.G)tool="fill";
         }
         private function removed(event:Event):void {if(pointerStage)pointerStage.removeEventListener(MouseEvent.MOUSE_UP,up);pointerStage=null;dragging=drawing=false;}
-        public function dispose():void {removed(null);if(surface)surface.dispose();surface=null;display.bitmapData=null;if(pixels)pixels.clear();if(composed)composed.clear();if(previous)previous.clear();if(copied)copied.clear();layers=[];}
+        public function dispose():void {disposed=true;removed(null);for each(var raw:ByteArray in decoded)raw.clear();decoded=[];if(basePixels)basePixels.clear();strokePixels=[];if(surface)surface.dispose();surface=null;display.bitmapData=null;if(pixels)pixels.clear();if(composed)composed.clear();if(previous)previous.clear();if(copied)copied.clear();layers=[];}
     }
 }

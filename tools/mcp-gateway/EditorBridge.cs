@@ -5,7 +5,13 @@ using System.Text.Json;
 namespace NexaAsset.Mcp;
 
 /// <summary>Private inherited process pipes: only AIR can answer editor requests.</summary>
-public sealed class EditorBridge
+public interface IEditorBridge
+{
+    Task EmitAsync(object value);
+    Task<JsonElement> RequestAsync(string method, object args, CancellationToken cancellation);
+}
+
+public sealed class EditorBridge : IEditorBridge
 {
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> pending = new();
     private readonly SemaphoreSlim outputLock = new(1);
@@ -35,16 +41,26 @@ public sealed class EditorBridge
         else completion.TrySetResult(message.GetProperty("result").Clone());
     }
     public void Close() { foreach (var value in pending.Values) value.TrySetCanceled(); pending.Clear(); }
-    public static async Task<string?> ReadLineAsync(Stream input, CancellationToken token)
+}
+
+/// <summary>One bounded UTF-8 JSONL reader per pipe. Retains bytes after LF for the next line.</summary>
+public sealed class BoundedJsonLineReader(Stream input)
+{
+    public const int MaxLineBytes = 4 * 1024 * 1024;
+    private readonly byte[] buffer = new byte[32768];
+    private int position, count;
+    private static readonly UTF8Encoding Utf8 = new(false, true);
+    public async Task<string?> ReadLineAsync(CancellationToken token)
     {
-        // Do not allocate an unbounded string for a corrupt/malicious pipe peer.
-        using var buffer = new MemoryStream(); byte[] one = new byte[1];
-        while (await input.ReadAsync(one, token) != 0)
-        {
-            if (one[0] == 10) return Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
-            if (buffer.Length >= 4 * 1024 * 1024) throw new InvalidDataException("Bridge line exceeds 4 MiB.");
-            buffer.WriteByte(one[0]);
+        using var line = new MemoryStream();
+        while (true) {
+            if (position == count) { count = await input.ReadAsync(buffer, token); position = 0; }
+            if (count == 0) return line.Length == 0 ? null : throw new EndOfStreamException("Incomplete bridge line.");
+            int newline = Array.IndexOf(buffer, (byte)10, position, count - position);
+            int length = (newline < 0 ? count : newline) - position;
+            if (line.Length + length > MaxLineBytes) throw new InvalidDataException("Bridge line exceeds 4 MiB.");
+            line.Write(buffer, position, length); position += length;
+            if (newline >= 0) { position++; return Utf8.GetString(line.GetBuffer(), 0, (int)line.Length).TrimEnd('\r'); }
         }
-        return buffer.Length == 0 ? null : throw new EndOfStreamException("Incomplete bridge line.");
     }
 }

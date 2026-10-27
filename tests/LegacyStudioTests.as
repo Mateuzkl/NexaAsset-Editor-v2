@@ -27,6 +27,7 @@ package {
             check(thing.frameGroups[0].frames==1&&group.frames==3&&group.patternX==4&&group.width==2&&group.height==2,"Legacy idle/walk geometry");
             check(group.spriteIndex.length==48&&group.frameDurations[2].minimum==122,"Legacy sprite references/timing");
             check(adapter.execute("commit_art",packet,9).selected==id&&sprites.spritesCount==initialSpriteCount+48,"Legacy idempotence");
+            check(adapter.execute("list_assets",{category:"outfit",page:0,query:null},9).items.length>0,"Explicit null query hid all outfits");
             var before:uint=sprites.spritesCount;
             packet.editId=UIDUtil.createUID();packet.expectedRevision=9;cells[11].rgba="AA==";
             try{adapter.execute("commit_art",packet,9);throw new Error("Invalid legacy packet accepted");}catch(error:Error){check(error.message!="Invalid legacy packet accepted",error.message);}

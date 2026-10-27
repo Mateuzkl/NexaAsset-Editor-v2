@@ -7,6 +7,7 @@ if(-not $Output){$Output=Join-Path $project 'bin-debug/mcp-gateway'}
 $previous=@{}
 foreach($name in @('DOTNET_CLI_HOME','NUGET_PACKAGES','DOTNET_CLI_TELEMETRY_OPTOUT','TEMP','TMP')){$previous[$name]=[Environment]::GetEnvironmentVariable($name,'Process')}
 try {
+foreach($folder in @('dotnet-home','nuget','tmp')){New-Item -ItemType Directory -Path (Join-Path $tools $folder) -Force | Out-Null}
 $env:DOTNET_CLI_HOME=Join-Path $tools 'dotnet-home'
 $env:NUGET_PACKAGES=Join-Path $tools 'nuget'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT='1'

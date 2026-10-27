@@ -32,6 +32,7 @@ Check(restored.Sidecar().AsSpan().SequenceEqual(doc.Sidecar()), "sidecar roundtr
 Console.WriteLine("PASS: RGBA/ARGB, hidden RGB/partial alpha PNG, four geometries, layers, history, conflicts, atomic pixel batch, transform and sidecar");
 NativeArtTests.Run(root);
 await ProviderTests.Run();
+await StudioRegressionTests.Run();
 await GatewayTests.Run();
 Console.WriteLine("PASS: all Studio tests");
 

@@ -662,7 +662,7 @@ THE SOFTWARE.
                     if (window.detail == DialogDetail.OK)
                     {
                         if(!canSwitchAssetProject())return;
-                        if(_nativeSource)clear();
+                        if(_nativeSource)clear();else invalidateStudioSession();
             
                         setSpriteExtend(window.spriteDimension);
                         var features:ClientFeatures = ClientFeatures.fromWindow(window);
@@ -700,7 +700,7 @@ THE SOFTWARE.
                     {
                         if (window.modernDirectory) { openNativeProject(window.modernDirectory); return; }
                         if(!canSwitchAssetProject())return;
-                        if(_nativeSource)clear();
+                        if(_nativeSource)clear();else invalidateStudioSession();
                         var mainFile:File = window.datFile || window.sprFile;
                         _settings.setLastDirectory(mainFile);
                         _settings.setServerItemsDirectory(window.serverItemsDirectory);
@@ -1131,6 +1131,7 @@ THE SOFTWARE.
                 function finish(result:Object,error:String=null):void {
                     if(sessionId!=_studioProjectId){callback(null,"Project session expired.");return;}
                     if(!error&&method=="get_project_info"){result.projectSessionId=sessionId;result.pendingInspectorChanges=thingTypeEditor.changed;}
+                    if(!error&&method=="commit_art"){currentCategory=result.category;sendCommand(new GetThingListCommand(result.selected,result.category));sendCommand(new GetSpriteListCommand(result.sprite));sendCommand(new GetThingCommand(result.selected,result.category));}
                     callback(result,error);
                 }
                 if(_nativeSource){
@@ -1148,13 +1149,16 @@ THE SOFTWARE.
                     function clean():void {if(file&&file.exists)try{file.deleteFile();}catch(ignore:Error){}}
                     try{source.enqueue("studio:"+(++_studioSequence),method=="commit_art"?"native-art-commit":"native-studio-read",fields,function(result:Object):void {
                         clean();if(_nativeSource!=source){finish(null,"Native session expired.");return;}
-                        if(method=="commit_art"){source.query="";nativeSearchInput.text="";currentCategory=result.category;sendCommand(new GetThingListCommand(result.selected,result.category));sendCommand(new GetSpriteListCommand(result.sprite));sendCommand(new GetThingCommand(result.selected,result.category));}
+                        if(method=="commit_art"){source.query="";nativeSearchInput.text="";}
                         finish(result);
                     },function():void {clean();finish(null,"Native Studio operation failed. Check the editor status; refresh before retrying.");});}catch(error:Error){clean();finish(null,error.message);}
                 }else{
-                    var id:String=String(++_studioSequence);_studioRequests[id]=finish;
+                    var id:String=String(++_studioSequence);
+                    var timer:uint=setTimeout(function():void {var pending:Object=_studioRequests[id];delete _studioRequests[id];if(pending)pending.callback(null,"Editor worker request timed out. Refresh before retrying.");},25000);
+                    _studioRequests[id]={callback:finish,timer:timer};
                     if(method=="commit_art")bytes.clear();
-                    _communicator.sendCommand(new ob.commands.StudioCommand(id,method,JSON.stringify(method=="commit_art"?packet:args)));
+                    try{_communicator.sendCommand(new ob.commands.StudioCommand(id,method,JSON.stringify(method=="commit_art"?packet:args)));}
+                    catch(error:Error){clearTimeout(timer);delete _studioRequests[id];finish(null,error.message);}
                 }
             }
 
@@ -1289,6 +1293,7 @@ THE SOFTWARE.
             }
             protected function canSwitchAssetProject():Boolean
             {
+                if(studio&&studio.hasUncommittedDrafts){Alert.show("Export or discard the open Pixel Art Studio drafts before switching projects.","Pixel Art Studio",Alert.OK,this);openPixelArtStudio();return false;}
                 if(_legacyModernExport){Alert.show("Wait for the modern project export before switching projects.","NexaAsset Editor v2",Alert.OK,this);return false;}
                 if(clientChanged || thingTypeEditor.changed || _nativeSource && (_nativeSource.busy || _nativeSaving || _nativeObjectExportActive)){
                     Alert.show("Save pending edits and wait for the current operation before opening or creating another project.","NexaAsset Editor v2",Alert.OK,this);return false;
@@ -1727,10 +1732,16 @@ THE SOFTWARE.
                 _updater.initialize();
             }
             
+            /** The editor owns gateway lifetime and all callbacks for its project generation. */
+            private function invalidateStudioSession():void {
+                _studioProjectId=mx.utils.UIDUtil.createUID();
+                var requests:Object=_studioRequests;_studioRequests={};
+                for each(var request:Object in requests){clearTimeout(request.timer);request.callback(null,"Project session expired.");}
+                if(_studioWindow){_studioWindow.shutdown();_studioWindow.close();}if(studio){studio.stop();studio=null;}
+            }
             public function clear():void
             {
-                _studioProjectId=mx.utils.UIDUtil.createUID();_studioRequests={};
-                if(_studioWindow)_studioWindow.close();if(studio){studio.stop();studio=null;}
+                invalidateStudioSession();
 
                 cancelPendingThingRequest();
                 _thingData = null;
@@ -1825,7 +1836,7 @@ THE SOFTWARE.
                 _communicator.registerClass(Version);
                 _communicator.registerClass(ClientFeatures);
             
-                _communicator.registerCallback(ob.commands.StudioResultCommand,function(id:String,result:String,error:String):void {var callback:Function=_studioRequests[id];delete _studioRequests[id];if(callback!=null)callback(result?JSON.parse(result):null,error);});
+                _communicator.registerCallback(ob.commands.StudioResultCommand,function(id:String,result:String,error:String):void {var request:Object=_studioRequests[id];delete _studioRequests[id];if(request){clearTimeout(request.timer);request.callback(result?JSON.parse(result):null,error);}});
                 _communicator.registerCallback(LogCommand, logCallback);
                 _communicator.registerCallback(ob.commands.things.NativeObjectExportResultCommand,function(path:String,success:Boolean,message:String,job:uint):void {
                     if(_legacyModernExport && path==_legacyModernExport.directory.nativePath && job==_legacyModernExport.job){_legacyModernExport.workerFinished(success,message);return;}
@@ -2867,6 +2878,7 @@ THE SOFTWARE.
             
             protected function applicationClosingHandler(event:Event):void
             {
+                if(studio&&studio.hasUncommittedDrafts){event.preventDefault();statusLabel.text="Export or discard the open Pixel Art Studio drafts before closing the editor.";openPixelArtStudio();return;}
                 if(_legacyModernExport){event.preventDefault();statusLabel.text="Wait for the modern project export before closing.";return;}
                 if(_nativeSource && (_nativeSaving || clientChanged || _nativeSource.busy || _nativeObjectExportActive)){
                     event.preventDefault();

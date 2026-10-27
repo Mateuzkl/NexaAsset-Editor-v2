@@ -30,8 +30,8 @@ package ob.studio {
                 return {spriteId:p.spriteId,width:SpriteExtent.DEFAULT_SIZE,height:SpriteExtent.DEFAULT_SIZE,argb:encoded};
             }
             if(method=="list_assets"){
-                if(p.page<0||p.page>100000||String(p.query).length>256)throw new Error("Invalid page/query.");
-                var list:Array=[],start:int=int(p.page)*100,seen:int=0,q:String=String(p.query).toLowerCase();
+                if(p.page<0||p.page>100000||(p.query!=null&&String(p.query).length>256))throw new Error("Invalid page/query.");
+                var list:Array=[],start:int=int(p.page)*100,seen:int=0,q:String=p.query==null?"":String(p.query).toLowerCase();
                 if(p.category=="sprite"){for(var sid:uint=uint(start);sid<=sprites.spritesCount && list.length<100;sid++)list.push({id:sid});return {items:list,page:p.page};}
                 category(p.category);
                 for(var id:uint=things.getMinId(p.category);id<=things.getMaxId(p.category)&&list.length<100;id++){
@@ -60,7 +60,7 @@ package ob.studio {
             var count:int=cells.length*(w/size)*(h/size),limit:Number=features.extended?uint.MAX_VALUE:65535;
             if(Number(sprites.spritesCount)+count>limit)throw new Error("Target SPR ID limit reached.");
             var staged:Vector.<ByteArray>=new Vector.<ByteArray>(),frameCount:int=cells.length/directions;
-            var thing:ThingType=new ThingType();thing.category=p.category;
+            var thing:ThingType=new ThingType();thing.category=p.category;thing.name=p.name==null?"":String(p.name);
             var group:FrameGroup=new FrameGroup();group.width=w/size;group.height=h/size;group.exactSize=Math.max(w,h);group.patternX=directions;group.frames=frameCount;group.isAnimation=frameCount>1;group.spriteIndex=new Vector.<uint>();group.frameDurations=new Vector.<FrameDuration>();
             try {
                 for(var i:int=0;i<cells.length;i++){

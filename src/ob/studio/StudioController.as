@@ -19,6 +19,8 @@ package ob.studio {
         private var pending:Object={};
         private var sequence:uint=0;
         private var startup:uint=0;
+        private var drafts:Object={};
+        public function get hasUncommittedDrafts():Boolean {for each(var open:Boolean in drafts)if(open)return true;return false;}
         public function start(executable:File=null):void {
             if(process)return;
             var info:NativeProcessStartupInfo=new NativeProcessStartupInfo();info.executable=executable||File.applicationDirectory.resolvePath("mcp-gateway/nexa-mcp-gateway.exe");
@@ -45,7 +47,7 @@ package ob.studio {
             if(m.type=="ready"){if(m.protocolVersion!=1)throw new Error("Incompatible Studio protocol.");if(startup)clearTimeout(startup);startup=0;ready=true;endpoint=m.endpoint;token=m.token;status="MCP disabled · manual Studio ready";dispatchEvent(new Event("ready"));dispatchEvent(new Event("status"));}
             else if(m.type=="uiResponse"){
                 var request:Object=pending[m.id];delete pending[m.id];if(!request)return;clearTimeout(request.timer);if(request.callback!=null)request.callback(m.result,m.error);
-            }else if(m.type=="changed"){dispatchEvent(new StudioEvent(m));}
+            }else if(m.type=="changed"){if(m.closed)delete drafts[m.editId];else drafts[m.editId]=!m.committed;dispatchEvent(new StudioEvent(m));}
             else if(m.type=="activity"){status=(enabled?"MCP enabled":"MCP disabled")+" · "+m.action+" · "+m.state+" · "+endpoint;dispatchEvent(new Event("status"));}
             else if(m.type=="editorRequest"){
                 var ownProcess:NativeProcess=process;
@@ -54,6 +56,8 @@ package ob.studio {
             }
         }
         public function setEnabled(value:Boolean):void {call("ui_enable",{enabled:value},function(result:Object,error:String):void{if(error)status=error;else{enabled=value;status=(enabled?"MCP enabled · ":"MCP disabled · ")+endpoint;}dispatchEvent(new Event("status"));});}
+        /** Closing the window preserves drafts but disables access, revokes provider consent and rotates the bearer. */
+        public function suspend():void {if(!ready)return;call("ui_suspend",{},function(result:Object,error:String):void {enabled=false;if(!error)token=result.token;status=error||"MCP paused · reopen Pixel Art Studio to enable";dispatchEvent(new Event("status"));});}
         public function copyConfiguration():void {Clipboard.generalClipboard.setData(ClipboardFormats.TEXT_FORMAT,"[mcp_servers.nexaasset]\nurl = \""+endpoint+"\"\nbearer_token_env_var = \"NEXA_MCP_TOKEN\"\n");}
         public function copyToken():void {if(token.length)Clipboard.generalClipboard.setData(ClipboardFormats.TEXT_FORMAT,token);}
         private function stderr(event:ProgressEvent):void {if(process)process.standardError.readUTFBytes(process.standardError.bytesAvailable);}
@@ -62,7 +66,7 @@ package ob.studio {
         private function fail(message:String):void {stop();status=message;dispatchEvent(new Event("status"));}
         public function stop():void {
             if(startup)clearTimeout(startup);startup=0;
-            var old:NativeProcess=process;process=null;ready=false;enabled=false;token="";endpoint="";output="";
+            var old:NativeProcess=process;process=null;ready=false;enabled=false;token="";endpoint="";output="";drafts={};
             if(old){old.removeEventListener(ProgressEvent.STANDARD_OUTPUT_DATA,stdout);old.removeEventListener(ProgressEvent.STANDARD_ERROR_DATA,stderr);old.removeEventListener(NativeProcessExitEvent.EXIT,exited);old.removeEventListener(IOErrorEvent.STANDARD_INPUT_IO_ERROR,ioError);if(old.running)try{old.exit(true);}catch(ignore:Error){}}
             var requests:Object=pending;pending={};for each(var request:Object in requests){clearTimeout(request.timer);if(request.callback!=null)request.callback(null,"Studio stopped; drafts were invalidated.");}
         }

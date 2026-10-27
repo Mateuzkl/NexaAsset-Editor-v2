@@ -82,7 +82,9 @@ public sealed partial class NativeWorkspace
             encodedGroups = Blob(2, Scalar(1, 0).Concat(Blob(3, idleInfo)).ToArray()).Concat(encodedGroups).ToArray(); groupCount = 2;
         }
         uint id = NextId(category);
-        var appearance = new Appearance(id, category, "", groupCount, Scalar(1, id).Concat(encodedGroups).ToArray());
+        string name = packet.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+        if (name.Length > 80) throw new InvalidDataException("Asset name exceeds 80 characters.");
+        var appearance = new Appearance(id, category, name, groupCount, Scalar(1, id).Concat(encodedGroups).Concat(Blob(4, System.Text.Encoding.UTF8.GetBytes(name))).ToArray());
         _ = AssetSet.Groups(appearance); assets.ValidateAppearanceEdits([appearance]);
         // All data, budgets, references and metadata are validated before the first mutation.
         // No disk I/O, cancellation points or callbacks occur inside this publish section.

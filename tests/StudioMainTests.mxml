@@ -31,6 +31,8 @@
         private var originalMax:uint;
         private var newId:uint;
         private var clientInfoLoader:ClientInfoLoader;
+        private var closeCycles:int=0;
+        private var cycleMemory:Number;
         override protected function applicationInvokeHandler(event:InvokeEvent):void {
             testRoot=new File(event.arguments[0]);gateway=new File(event.arguments[1]);helper=new File(event.arguments[2]);clientExecutable=new File(event.arguments[3]);
         }
@@ -39,8 +41,9 @@
             systemManager.loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR,function(e:UncaughtErrorEvent):void{e.preventDefault();fail(e.error is Error?Error(e.error).getStackTrace():String(e.error));});
             clock.addEventListener(TimerEvent.TIMER,tick);clock.start();
         }
+        private function record(message:String):void {var stream:FileStream=new FileStream();try{stream.open(testRoot.resolvePath("result.txt"),FileMode.APPEND);stream.writeUTFBytes(message+"\n");}finally{stream.close();}}
         private function check(value:Boolean,message:String):void {if(!value)throw new Error(message);}
-        private function fail(message:String):void {trace("FAIL Studio AIR: "+message);clock.stop();if(external&&external.running)external.exit(true);clear();NativeApplication.nativeApplication.exit(1);}
+        private function fail(message:String):void {record("FAIL "+message);trace("FAIL Studio AIR: "+message);clock.stop();if(external&&external.running)external.exit(true);clear();NativeApplication.nativeApplication.exit(1);}
         private function findWindow():PixelArtStudio {for(var i:int=0;i<systemManager.rawChildren.numChildren;i++)if(systemManager.rawChildren.getChildAt(i) is PixelArtStudio)return systemManager.rawChildren.getChildAt(i) as PixelArtStudio;return null;}
         private function launchClient():void {
             externalOutput=externalError="";externalExit=-999;
@@ -66,35 +69,56 @@
                     else {clientInfoLoader=new ClientInfoLoader();clientInfoLoader.addEventListener(ErrorEvent.ERROR,function(e:ErrorEvent):void{fail(e.text);});clientInfoLoader.addEventListener(Event.COMPLETE,function(e:Event):void{var info:otlib.utils.ClientInfo=clientInfoLoader.clientInfo;var folder:File=testRoot.resolvePath("legacy-source");sendCommand(new LoadFilesCommand(folder.resolvePath("Tibia.dat"),folder.resolvePath("Tibia.spr"),VersionStorage.getInstance().getBySignatures(info.datSignature,info.sprSignature),null,info.features));});clientInfoLoader.load(testRoot.resolvePath("legacy-source/Tibia.dat"),testRoot.resolvePath("legacy-source/Tibia.spr"),true);}
                     phase=1;
                 }else if(phase==1&&clientLoaded&&thingData){
-                    originalMax=clientInfo.maxItemId;
+                    originalMax=clientInfo.maxOutfitId;
                     studio=new StudioController();studio.editor=this;studio.start(gateway);openPixelArtStudio();window=findWindow();check(window!=null,"Integrated Studio window missing");phase=2;
                 }else if(phase==2&&studio.ready&&window.snapshot){studio.setEnabled(true);phase=3;}
                 else if(phase==3&&studio.enabled){launchClient();phase=4;}
                 else if(phase==4&&externalExit!=-999){
                     check(externalExit==0,"External MCP client failed: "+externalError+externalOutput);
                     var result:Object=JSON.parse(externalOutput);check(result.passed,"External client did not finish");draftId=result.editId;
-                    check(clientInfo.maxItemId==originalMax,"Remote request mutated the editor before approval");
-                    window.editId=draftId;window.refresh();phase=5;
+                    check(clientInfo.maxOutfitId==originalMax,"Remote request mutated the editor before approval");
+                    phase=5;
                 }else if(phase==5&&window.snapshot&&window.snapshot.document.editId==draftId&&window.snapshot.document.approvalRequested){
-                    // Exercise the same canvas stroke event used by a human, then approve through the real button.
-                    var at:int=(2*32+2)*4;window.canvas.pixels[at]=51;window.canvas.pixels[at+1]=102;window.canvas.pixels[at+2]=153;window.canvas.pixels[at+3]=255;
-                    window.canvas.dispatchEvent(new Event("stroke"));phase=6;
-                }else if(phase==6&&window.snapshot.document.documentRevision==2){capture();window.applyButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=7;}
-                else if(phase==7&&clientInfo.maxItemId==originalMax+1&&window.snapshot.document.committed){
+                    check(window.editId==draftId&&window.snapshot.document.category=="outfit","Approval did not automatically select its typed draft");
+                    check(window.snapshot.document.width==32&&window.snapshot.document.height==64&&window.snapshot.document.frameCount==16,"Outfit geometry/timeline missing");
+                    // Hold a real canvas drag while another client changes a disjoint pixel.
+                    window.canvas.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_DOWN,true));
+                    check(window.canvas.drawing,"Canvas did not start drawing");
+                    studio.call("set_pixels",{editId:draftId,expectedDocumentRevision:2,frame:0,layer:0,pixels:[{x:10,y:10,rgba:[91,92,93,255]}]},function(result:Object,error:String):void {
+                        if(error){fail(error);return;}
+                        var at:int=(2*32+2)*4;window.canvas.pixels[at]=51;window.canvas.pixels[at+1]=102;window.canvas.pixels[at+2]=153;window.canvas.pixels[at+3]=255;
+                        stage.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_UP,true));
+                    });phase=6;
+                }else if(phase==6&&window.snapshot.document.documentRevision==4){capture();window.applyButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=7;}
+                else if(phase==7&&clientInfo.maxOutfitId==originalMax+1&&window.snapshot.document.committed){
+                    check(currentCategory=="outfit","Applied outfit did not select the Outfits section");
+                    check(window.maximumSnapshotRequests==1,"Concurrent preview requests escaped coalescing");
                     check(clientChanged,"Studio insertion did not update dirty state");newId=originalMax+1;
-                    studioEditorRequest("get_frame",{category:"item",assetId:newId,group:0,frame:0,direction:0,layer:0},function(frame:Object,error:String=null):void {
-                        if(error){fail(error);return;}var spriteId:uint=frame.spriteId!==undefined?uint(frame.spriteId):uint(frame.references[0]);
+                    studioEditorRequest("get_frame",{category:"outfit",assetId:newId,group:0,frame:0,direction:0,layer:0},function(frame:Object,error:String=null):void {
+                        if(error){fail(error);return;}var spriteId:uint=frame.spriteId!==undefined?uint(frame.spriteId):uint(frame.references[frame.references.length-1]);
                         studioEditorRequest("get_sprite",{spriteId:spriteId},function(sprite:Object,error:String=null):void {
                             if(error){fail(error);return;}var pixels:ByteArray=StudioPixels.decode(sprite.argb);var ai:int=(1*32+1)*4,human:int=(2*32+2)*4;
                             check(pixels[ai]==127&&pixels[ai+1]==23&&pixels[ai+2]==85&&pixels[ai+3]==171,"External MCP pixels changed channels/alpha");
-                            check(pixels[human]==255&&pixels[human+1]==51&&pixels[human+2]==102&&pixels[human+3]==153,"Human canvas pixels were not committed");pixels.clear();phase=9;
+                            check(pixels[human]==255&&pixels[human+1]==51&&pixels[human+2]==102&&pixels[human+3]==153,"Human canvas pixels were not committed");check(pixels[(10*32+10)*4+1]==91,"Concurrent MCP edit was lost by manual stroke");pixels.clear();
+                            studioEditorRequest("get_project_info",{},function(info:Object,error:String=null):void {
+                                if(error){fail(error);return;}check(info.revision==window.snapshot.document.baseRevision+1,"One art transaction emitted multiple revision updates");phase=9;
+                            });
                         });
                     });phase=8;
                 }else if(phase==9){compileProject();phase=10;}
                 else if(phase==10&&!nativeSaving&&!clientChanged&&!locked){
+                    record("PASS: mode="+mode+" outfit32x64 directions4 frames4 sparse-stroke merge coalesced-preview category-selection revision-once Save/Compile");
                     trace("PASS: real AIR "+(mode==0?"modern":"legacy")+" + external official MCP client: read, draw, preview, remote approval request, manual canvas edit, Apply, exact stored pixels, dirty state and Save/Compile");
-                    clear();window=null;
-                    if(mode==0){mode=1;phase=0;}else{clock.stop();trace("PASS: Studio live integration; screenshots: "+testRoot.nativePath);NativeApplication.nativeApplication.exit(0);}
+                    check(window.maximumSnapshotRequests==1,"Preview concurrency");
+                    closeCycles=0;flash.system.System.gc();cycleMemory=flash.system.System.totalMemory;window.close();window=null;phase=12;
+                }else if(phase==12&&!studio.enabled){openPixelArtStudio();window=findWindow();phase=13;}
+                else if(phase==13&&window&&window.snapshot){
+                    window.close();if(findWindow()!=null)return;window=null;closeCycles++;
+                    if(closeCycles<50){phase=12;return;}
+                    flash.system.System.gc();
+                    record("PASS: 50 Studio open/close cycles mode="+mode+" managedMemoryDelta="+(flash.system.System.totalMemory-cycleMemory));
+                    clear();
+                    if(mode==0){mode=1;phase=0;}else{clock.stop();NativeApplication.nativeApplication.exit(0);}
                 }
             }catch(error:Error){fail(error.getStackTrace()||error.message);}
         }

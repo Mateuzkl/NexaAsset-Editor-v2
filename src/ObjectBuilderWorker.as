@@ -173,6 +173,8 @@ package
 
         private var _studioRevision:Number=0;
         private var _studioAdapter:LegacyStudioAdapter;
+        private var _studioCommitting:Boolean=false;
+        private var _studioStorageChanged:Boolean=false;
         private var _communicator:IWorkerCommunicator;
         private var _things:ThingTypeStorage;
         private var _sprites:SpriteStorage;
@@ -3700,14 +3702,17 @@ package
         private function studioCommandCallback(id:String,method:String,payload:String):void {
             try {
                 if(!_studioAdapter||!_studioAdapter.owns(_things))_studioAdapter=new LegacyStudioAdapter(_things,_sprites,_features);
-                var result:Object=_studioAdapter.execute(method,JSON.parse(payload),_studioRevision);
-                if(method=="commit_art"){sendClientInfo();sendThingList(Vector.<uint>([result.selected]),result.category,true);sendSpriteList(Vector.<uint>([result.sprite]),true);}
+                _studioCommitting=method=="commit_art";_studioStorageChanged=false;
+                var result:Object;
+                try{result=_studioAdapter.execute(method,JSON.parse(payload),_studioRevision);}
+                finally{_studioCommitting=false;if(_studioStorageChanged)sendClientInfo();}
                 sendCommand(new ob.commands.StudioResultCommand(id,JSON.stringify(result)));
             }catch(error:Error){sendCommand(new ob.commands.StudioResultCommand(id,null,error.message));}
         }
 
         protected function storageChangeHandler(event:StorageEvent):void
         {
+            if(_studioCommitting){_studioStorageChanged=true;return;}
             sendClientInfo();
         }
 

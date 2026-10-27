@@ -35,8 +35,8 @@ public sealed class StudioTools(StudioService studio)
     public Task<object> Frame(string category, uint assetId, CancellationToken ct, int group = 0, int frame = 0, int direction = 0, int layer = 0) => Read("get_frame", new { category, assetId, group, frame, direction, layer }, ct);
     [McpServerTool(Name = "nexa_list_art_documents", ReadOnly = true), Description("List the shared manual/MCP drafts.")]
     public Task<object> Documents(CancellationToken ct) => Read("list_art_documents", new { }, ct);
-    [McpServerTool(Name = "nexa_begin_edit"), Description("Create an isolated art draft against an exact project identity/revision; optional spriteId is a real reference.")]
-    public Task<object> Begin(string projectSessionId, long expectedRevision, CancellationToken ct, int width = 32, int height = 32, uint spriteId = 0) => Read("begin_edit", new { projectSessionId, expectedRevision, width, height, spriteId }, ct);
+    [McpServerTool(Name = "nexa_begin_edit"), Description("Create an isolated art draft against an exact project identity/revision; category: item, outfit, effect, missile. Set outfit for characters (four directions initialized automatically), use width=32,height=64 for tall outfits; optional name and real spriteId reference. Category is preserved through approval and insertion into its matching editor section.")]
+    public Task<object> Begin(string projectSessionId, long expectedRevision, string category, CancellationToken ct, int width = 32, int height = 32, uint spriteId = 0, string name = "") => Read("begin_edit", new { projectSessionId, expectedRevision, width, height, spriteId, category, name }, ct);
     [McpServerTool(Name = "nexa_duplicate_sprite"), Description("Copy exact reference pixels into a new draft without changing the original.")]
     public Task<object> Duplicate(string projectSessionId, long expectedRevision, uint spriteId, CancellationToken ct) => Read("duplicate_sprite", new { projectSessionId, expectedRevision, spriteId }, ct);
     [McpServerTool(Name = "nexa_get_edit_preview", ReadOnly = true), Description("Read straight RGBA preview, hash, pixel diff, timeline and compatibility warnings.")]
@@ -55,6 +55,8 @@ public sealed class StudioTools(StudioService studio)
     public Task<object> Cancel(string editId, CancellationToken ct) => Read("cancel_edit", new { editId }, ct);
     [McpServerTool(Name = "nexa_export_spritesheet", ReadOnly = true), Description("Return PNG base64 and exact JSON cell/time/direction mapping. No filesystem access.")]
     public Task<object> Export(string editId, CancellationToken ct, int columns = 4) => Read("export_spritesheet", new { editId, columns }, ct);
+    [McpServerTool(Name = "nexa_set_asset_type"), Description("Set draft target category (item/outfit/effect/missile) and optional name. parameters: category,name. Apply inserts into this exact editor section; changing to outfit initializes four directions.")]
+    public Task<object> AssetType(string editId, long expectedDocumentRevision, JsonElement parameters, CancellationToken ct) => Edit("set_asset_type", editId, expectedDocumentRevision, parameters, ct);
     [McpServerTool(Name = "nexa_create_sprite"), Description("parameters: width,height (32 or 64). Reinitialize an empty draft.")]
     public Task<object> Create(string editId, long expectedDocumentRevision, JsonElement parameters, CancellationToken ct) => Edit("create_sprite", editId, expectedDocumentRevision, parameters, ct);
     [McpServerTool(Name = "nexa_set_pixels"), Description("parameters: frame,layer,pixels:[{x,y,rgba:[r,g,b,a]}]. Up to 4096 pixels, grouped into one undo step.")]
@@ -67,7 +69,7 @@ public sealed class StudioTools(StudioService studio)
     public Task<object> AddLayer(string editId, long expectedDocumentRevision, JsonElement parameters, CancellationToken ct) => Edit("add_layer", editId, expectedDocumentRevision, parameters, ct);
     [McpServerTool(Name = "nexa_update_layer"), Description("parameters: frame,layer,name,visible,locked,opacity (0-255),moveTo,delete,merge. Merge flattens visible paint layers.")]
     public Task<object> Layer(string editId, long expectedDocumentRevision, JsonElement parameters, CancellationToken ct) => Edit("update_layer", editId, expectedDocumentRevision, parameters, ct);
-    [McpServerTool(Name = "nexa_set_animation"), Description("parameters: frames (time steps),directions (1 or 4),duration (ms). New cells duplicate the last reference and require deliberate pixel edits for distinct animation.")]
+    [McpServerTool(Name = "nexa_set_animation"), Description("parameters: frames (time steps),directions (1 or 4), optional duration (ms; omitted preserves timings). Cells preserve time/direction mapping and duplicate the last time reference and require deliberate pixel edits for distinct animation.")]
     public Task<object> Animation(string editId, long expectedDocumentRevision, JsonElement parameters, CancellationToken ct) => Edit("set_animation", editId, expectedDocumentRevision, parameters, ct);
     [McpServerTool(Name = "nexa_import_sprite_png"), Description("parameters: frame,layer,png (base64). Exact bounded 32/64 PNG decoder.")]
     public Task<object> Import(string editId, long expectedDocumentRevision, JsonElement parameters, CancellationToken ct) => Edit("import_sprite_png", editId, expectedDocumentRevision, parameters, ct);
