@@ -47,7 +47,7 @@ package ob.studio {
             if(m.type=="ready"){if(m.protocolVersion!=1)throw new Error("Incompatible Studio protocol.");if(startup)clearTimeout(startup);startup=0;ready=true;endpoint=m.endpoint;token=m.token;status="MCP disabled · manual Studio ready";dispatchEvent(new Event("ready"));dispatchEvent(new Event("status"));}
             else if(m.type=="uiResponse"){
                 var request:Object=pending[m.id];delete pending[m.id];if(!request)return;clearTimeout(request.timer);if(request.callback!=null)request.callback(m.result,m.error);
-            }else if(m.type=="changed"){if(m.closed)delete drafts[m.editId];else drafts[m.editId]=!m.committed;dispatchEvent(new StudioEvent(m));}
+            }else if(m.type=="changed"){if(m.closed)delete drafts[m.editId];else drafts[m.editId]=Boolean(m.dirty);dispatchEvent(new StudioEvent(m));}
             else if(m.type=="activity"){status=(enabled?"MCP enabled":"MCP disabled")+" · "+m.action+" · "+m.state+" · "+endpoint;dispatchEvent(new Event("status"));}
             else if(m.type=="editorRequest"){
                 var ownProcess:NativeProcess=process;
@@ -56,6 +56,8 @@ package ob.studio {
             }
         }
         public function setEnabled(value:Boolean):void {call("ui_enable",{enabled:value},function(result:Object,error:String):void{if(error)status=error;else{enabled=value;status=(enabled?"MCP enabled · ":"MCP disabled · ")+endpoint;}dispatchEvent(new Event("status"));});}
+        public function beginClose(callback:Function):void {call("ui_begin_close",{},function(value:Object,error:String):void {if(!error){enabled=false;status="MCP paused · resolving drafts";dispatchEvent(new Event("status"));}callback(value,error);});}
+        public function endClose(callback:Function=null):void {call("ui_end_close",{},callback);}
         /** Closing the window preserves drafts but disables access, revokes provider consent and rotates the bearer. */
         public function suspend():void {if(!ready)return;call("ui_suspend",{},function(result:Object,error:String):void {enabled=false;if(!error)token=result.token;status=error||"MCP paused · reopen Pixel Art Studio to enable";dispatchEvent(new Event("status"));});}
         public function copyConfiguration():void {Clipboard.generalClipboard.setData(ClipboardFormats.TEXT_FORMAT,"[mcp_servers.nexaasset]\nurl = \""+endpoint+"\"\nbearer_token_env_var = \"NEXA_MCP_TOKEN\"\n");}

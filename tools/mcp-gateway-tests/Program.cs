@@ -31,6 +31,8 @@ var restored = ArtDocument.Create("A", 4, 32, 32); restored.Load(0, doc.Sidecar(
 Check(restored.Sidecar().AsSpan().SequenceEqual(doc.Sidecar()), "sidecar roundtrip");
 Console.WriteLine("PASS: RGBA/ARGB, hidden RGB/partial alpha PNG, four geometries, layers, history, conflicts, atomic pixel batch, transform and sidecar");
 NativeArtTests.Run(root);
+Check(!JsonSerializer.SerializeToElement(ArtDocument.Create("close-regression", 0, 32, 32).Info(), ArtDocument.Json).GetProperty("dirty").GetBoolean(), "Untouched revision-zero draft blocks closing the editor");
+await DraftLifecycleTests.Run();
 await ProviderTests.Run();
 await StableDiffusionTests.Run();
 await StudioRegressionTests.Run();

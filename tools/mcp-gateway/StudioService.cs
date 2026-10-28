@@ -17,6 +17,7 @@ public sealed partial class StudioService(IEditorBridge bridge)
     public IArtGenerationProvider? Provider { get; init; }
     private PendingGeneration? generation;
     private long consentGeneration;
+    private bool closePending;
     public byte[] Secret { get; private set; } = RandomNumberGenerator.GetBytes(32);
     private sealed record PendingGeneration(ArtDocument Document, long Revision, int Frame, int Layer, long Consent, ArtGenerationRequest Request, CancellationTokenSource Cancellation);
     private void RevokeProvider() { ProviderConsent = false; consentGeneration++; generation?.Cancellation.Cancel(); CancelStableDiffusion(); }
@@ -77,6 +78,14 @@ public sealed partial class StudioService(IEditorBridge bridge)
     private static string S(JsonElement e, string key, string fallback = "") => e.TryGetProperty(key, out var v) ? v.GetString() ?? fallback : fallback;
     private async Task<object> Execute(string method, JsonElement args, bool local, CancellationToken ct)
     {
+        if (method == "ui_begin_close" && local) { closePending = true; bool interrupted = generation != null || stableJob?.Running == true; Enabled = false; RevokeProvider(); return new { interrupted, documents = documents.Values.Select(d => d.Info()).ToArray() }; }
+        if (method == "ui_end_close" && local) { closePending = false; return new { enabled = Enabled }; }
+        if (method == "ui_discard_drafts" && local) {
+            if (!closePending) throw new InvalidOperationException("Prepare draft closure in the local UI first.");
+            foreach (var draft in documents.Values.ToArray()) { documents.Remove(draft.Id); await bridge.EmitAsync(new { type = "changed", editId = draft.Id, closed = true }); }
+            return new { discarded = true };
+        }
+        if (closePending && method is not ("list_art_documents" or "get_edit_preview" or "ui_snapshot" or "get_edit_sheet" or "get_generation_status" or "ui_stroke" or "ui_sidecar" or "ui_mark_exported" or "ui_suspend" or "ui_audit")) throw new InvalidOperationException("Resolve the local draft closing dialog first.");
         if (method == "ui_enable" && local) { Enabled = args.GetProperty("enabled").GetBoolean(); if (!Enabled) { generation?.Cancellation.Cancel(); CancelStableDiffusion(); } return new { enabled = Enabled }; }
         if (method == "ui_sd_info" && local) return StableDiffusionInfo();
         if (method == "ui_sd_configure" && local) return ConfigureStableDiffusion(S(args, "url"));
@@ -133,7 +142,8 @@ public sealed partial class StudioService(IEditorBridge bridge)
             if (encoded.Length > NativePng.ArtSheetMaxBytes) throw new InvalidDataException("Encoded sheet exceeds the shared 2 MiB import/export limit.");
             return new { mimeType = "image/png", png = Convert.ToBase64String(encoded), metadata = new { schemaVersion = 1, cellWidth = doc.State.Width, cellHeight = doc.State.Height, columns, directions = doc.State.Directions, cells = doc.State.Frames.Select((f, i) => new { index = i, x = i % columns, y = i / columns, time = i / doc.State.Directions, direction = i % doc.State.Directions, duration = f.Duration }) } };
         }
-        if (method == "ui_sidecar" && local) return new { data = Convert.ToBase64String(doc.Sidecar()) };
+        if (method == "ui_sidecar" && local) return new { data = Convert.ToBase64String(doc.Sidecar()), documentRevision = doc.Revision, approvalRequested = doc.ApprovalRequested };
+        if (method == "ui_mark_exported" && local) { doc.MarkExported(args.GetProperty("documentRevision").GetInt64(), args.GetProperty("approvalRequested").GetBoolean()); await Changed(doc); return doc.Info(); }
         if (method == "ui_png" && local) return new { data = Convert.ToBase64String(Png.Encode(new(doc.State.Width, doc.State.Height, ArtDocument.Composite(doc.State, I(args, "frame"))))) };
         if (method == "get_generation_status") return stableJob?.Document == doc ? stableJob.Info() : new { status = "none", editId = doc.Id };
         if (method == "cancel_generation") { if (stableJob?.Document == doc && (!args.TryGetProperty("jobId", out var jobId) || jobId.GetString() == stableJob.Id)) CancelStableDiffusion(); return stableJob?.Document == doc ? stableJob.Info() : new { status = "none", editId = doc.Id }; }
@@ -169,7 +179,7 @@ public sealed partial class StudioService(IEditorBridge bridge)
             return generation;
         }
         if (method == "undo_edit" || method == "ui_redo") doc.History(revision, method == "ui_redo");
-        else if (method == "ui_load" && local) doc.Load(revision, Convert.FromBase64String(S(args, "data")));
+        else if (method == "ui_load" && local) { doc.Load(revision, Convert.FromBase64String(S(args, "data"))); doc.MarkExported(doc.Revision, doc.ApprovalRequested); }
         else doc.Edit(revision, state =>
         {
             int frame = I(args, "frame"), layer = I(args, "layer");
@@ -247,5 +257,5 @@ public sealed partial class StudioService(IEditorBridge bridge)
         });
         await Changed(doc); return doc.Info();
     }
-    private Task Changed(ArtDocument doc, bool created = false) => bridge.EmitAsync(new { type = "changed", created, editId = doc.Id, documentRevision = doc.Revision, category = doc.State.Category, name = doc.State.Name, approvalRequested = doc.ApprovalRequested, committed = doc.Committed });
+    private Task Changed(ArtDocument doc, bool created = false) => bridge.EmitAsync(new { type = "changed", created, editId = doc.Id, documentRevision = doc.Revision, category = doc.State.Category, name = doc.State.Name, approvalRequested = doc.ApprovalRequested, committed = doc.Committed, dirty = doc.Dirty, exportedRevision = doc.ExportedRevision });
 }

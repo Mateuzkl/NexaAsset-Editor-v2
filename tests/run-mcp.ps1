@@ -44,5 +44,20 @@ try {
         @{samples=$samples;peakAirWorkingSet=$peakAir;peakChildWorkingSetSum=$peakChildren;elapsedSeconds=$watch.Elapsed.TotalSeconds}|ConvertTo-Json|Set-Content (Join-Path $output 'memory.json') -Encoding utf8
         if($air.ExitCode -ne 0){throw "Studio live AIR/MCP tests failed. See $output"}
     }finally{$air.Dispose()}
+    & (Join-Path $jdk[0].FullName 'bin/java.exe') -Xmx2g ('-Dapplication.home='+$sdk) -jar (Join-Path $sdk 'lib/mxmlc.jar') '+configname=air' `
+        '-source-path=src' '-source-path+=tests' '-library-path+=libs' '-locale=en_US,es_ES,pt_BR' '-source-path+=locale/{locale}' '-debug=true' '-warnings=false' `
+        ('-output='+ (Join-Path $project 'bin-tests/StudioClosingTests.swf')) 'tests/StudioClosingTests.mxml'
+    if($LASTEXITCODE -ne 0){throw 'Studio closing test compilation failed.'}
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'StudioClosingTests-app.xml') -Destination (Join-Path $project 'bin-tests')
+    foreach($format in @('modern','legacy')) { foreach($scenario in @('empty','untouched','discard','save')) {
+        $closeInfo=[Diagnostics.ProcessStartInfo]::new((Join-Path $sdk 'bin/adl.exe'));$closeInfo.UseShellExecute=$false;$closeInfo.CreateNoWindow=$true
+        foreach($argument in @('-nodebug',(Join-Path $project 'bin-tests/StudioClosingTests-app.xml'),'--',$output,
+            (Join-Path $project 'bin-debug/mcp-gateway/nexa-mcp-gateway.exe'),(Join-Path $project 'bin-debug/modern-helper/nexa-modern-helper.exe'),$format,$scenario)){$closeInfo.ArgumentList.Add($argument)}
+        $closeTest=[Diagnostics.Process]::Start($closeInfo)
+        try {$closeWatch=[Diagnostics.Stopwatch]::StartNew();while(-not $closeTest.WaitForExit(1000)){if($closeWatch.Elapsed.TotalSeconds -gt 80){$closeTest.Kill($true);throw "Studio closing watchdog: $format/$scenario. See $output"}};if($closeTest.ExitCode -ne 0){throw "Studio closing failed: $format/$scenario. See $output"}}
+        finally{$closeTest.Dispose()}
+        $closeResult=Join-Path $output "closing-$format-$scenario.txt"
+        if(-not (Test-Path -LiteralPath $closeResult) -or -not (Select-String -LiteralPath $closeResult -SimpleMatch 'actual application X accepted')){throw "Studio closing did not pass: $format/$scenario. See $output"}
+    }}
     Write-Output "Studio results: $output"
 }finally{Pop-Location}

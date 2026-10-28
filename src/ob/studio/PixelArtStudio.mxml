@@ -9,6 +9,7 @@
         import flash.net.FileFilter;
         import flash.utils.*;
         import mx.collections.ArrayCollection;
+        import nail.components.controls.Alert;
         public var controller:StudioController;
         public var referenceSpriteId:uint=0;
         [Bindable] public var editId:String="";
@@ -18,6 +19,10 @@
         [Bindable] private var providerConfigured:Boolean=false;
         [Bindable] private var generating:Boolean=false;
         [Bindable] private var report:String="Starting Studio…";
+        [Bindable] private var preparingClose:Boolean=false;
+        private var closeTimer:Timer=new Timer(100);
+        private var closeWait:Function;
+        private var closeStarted:int;
         private var sdWindow:StableDiffusionWindow;
         private var frame:int=0;
         private var layer:int=0;
@@ -46,7 +51,7 @@
             canvas.addEventListener("undo",function(e:Event):void{mutate("undo_edit");});canvas.addEventListener("redo",function(e:Event):void{mutate("ui_redo");});
             try{controller.start();if(controller.ready)ready(null);}catch(error:Error){report=error.message;}
         }
-        private function ready(event:Event):void {statusChanged(null);controller.call("ui_provider_consent",{consent:false},function(value:Object,error:String):void {if(!dead&&!error)providerConfigured=value.providerConfigured;});reloadDrafts(function():void {if(!editId.length)createDraft(32,0);});}
+        private function ready(event:Event):void {statusChanged(null);controller.call("ui_provider_consent",{consent:false},function(value:Object,error:String):void {if(!dead&&!error)providerConfigured=value.providerConfigured;});reloadDrafts();report=tr("emptyStudio");}
         private function statusChanged(event:Event):void {connection.text=controller.status;mcpToggle.selected=controller.enabled;}
         /** One UI operation and one coalesced preview at a time; callbacks never release another request's busy state. */
         private function invoke(method:String,args:Object,callback:Function=null,onError:Function=null):void {
@@ -60,7 +65,7 @@
             });
         }
         public function createDraft(size:int=32,reference:uint=0):void {
-            if(busy)return;playback.stop();
+            if(busy||preparingClose)return;playback.stop();
             invoke("get_project_info",{},function(info:Object):void {
                 invoke("begin_edit",{projectSessionId:info.projectSessionId,expectedRevision:info.revision,width:size,height:size,spriteId:reference,category:String(category.selectedItem||"item")},function(result:Object):void {selectDraft(result.editId);reloadDrafts();refresh();});
             });
@@ -92,7 +97,7 @@
             if(dead||busy||snapshotFlight||canvas.drawing||strokeConflict)return;
             if(pendingStroke){submitStroke();return;}
             if(pendingApproval.length){selectDraft(pendingApproval);pendingApproval="";refreshPending=true;}
-            if(!refreshPending||!editId.length)return;refreshPending=false;snapshotFlight=true;
+            if(preparingClose||!refreshPending||!editId.length)return;refreshPending=false;snapshotFlight=true;
             var ownId:String=editId,ownFrame:int=frame,ownLayer:int=layer,ownGeneration:uint=generation;var ownSheet:Boolean=sheetToggle.selected;
             snapshotRequests++;maximumSnapshotRequests=Math.max(maximumSnapshotRequests,snapshotRequests);
             invoke("ui_snapshot",{editId:ownId,frame:ownFrame,includeSheet:ownSheet&&(!snapshot||!sheet.matches(ownId,Number(snapshot.document.documentRevision))||requestedRevision>Number(snapshot.document.documentRevision))},function(value:Object):void {
@@ -125,7 +130,7 @@
         private function draftChanged():void {if(updating||busy||canvas.drawing||pendingStroke||!drafts.selectedItem)return;selectDraft(drafts.selectedItem.editId);refresh();}
         private function layerChanged():void {if(updating||busy||canvas.drawing||pendingStroke||!snapshot)return;layer=Math.max(0,layerList.selectedIndex);generation++;canvas.load(snapshot,layer);updating=true;var row:Object=snapshot.layers[layer];visibleLayer.selected=row.visible;lockedLayer.selected=row.locked;opacity.value=row.opacity;layerName.text=row.name;updating=false;}
         public function mutate(method:String,args:Object=null):void {
-            if(!snapshot||busy||canvas.drawing||pendingStroke||snapshot.document.committed)return;playback.stop();args=args||{};args.editId=editId;args.expectedDocumentRevision=snapshot.document.documentRevision;if(args.frame===undefined)args.frame=frame;if(args.layer===undefined)args.layer=layer;
+            if(preparingClose||!snapshot||busy||canvas.drawing||pendingStroke||snapshot.document.committed)return;playback.stop();args=args||{};args.editId=editId;args.expectedDocumentRevision=snapshot.document.documentRevision;if(args.frame===undefined)args.frame=frame;if(args.layer===undefined)args.layer=layer;
             if(method=="generate_variation"){
                 if(generating)return;generating=true;
                 controller.call(method,args,function(result:Object,error:String):void {if(dead)return;generating=false;if(error)report=error;else refresh();});return;
@@ -163,7 +168,7 @@
         private function apply():void {if(!snapshot||busy||snapshot.document.committed)return;mutate("ui_apply");}
         private function discard():void {if(!editId.length||busy)return;invoke("cancel_edit",{editId:editId},function(result:Object):void {editId="";snapshot=null;reloadDrafts();});}
         private function browse(mode:String):void {
-            if(!snapshot||busy)return;playback.stop();releasePicker();pickerMode=mode;picker=new File();picker.addEventListener(Event.SELECT,pickedFile);picker.addEventListener(Event.CANCEL,cancelledFile);
+            if((!snapshot&&mode!="load")||busy||preparingClose)return;playback.stop();releasePicker();pickerMode=mode;picker=new File();picker.addEventListener(Event.SELECT,pickedFile);picker.addEventListener(Event.CANCEL,cancelledFile);
             try{if(mode=="load"||mode=="import"||mode=="importSheet")picker.browseForOpen(mode=="load"?tr("openArt"):tr("importPng"),[new FileFilter(mode=="load"?"Nexa art":"PNG",mode=="load"?"*.nexaart":"*.png")]);else picker.browseForSave(mode=="save"?tr("saveArt"):mode=="sheet"?tr("sheet"):tr("exportPng"));}catch(error:Error){report=error.message;releasePicker();}
         }
         private function cancelledFile(event:Event):void {releasePicker();}
@@ -174,7 +179,9 @@
                 if(mode=="load"||mode=="import"||mode=="importSheet"){
                     if(file.size>(mode=="load"?4194304:mode=="importSheet"?2097152:1048576))throw new Error("Selected file exceeds the import limit.");
                     bytes=new ByteArray();try{stream.open(file,FileMode.READ);stream.readBytes(bytes);}finally{stream.close();}
-                    var encoded:String=StudioPixels.encode(bytes);bytes.clear();if(mode=="importSheet")mutate("import_spritesheet",{png:encoded,cellWidth:snapshot.document.width,cellHeight:snapshot.document.height,directions:snapshot.document.directions,duration:snapshot.duration});else mutate(mode=="load"?"ui_load":"import_sprite_png",mode=="load"?{data:encoded}:{png:encoded});return;
+                    var encoded:String=StudioPixels.encode(bytes);bytes.clear();if(mode=="importSheet")mutate("import_spritesheet",{png:encoded,cellWidth:snapshot.document.width,cellHeight:snapshot.document.height,directions:snapshot.document.directions,duration:snapshot.duration});else if(mode=="load"&&!snapshot){
+                        invoke("get_project_info",{},function(info:Object):void {invoke("begin_edit",{projectSessionId:info.projectSessionId,expectedRevision:info.revision,category:"item"},function(created:Object):void {selectDraft(created.editId);invoke("ui_load",{editId:editId,expectedDocumentRevision:0,data:encoded},function(loaded:Object):void {reloadDrafts();refresh();});});});
+                    }else mutate(mode=="load"?"ui_load":"import_sprite_png",mode=="load"?{data:encoded}:{png:encoded});return;
                 }
                 if(file.exists){report=tr("chooseNewFile");return;}
                 var method:String=mode=="save"?"ui_sidecar":mode=="sheet"?"export_spritesheet":pendingStroke?"ui_stroke_png":"ui_png";
@@ -187,6 +194,7 @@
                         var writer:FileStream=new FileStream();try{writer.open(target,FileMode.WRITE);writer.writeBytes(output);}finally{writer.close();output.clear();}
                         if(mode=="sheet"){writer=new FileStream();try{writer.open(metadata,FileMode.WRITE);writer.writeUTFBytes(JSON.stringify(result.metadata));}finally{writer.close();}}
                         report=tr("exported")+" "+target.nativePath;
+                        if(mode=="save")controller.call("ui_mark_exported",{editId:parameters.editId,documentRevision:result.documentRevision,approvalRequested:result.approvalRequested});
                     }catch(error:Error){report=error.message;}
                 });
             }catch(error:Error){report=error.message;}
@@ -199,13 +207,26 @@
             sdWindow.addEventListener(Event.REMOVED_FROM_STAGE,function(event:Event):void {if(event.target==sdWindow)sdWindow=null;});
             sdWindow.open(this);return sdWindow;
         }
+        public function freezeForClose():void {preparingClose=true;playback.stop();releasePicker();if(sdWindow)sdWindow.close();canvas.finishStroke();}
+        public function flushForClose(callback:Function):void {closeWait=callback;closeStarted=getTimer();closeTimer.addEventListener(TimerEvent.TIMER,checkCloseReady);closeTimer.start();checkCloseReady(null);}
+        private function checkCloseReady(event:TimerEvent):void {
+            if(closeWait==null)return;
+            var issue:String=null;
+            if(strokeConflict)issue=tr("closeStrokeConflict");
+            else if(getTimer()-closeStarted>31000)issue=tr("closeOperationTimeout");
+            else if(busy||canvas.drawing||pendingStroke){pumpRefresh();return;}
+            closeTimer.stop();closeTimer.removeEventListener(TimerEvent.TIMER,checkCloseReady);var callback:Function=closeWait;closeWait=null;callback(issue);
+        }
+        public function resumeAfterClose():void {closeTimer.stop();closeTimer.removeEventListener(TimerEvent.TIMER,checkCloseReady);closeWait=null;preparingClose=false;if(!dead)refresh();}
+        public function discardLocalForClose():void {pendingStroke=null;strokeConflict=strokeLayoutConflict=false;canvas.acknowledgeStroke();editId="";snapshot=null;canApply=false;}
         override public function close():void {
-            if(!dead&&(canvas.drawing||pendingStroke||busy)){report="Finish the current operation or resolve your retained stroke before closing. Drafts remain available when reopening this project.";return;}
+            if(!dead)canvas.finishStroke();
+            if(!dead&&(pendingStroke||busy||preparingClose)){report=tr("closeStudioWait");Alert.show(report,tr("closeDraftsTitle"),Alert.OK,this);return;}
             super.close();
         }
-        public function shutdown():void {if(dead)return;dead=true;generation++;if(sdWindow)sdWindow.close();controller.suspend();playback.stop();playback.removeEventListener(TimerEvent.TIMER,tick);releasePicker();controller.removeEventListener("ready",ready);controller.removeEventListener("status",statusChanged);controller.removeEventListener("studioChanged",changed);canvas.dispose();sheet.dispose();original.dispose();}
+        public function shutdown():void {if(dead)return;dead=true;generation++;resumeAfterClose();if(sdWindow)sdWindow.close();controller.suspend();playback.stop();playback.removeEventListener(TimerEvent.TIMER,tick);releasePicker();controller.removeEventListener("ready",ready);controller.removeEventListener("status",statusChanged);controller.removeEventListener("studioChanged",changed);canvas.dispose();sheet.dispose();original.dispose();}
     ]]></fx:Script>
-    <s:VGroup left="12" right="12" top="12" bottom="12" gap="8">
+    <s:VGroup left="12" right="12" top="12" bottom="12" gap="8" enabled="{!preparingClose}">
         <s:HGroup width="100%" verticalAlign="middle">
             <s:CheckBox id="mcpToggle" label="{tr('enableMcp')}" change="controller.setEnabled(mcpToggle.selected)"/>
             <s:Label id="connection" width="100%" maxDisplayedLines="1"/>
@@ -225,7 +246,8 @@
             <s:Button label="{tr('openArt')}" enabled="{!busy}" click="browse('load')"/>
             <s:Button label="{tr('saveArt')}" enabled="{!busy &amp;&amp; !pendingStroke}" click="browse('save')"/>
         </s:HGroup>
-        <s:HGroup width="100%" height="100%" gap="12">
+        <s:Label width="100%" text="{tr('emptyStudio')}" visible="{!snapshot}" includeInLayout="{!snapshot}"/>
+        <s:HGroup width="100%" height="100%" gap="12" enabled="{snapshot!=null}">
             <s:VGroup width="100%" height="100%">
                 <s:HGroup width="100%" verticalAlign="middle">
                     <s:DropDownList id="tools" width="112" selectedIndex="0" change="canvas.tool=String(tools.selectedItem)">

@@ -126,6 +126,9 @@ internal static class StableDiffusionTests
         released.SetResult(); Check(await Wait() == "complete" && doc.Revision == 2, "Successful generation did not publish exactly one revision");
         doc.History(2, false); Check(doc.State.Frames[0].Layers[0].Rgba[(32 + 1) * 4] == 2, "Generated image cannot undo");
         Reset(); await Run("generate_stable_diffusion", Parameters()); await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var closing = await Run("ui_begin_close", new { }); Check(closing.GetProperty("interrupted").GetBoolean() && await Wait() == "cancelled", "Close did not cancel slow SD work");
+        await Run("ui_end_close", new { }); await Run("ui_provider_consent", new { consent = true });
+        Reset(); await Run("generate_stable_diffusion", Parameters()); await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         bridge.Session = "other-project"; await Run("get_project_info", new { }); await service.StopAsync(); Check(doc.Revision == 3, "Old session received a generation");
     }
     private static async Task Loopback()

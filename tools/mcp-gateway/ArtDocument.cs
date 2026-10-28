@@ -43,6 +43,10 @@ public sealed class ArtDocument
     public bool TargetTransparency { get; set; } = true;
     public bool ApprovalRequested { get; set; }
     public bool Committed { get; set; }
+    public long ExportedRevision { get; private set; }
+    private bool exportedApproval;
+    public bool Dirty => !Committed && (Revision != ExportedRevision || ApprovalRequested != exportedApproval);
+    public void MarkExported(long revision, bool approval) { if (Revision == revision && ApprovalRequested == approval) { ExportedRevision = revision; exportedApproval = approval; } }
     public ArtState State { get; private set; } = new();
     public byte[]? Reference { get; set; }
     private readonly List<ArtState> undo = [], redo = [];
@@ -148,7 +152,7 @@ public sealed class ArtDocument
         return output;
     }
     /// <summary>Return shared draft identity, destination, geometry and revision metadata.</summary>
-    public object Info() => new { editId = Id, projectSessionId = ProjectSessionId, baseRevision = BaseRevision, documentRevision = Revision, structureRevision = StructureRevision, State.Category, State.Name, State.Width, State.Height, State.Directions, frameCount = State.Frames.Count, approvalRequested = ApprovalRequested, committed = Committed, dirty = !Committed, canUndo = undo.Count > 0, canRedo = redo.Count > 0 };
+    public object Info() => new { editId = Id, projectSessionId = ProjectSessionId, baseRevision = BaseRevision, documentRevision = Revision, structureRevision = StructureRevision, State.Category, State.Name, State.Width, State.Height, State.Directions, frameCount = State.Frames.Count, approvalRequested = ApprovalRequested, committed = Committed, dirty = Dirty, exportedRevision = ExportedRevision, canUndo = undo.Count > 0, canRedo = redo.Count > 0 };
     /// <summary>Return a bounded preview; raw painting layers are restricted to the private AIR caller.</summary>
     public object Preview(int frame, bool includeLayers = false, bool includeSheet = false)
     {

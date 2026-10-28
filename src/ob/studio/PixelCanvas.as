@@ -96,10 +96,11 @@ package ob.studio {
             if(!dragging)return;var x:int=px(),y:int=py();
             if(tool=="pencil"||tool=="eraser"){line(lx,ly,x,y);lx=x;ly=y;draw();}
             else if(tool=="select"){selection=new Rectangle(Math.min(sx,x),Math.min(sy,y),Math.abs(x-sx)+1,Math.abs(y-sy)+1);overlay();}
+            lx=x;ly=y;
         }
         private function up(event:MouseEvent):void {
             if(pointerStage)pointerStage.removeEventListener(MouseEvent.MOUSE_UP,up);pointerStage=null;if(!dragging)return;dragging=false;
-            var x:int=px(),y:int=py();
+            var x:int=event?px():lx,y:int=event?py():ly;
             if(tool=="line")line(sx,sy,x,y);
             else if(tool=="rect"){line(sx,sy,x,sy);line(x,sy,x,y);line(x,y,sx,y);line(sx,y,sx,sy);}
             else if(tool=="ellipse"){
@@ -109,6 +110,7 @@ package ob.studio {
             else if(tool=="move"&&selection)moveSelection(x-sx,y-sy);
             drawing=false;draw();if(tool!="select")publishStroke();else dispatchEvent(new Event("strokeFinished"));
         }
+        public function finishStroke():void {if(dragging)up(null);}
         /** Keep a sparse before/after delta so unrelated MCP pixel edits can merge atomically. */
         private function publishStroke():void {
             captureStroke();

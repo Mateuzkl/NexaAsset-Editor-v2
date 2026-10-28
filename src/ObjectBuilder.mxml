@@ -661,7 +661,7 @@ THE SOFTWARE.
             
                     if (window.detail == DialogDetail.OK)
                     {
-                        if(!canSwitchAssetProject())return;
+                        if(!canSwitchAssetProject(function():void {windowCloseHandler(event);}))return;
                         if(_nativeSource)clear();else invalidateStudioSession();
             
                         setSpriteExtend(window.spriteDimension);
@@ -699,7 +699,7 @@ THE SOFTWARE.
                     if (window.detail == DialogDetail.OK)
                     {
                         if (window.modernDirectory) { openNativeProject(window.modernDirectory); return; }
-                        if(!canSwitchAssetProject())return;
+                        if(!canSwitchAssetProject(function():void {windowCloseHandler(event);}))return;
                         if(_nativeSource)clear();else invalidateStudioSession();
                         var mainFile:File = window.datFile || window.sprFile;
                         _settings.setLastDirectory(mainFile);
@@ -824,7 +824,7 @@ THE SOFTWARE.
             {
                 if (!clientLoaded)
                     return;
-                if (!canCloseStudioProject()) return;
+                if (!canCloseStudioProject(unloadProject)) return;
             
                 if (clientChanged)
                 {
@@ -847,7 +847,7 @@ THE SOFTWARE.
                         compileProject();
                     else if (event.detail == Alert.NO)
                     {
-                        if (!canCloseStudioProject()) return;
+                        if (!canCloseStudioProject(function():void {alertCloseHandler(event);})) return;
                         clear();
                         sendCommand(new UnloadFilesCommand());
                     }
@@ -1199,7 +1199,7 @@ THE SOFTWARE.
             }
             public function openNativeProject(directory:File, helper:File = null):void
             {
-                if(!canSwitchAssetProject())return;
+                if(!canSwitchAssetProject(function():void {openNativeProject(directory,helper);}))return;
                 clear();
                 _communicator.sendCommand(new UnloadFilesCommand());
                 setSpriteExtend(SpriteDimensionStorage.getInstance().getBySizes(32, 4096));
@@ -1293,18 +1293,24 @@ THE SOFTWARE.
                 // A legacy conversion is an export, not persistence of the modern document.
                 updateNexaSaveState();
             }
-            private function canCloseStudioProject():Boolean {
-                if(studio&&studio.hasUncommittedDrafts){Alert.show("Export or discard the open Pixel Art Studio drafts before closing this project.","Pixel Art Studio",Alert.OK,this);openPixelArtStudio();return false;}
-                return true;
+            private var _studioCloseApproved:Boolean=false;
+            private var _studioCloseWindow:ob.studio.StudioDraftCloseWindow;
+            private function canCloseStudioProject(continuation:Function):Boolean {
+                if(_studioCloseApproved){_studioCloseApproved=false;return true;}
+                if(!studio||!studio.ready)return true;
+                if(_studioCloseWindow)return false;
+                var window:ob.studio.StudioDraftCloseWindow=new ob.studio.StudioDraftCloseWindow();_studioCloseWindow=window;
+                window.controller=studio;window.studioWindow=_studioWindow;
+                window.completed=function(proceed:Boolean):void {if(_studioCloseWindow==window)_studioCloseWindow=null;if(proceed){_studioCloseApproved=true;continuation();}};
+                window.open(this);return false;
             }
-            protected function canSwitchAssetProject():Boolean
+            protected function canSwitchAssetProject(continuation:Function=null):Boolean
             {
-                if(studio&&studio.hasUncommittedDrafts){Alert.show("Export or discard the open Pixel Art Studio drafts before switching projects.","Pixel Art Studio",Alert.OK,this);openPixelArtStudio();return false;}
                 if(_legacyModernExport){Alert.show("Wait for the modern project export before switching projects.","NexaAsset Editor v2",Alert.OK,this);return false;}
                 if(clientChanged || thingTypeEditor.changed || _nativeSource && (_nativeSource.busy || _nativeSaving || _nativeObjectExportActive)){
                     Alert.show("Save pending edits and wait for the current operation before opening or creating another project.","NexaAsset Editor v2",Alert.OK,this);return false;
                 }
-                return true;
+                return canCloseStudioProject(continuation||function():void{});
             }
             private function nativeIds(ids:Vector.<uint>):Array {var list:Array=[];for each(var id:uint in ids)list.push(id);return list;}
             public function nativeMutation(command:String, fields:Object):void
@@ -1740,6 +1746,7 @@ THE SOFTWARE.
             
             /** The editor owns gateway lifetime and all callbacks for its project generation. */
             private function invalidateStudioSession():void {
+                if(_studioCloseWindow){_studioCloseWindow.abort();_studioCloseWindow=null;}_studioCloseApproved=false;
                 _studioProjectId=mx.utils.UIDUtil.createUID();
                 var requests:Object=_studioRequests;_studioRequests={};
                 for each(var request:Object in requests){clearTimeout(request.timer);request.callback(null,"Project session expired.");}
@@ -2884,7 +2891,7 @@ THE SOFTWARE.
             
             protected function applicationClosingHandler(event:Event):void
             {
-                if(studio&&studio.hasUncommittedDrafts){event.preventDefault();statusLabel.text="Export or discard the open Pixel Art Studio drafts before closing the editor.";openPixelArtStudio();return;}
+                if(!canCloseStudioProject(function():void {close();})){event.preventDefault();return;}
                 if(_legacyModernExport){event.preventDefault();statusLabel.text="Wait for the modern project export before closing.";return;}
                 if(_nativeSource && (_nativeSaving || clientChanged || _nativeSource.busy || _nativeObjectExportActive)){
                     event.preventDefault();
@@ -2925,12 +2932,14 @@ THE SOFTWARE.
                             alertCloseHandler);
                 }
             
+                else invalidateStudioSession();
                 function alertCloseHandler(event:CloseEvent):void
                 {
                     if (event.detail == Alert.YES)
                         compileProject();
-                    else if (event.detail == Alert.NO)
-                        exit();
+                    else if (event.detail == Alert.NO) {
+                        invalidateStudioSession();exit();
+                    }
                 }
             }
             
