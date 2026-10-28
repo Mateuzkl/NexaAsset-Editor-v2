@@ -10,17 +10,12 @@ The codebase was imported from [punkice3407/ObjectBuilder](https://github.com/pu
 
 ### Pixel Art Studio and MCP (feature branch)
 
-The **Sprites** panel now has **Pixel Art / MCP**. Draw real pixels, edit paint
+NexaAsset version **1.0.0** includes **Pixel Art / MCP** in the **Sprites** panel. Draw real pixels, edit paint
 layers and animation cells, save editable `.nexaart` documents, and import/export
 PNG/spritesheets. An authenticated local MCP client shares those drafts with the
 manual canvas. Remote commit requests require the user's **Apply as NEW asset**
 action; the existing Save/Compile flow persists the result in legacy or modern
 format. MCP starts disabled. Existing objects and outfit masks are preserved.
-
-[Delivery and validation](docs/MCP_DELIVERY.md) · [Studio guide](docs/PIXEL_ART_STUDIO.md) · [Codex setup](docs/MCP_SETUP_CODEX.md) ·
-[Claude Code setup](docs/MCP_SETUP_CLAUDE.md) · [Tools](docs/MCP_TOOLS.md) ·
-[Architecture and current limits](docs/MCP_ARCHITECTURE.md) ·
-[Security](docs/MCP_SECURITY.md) · [Optional AI provider](docs/AI_GENERATION.md) · [Local Stable Diffusion](docs/STABLE_DIFFUSION.md)
 
 The Studio also offers optional local Stable Diffusion text/variation through the
 AUTOMATIC1111/Forge API, from the UI or MCP. Install the server/checkpoint separately;

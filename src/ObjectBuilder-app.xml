@@ -4,8 +4,8 @@
 	<id>com.mignari.ObjectBuilder</id>
 	<filename>NexaAsset Editor v2</filename>
 	<name>NexaAsset Editor v2</name>
-	<versionNumber>0.6.0</versionNumber>
-	<versionLabel>0.6.0</versionLabel>
+	<versionNumber>1.0.0</versionNumber>
+	<versionLabel>1.0.0</versionLabel>
 	<copyright>
 		<![CDATA[Copyright (c) 2014-2023 <a href="https://github.com/Mignari/ObjectBuilder/graphs/contributors">Contributors</a>]]>
 	</copyright>
