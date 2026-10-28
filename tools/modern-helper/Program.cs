@@ -62,6 +62,8 @@ public static class Program
                         case "native-paste":result=workspace.Paste(request.GetProperty("category").GetString()??"",Ids(request),request.GetProperty("deleteAfterPaste").GetBoolean());break;
                         case "native-flag":result=workspace.Flag(request.GetProperty("category").GetString()??"",request.GetProperty("appearanceId").GetUInt32(),Get(request,"number"),request.GetProperty("enabled").GetBoolean());break;
                         case "native-edit-flag":result=workspace.EditFlag(request.GetProperty("category").GetString()??"",request.GetProperty("appearanceId").GetUInt32(),Get(request,"number"),request.GetProperty("enabled").GetBoolean(),request.GetProperty("instances"));break;
+                        case "native-studio-read":result=workspace.StudioRead(request);break;
+                        case "native-art-commit":result=workspace.CommitArtFile(request.GetProperty("file").GetString()??"",request.GetProperty("sha256").GetString()??"",output,request.GetProperty("expectedRevision").GetInt64());break;
                         case "native-sprite-set":result=workspace.Sprite(request.TryGetProperty("spriteId",out var spriteId) && spriteId.ValueKind!=JsonValueKind.Null ? spriteId.GetUInt32() : null,Get(request,"width"),Get(request,"height"),request.GetProperty("argb").GetString()??"");break;
                         case "native-sprite-clear":result=workspace.ClearSprite(request.GetProperty("spriteId").GetUInt32());break;
                         case "native-sprites-clear":result=workspace.ClearSprites(Ids(request));break;

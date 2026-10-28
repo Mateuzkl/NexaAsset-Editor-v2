@@ -55,6 +55,11 @@ THE SOFTWARE.
             import ob.components.ReadableProgressWidget;
             import ob.ui.NexaUiEvent;
             import ob.ui.NexaIcons;
+            import ob.studio.PixelArtStudio;
+            import ob.studio.StudioController;
+            import ob.studio.StudioPixels;
+            import ob.commands.StudioCommand;
+            import ob.commands.StudioResultCommand;
             import ob.modern.ModernNativeSource;
             import ob.modern.ModernThingData;
             import ob.modern.ModernAssetEvent;
@@ -656,8 +661,8 @@ THE SOFTWARE.
             
                     if (window.detail == DialogDetail.OK)
                     {
-                        if(!canSwitchAssetProject())return;
-                        if(_nativeSource)clear();
+                        if(!canSwitchAssetProject(function():void {windowCloseHandler(event);}))return;
+                        if(_nativeSource)clear();else invalidateStudioSession();
             
                         setSpriteExtend(window.spriteDimension);
                         var features:ClientFeatures = ClientFeatures.fromWindow(window);
@@ -694,8 +699,8 @@ THE SOFTWARE.
                     if (window.detail == DialogDetail.OK)
                     {
                         if (window.modernDirectory) { openNativeProject(window.modernDirectory); return; }
-                        if(!canSwitchAssetProject())return;
-                        if(_nativeSource)clear();
+                        if(!canSwitchAssetProject(function():void {windowCloseHandler(event);}))return;
+                        if(_nativeSource)clear();else invalidateStudioSession();
                         var mainFile:File = window.datFile || window.sprFile;
                         _settings.setLastDirectory(mainFile);
                         _settings.setServerItemsDirectory(window.serverItemsDirectory);
@@ -819,6 +824,7 @@ THE SOFTWARE.
             {
                 if (!clientLoaded)
                     return;
+                if (!canCloseStudioProject(unloadProject)) return;
             
                 if (clientChanged)
                 {
@@ -841,6 +847,7 @@ THE SOFTWARE.
                         compileProject();
                     else if (event.detail == Alert.NO)
                     {
+                        if (!canCloseStudioProject(function():void {alertCloseHandler(event);})) return;
                         clear();
                         sendCommand(new UnloadFilesCommand());
                     }
@@ -1100,6 +1107,63 @@ THE SOFTWARE.
                 _nativeObjectExportActive=false;_nativeObjectExportBatch++;
                 _nativeObjectExportCallback=null;_nativeObjectExportPath=null;
             }
+            public var studio:ob.studio.StudioController;
+            private var _studioWindow:ob.studio.PixelArtStudio;
+            private var _studioProjectId:String=mx.utils.UIDUtil.createUID();
+            private var _studioRequests:Object={};
+            private var _studioSequence:uint=0;
+            public function openPixelArtStudio():void {
+                if(!clientLoaded)return;
+                if(_studioWindow){_studioWindow.setFocus();return;}
+                if(!studio){studio=new ob.studio.StudioController();studio.editor=this;}
+                var window:ob.studio.PixelArtStudio=new ob.studio.PixelArtStudio();_studioWindow=window;window.controller=studio;window.referenceSpriteId=activeSpriteList.selectedId;
+                window.addEventListener(Event.CLOSE,function(event:Event):void {window.shutdown();if(_studioWindow==window)_studioWindow=null;});window.open(this);
+            }
+            /** Only the private child-process pipe reaches this adapter. Remote tools cannot approve or save. */
+            public function studioEditorRequest(method:String,args:Object,callback:Function):void {
+                if(!clientLoaded){callback(null,"Open a project first.");return;}
+                var sessionId:String=_studioProjectId;
+                if(method=="commit_art"){
+                    if(locked||thingTypeEditor.changed||_nativeSaving){callback(null,"Finish the active editor operation and save inspector changes before applying art.");return;}
+                    var bytes:ByteArray=ob.studio.StudioPixels.decode(args.packet);
+                    if(bytes.length>2097152){bytes.clear();callback(null,"Art packet exceeds 2 MiB.");return;}
+                    bytes.position=0;var packet:Object=JSON.parse(bytes.readUTFBytes(bytes.length));
+                    if(packet.projectSessionId!=sessionId){bytes.clear();callback(null,"PROJECT_CONFLICT: draft belongs to another project.");return;}
+                }
+                function finish(result:Object,error:String=null):void {
+                    if(sessionId!=_studioProjectId){callback(null,"Project session expired.");return;}
+                    if(!error&&method=="get_project_info"){result.projectSessionId=sessionId;result.pendingInspectorChanges=thingTypeEditor.changed;}
+                    if(!error&&method=="commit_art"){if(currentCategory!=result.category)_pendingEditId=result.selected;currentCategory=result.category;sendCommand(new GetThingListCommand(result.selected,result.category));sendCommand(new GetSpriteListCommand(result.sprite));sendCommand(new GetThingCommand(result.selected,result.category));}
+                    callback(result,error);
+                }
+                if(_nativeSource){
+                    var source:ModernNativeSource=_nativeSource;
+                    if(!source.ready){finish(null,"Native helper is unavailable.");return;}
+                    if(method=="get_project_info"){finish({revision:source.revision,format:"modern",clientVersion:null,inventory:source.inventory,capabilities:{read:true,drafts:true,newAsset:true,animatedNewAsset:true,replace:false,save:false,destructive:false,maxCells:64,maxLayers:16,timing:true}});return;}
+                    var fields:Object={},file:File;
+                    if(method=="commit_art"){
+                        file=source.session.directory.resolvePath("art-"+mx.utils.UIDUtil.createUID().split("-").join("").toLowerCase()+".json");
+                        if(file.exists){bytes.clear();finish(null,"Temporary art packet collision.");return;}
+                        var stream:flash.filesystem.FileStream=new flash.filesystem.FileStream();
+                        try{stream.open(file,flash.filesystem.FileMode.WRITE);stream.writeBytes(bytes);}finally{stream.close();bytes.clear();}
+                        fields={file:file.nativePath,sha256:args.sha256,expectedRevision:packet.expectedRevision};
+                    }else{for(var key:String in args)fields[key]=args[key];fields.action=method;}
+                    function clean():void {if(file&&file.exists)try{file.deleteFile();}catch(ignore:Error){}}
+                    try{source.enqueue("studio:"+(++_studioSequence),method=="commit_art"?"native-art-commit":"native-studio-read",fields,function(result:Object):void {
+                        clean();if(_nativeSource!=source){finish(null,"Native session expired.");return;}
+                        if(method=="commit_art"){source.query="";nativeSearchInput.text="";}
+                        finish(result);
+                    },function():void {clean();finish(null,"Native Studio operation failed. Check the editor status; refresh before retrying.");});}catch(error:Error){clean();finish(null,error.message);}
+                }else{
+                    var id:String=String(++_studioSequence);
+                    var timer:uint=setTimeout(function():void {var pending:Object=_studioRequests[id];delete _studioRequests[id];if(pending)pending.callback(null,"Editor worker request timed out. Refresh before retrying.");},25000);
+                    _studioRequests[id]={callback:finish,timer:timer};
+                    if(method=="commit_art")bytes.clear();
+                    try{_communicator.sendCommand(new ob.commands.StudioCommand(id,method,JSON.stringify(method=="commit_art"?packet:args)));}
+                    catch(error:Error){clearTimeout(timer);delete _studioRequests[id];finish(null,error.message);}
+                }
+            }
+
             public function get nativeSource():ModernNativeSource { return _nativeSource; }
             private var _nativeSaveWindow:ob.components.ModernSaveWindow;
             private var _nativeSaving:Boolean=false;
@@ -1135,7 +1199,7 @@ THE SOFTWARE.
             }
             public function openNativeProject(directory:File, helper:File = null):void
             {
-                if(!canSwitchAssetProject())return;
+                if(!canSwitchAssetProject(function():void {openNativeProject(directory,helper);}))return;
                 clear();
                 _communicator.sendCommand(new UnloadFilesCommand());
                 setSpriteExtend(SpriteDimensionStorage.getInstance().getBySizes(32, 4096));
@@ -1229,13 +1293,24 @@ THE SOFTWARE.
                 // A legacy conversion is an export, not persistence of the modern document.
                 updateNexaSaveState();
             }
-            protected function canSwitchAssetProject():Boolean
+            private var _studioCloseApproved:Boolean=false;
+            private var _studioCloseWindow:ob.studio.StudioDraftCloseWindow;
+            private function canCloseStudioProject(continuation:Function):Boolean {
+                if(_studioCloseApproved){_studioCloseApproved=false;return true;}
+                if(!studio||!studio.ready)return true;
+                if(_studioCloseWindow)return false;
+                var window:ob.studio.StudioDraftCloseWindow=new ob.studio.StudioDraftCloseWindow();_studioCloseWindow=window;
+                window.controller=studio;window.studioWindow=_studioWindow;
+                window.completed=function(proceed:Boolean):void {if(_studioCloseWindow==window)_studioCloseWindow=null;if(proceed){_studioCloseApproved=true;continuation();}};
+                window.open(this);return false;
+            }
+            protected function canSwitchAssetProject(continuation:Function=null):Boolean
             {
                 if(_legacyModernExport){Alert.show("Wait for the modern project export before switching projects.","NexaAsset Editor v2",Alert.OK,this);return false;}
                 if(clientChanged || thingTypeEditor.changed || _nativeSource && (_nativeSource.busy || _nativeSaving || _nativeObjectExportActive)){
                     Alert.show("Save pending edits and wait for the current operation before opening or creating another project.","NexaAsset Editor v2",Alert.OK,this);return false;
                 }
-                return true;
+                return canCloseStudioProject(continuation||function():void{});
             }
             private function nativeIds(ids:Vector.<uint>):Array {var list:Array=[];for each(var id:uint in ids)list.push(id);return list;}
             public function nativeMutation(command:String, fields:Object):void
@@ -1669,8 +1744,18 @@ THE SOFTWARE.
                 _updater.initialize();
             }
             
+            /** The editor owns gateway lifetime and all callbacks for its project generation. */
+            private function invalidateStudioSession():void {
+                if(_studioCloseWindow){_studioCloseWindow.abort();_studioCloseWindow=null;}_studioCloseApproved=false;
+                _studioProjectId=mx.utils.UIDUtil.createUID();
+                var requests:Object=_studioRequests;_studioRequests={};
+                for each(var request:Object in requests){clearTimeout(request.timer);request.callback(null,"Project session expired.");}
+                if(_studioWindow){_studioWindow.shutdown();_studioWindow.close();}if(studio){studio.stop();studio=null;}
+            }
             public function clear():void
             {
+                invalidateStudioSession();
+
                 cancelPendingThingRequest();
                 _thingData = null;
                 _thingDataChanged = false;
@@ -1764,6 +1849,7 @@ THE SOFTWARE.
                 _communicator.registerClass(Version);
                 _communicator.registerClass(ClientFeatures);
             
+                _communicator.registerCallback(ob.commands.StudioResultCommand,function(id:String,result:String,error:String):void {var request:Object=_studioRequests[id];delete _studioRequests[id];if(request){clearTimeout(request.timer);request.callback(result?JSON.parse(result):null,error);}});
                 _communicator.registerCallback(LogCommand, logCallback);
                 _communicator.registerCallback(ob.commands.things.NativeObjectExportResultCommand,function(path:String,success:Boolean,message:String,job:uint):void {
                     if(_legacyModernExport && path==_legacyModernExport.directory.nativePath && job==_legacyModernExport.job){_legacyModernExport.workerFinished(success,message);return;}
@@ -2552,7 +2638,18 @@ THE SOFTWARE.
             private function hideProgressBarCallback(id:String):void
             {
                 if (_progressWidget)
+                {
                     _progressWidget.progress(id, 100, 100, null);
+                    // Close the widget when the save/compile bar explicitly hides
+                    if (id == ProgressBarID.METADATA || id == ProgressBarID.DEFAULT)
+                    {
+                        var t:flash.utils.Timer = new flash.utils.Timer(300, 1);
+                        t.addEventListener(flash.events.TimerEvent.TIMER, function(e:flash.events.TimerEvent):void {
+                            if (_progressWidget) _progressWidget.close();
+                        });
+                        t.start();
+                    }
+                }
             }
             
             private function progressCallback(id:String, loaded:uint, total:uint, label:String):void
@@ -2579,19 +2676,31 @@ THE SOFTWARE.
                     _progressPhase = phase;
                     _progressStarted = flash.utils.getTimer();
                 }
-                if (total > 3)
+                // Show % for operations with 2+ steps (includes save stages total=3)
+                if (total >= 2)
                 {
-                    var units:uint = total - 1; // Last unit is reserved for publishing/flush.
+                    var isLong:Boolean = total > 3;
+                    var units:uint = isLong ? total - 1 : total; // Long ops reserve last slot for flush
                     var done:uint = Math.min(loaded, units);
                     var percent:int = Math.floor(Number(done) * 100 / Math.max(1, units));
                     var elapsed:Number = (flash.utils.getTimer() - _progressStarted) / 1000;
-                    label = phase + "  " + percent + "%  (" + done + " / " + units + ")";
-                    if (elapsed >= 2 && done > 0 && done < units)
+                    label = phase + "  " + percent + "%";
+                    if (isLong) label += "  (" + done + " / " + units + ")";
+                    if (isLong && elapsed >= 2 && done > 0 && done < units)
                         label += "  ~" + Math.ceil(elapsed * (units - done) / done) + "s remaining";
-                    else if (done == units) label += "  Finalizing...";
+                    else if (done == units) label += "  Finalizando...";
                 }
                 _progressWidget.progress(id, loaded, total, label);
                 if (_progressWidget) _progressWidget.fitLabelText();
+                // Auto-close METADATA bar when it reaches 100%
+                if (id == ProgressBarID.METADATA && total > 0 && loaded >= total)
+                {
+                    var t:flash.utils.Timer = new flash.utils.Timer(400, 1);
+                    t.addEventListener(flash.events.TimerEvent.TIMER, function(e:flash.events.TimerEvent):void {
+                        if (_progressWidget) _progressWidget.close();
+                    });
+                    t.start();
+                }
             }
             
             private function logCallback(level:uint, message:String, stack:String, id:uint):void
@@ -2782,6 +2891,7 @@ THE SOFTWARE.
             
             protected function applicationClosingHandler(event:Event):void
             {
+                if(!canCloseStudioProject(function():void {close();})){event.preventDefault();return;}
                 if(_legacyModernExport){event.preventDefault();statusLabel.text="Wait for the modern project export before closing.";return;}
                 if(_nativeSource && (_nativeSaving || clientChanged || _nativeSource.busy || _nativeObjectExportActive)){
                     event.preventDefault();
@@ -2822,12 +2932,14 @@ THE SOFTWARE.
                             alertCloseHandler);
                 }
             
+                else invalidateStudioSession();
                 function alertCloseHandler(event:CloseEvent):void
                 {
                     if (event.detail == Alert.YES)
                         compileProject();
-                    else if (event.detail == Alert.NO)
-                        exit();
+                    else if (event.detail == Alert.NO) {
+                        invalidateStudioSession();exit();
+                    }
                 }
             }
             
@@ -5471,6 +5583,8 @@ THE SOFTWARE.
                     change="spriteStepperChangeHandler(event)"/>
 
                 <s:HGroup width="100%" horizontalAlign="center" verticalAlign="middle" gap="3">
+                    <s:Button id="pixelArtStudioButton" label="Pixel Art / MCP" enabled="{nexaActions.loaded}" click="openPixelArtStudio()"/>
+
                     <s:Button id="replaceSpriteButton"
                         toolTip="{resourceManager.getString('strings', 'replace')}"
                         width="22"

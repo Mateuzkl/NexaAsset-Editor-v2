@@ -52,6 +52,7 @@ try {
     # Native modern asset decoding runs out of process and has its own
     # portable .NET runtime. No third-party editor binary is redistributed.
     & (Join-Path $ProjectRoot 'tools/modern-helper/build.ps1') -Output (Join-Path $stage 'modern-helper') -ToolsRoot $ToolsRoot
+    & (Join-Path $ProjectRoot 'tools/mcp-gateway/build.ps1') -Output (Join-Path $stage 'mcp-gateway') -ToolsRoot $ToolsRoot
     # AIR requires a package certificate. This temporary self-signed certificate
     # is for local builds, not a trusted Windows publisher or production release.
     $certificatePath = Join-Path $tempDirectory ('objectbuilder-' + [Guid]::NewGuid().ToString('N') + '.p12')
@@ -66,6 +67,7 @@ try {
         -target bundle -arch x64 $bundle $descriptor `
         -C $stage $compiledSwf `
         -C $stage modern-helper `
+        -C $stage mcp-gateway `
         -C (Join-Path $ProjectRoot 'assets') icon `
         -C (Join-Path $ProjectRoot 'assets') nexa `
         -C $ProjectRoot LICENSE `

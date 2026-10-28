@@ -8,6 +8,23 @@ The codebase was imported from [punkice3407/ObjectBuilder](https://github.com/pu
 
 [Interface documentation](docs/NEXA_UI.md) · [Reliability audit](docs/AUDIT_2026-10-10.md) · [MIT license](LICENSE)
 
+### Pixel Art Studio and MCP (feature branch)
+
+NexaAsset version **1.0.0** includes **Pixel Art / MCP** in the **Sprites** panel. Draw real pixels, edit paint
+layers and animation cells, save editable `.nexaart` documents, and import/export
+PNG/spritesheets. An authenticated local MCP client shares those drafts with the
+manual canvas. Remote commit requests require the user's **Apply as NEW asset**
+action; the existing Save/Compile flow persists the result in legacy or modern
+format. MCP starts disabled. Existing objects and outfit masks are preserved.
+
+The Studio also offers optional local Stable Diffusion text/variation through the
+AUTOMATIC1111/Forge API, from the UI or MCP. Install the server/checkpoint separately;
+the integration tests use a local stub and do not certify GPU inference quality.
+
+Build with `./build.ps1`. Run the new end-to-end suite with `./tests/run-mcp.ps1`;
+it launches the real AIR editor plus an independent official MCP SDK client and
+checks drawing, human approval, stored pixels and Save/Compile in both formats.
+
 ### Native modern assets in the standard workspace
 
 Use **Open Asset Files** to open a modern client folder containing

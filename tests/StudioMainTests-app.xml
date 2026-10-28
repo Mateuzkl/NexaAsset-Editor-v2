@@ -1,0 +1,5 @@
+<application xmlns="http://ns.adobe.com/air/application/51.2">
+    <id>local.NexaStudioMainTests</id><filename>StudioMainTests</filename><name>NexaAsset Studio integration tests</name><versionNumber>0.6.0</versionNumber>
+    <initialWindow><content>StudioMainTests.swf</content><visible>false</visible><width>1366</width><height>768</height></initialWindow>
+    <supportedProfiles>extendedDesktop</supportedProfiles>
+</application>

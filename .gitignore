@@ -24,3 +24,8 @@ nexa-modern-sessions/
 # should NOT be excluded as they contain compiler settings and other important
 # information for Eclipse / Flash Builder.
 
+
+# Isolated MCP gateway and its test outputs
+tools/mcp-gateway/bin/
+tools/mcp-gateway-tests/bin/
+**/.nuget/

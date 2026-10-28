@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<local:ObjectBuilder xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:local="*">
+    <fx:Style source="../src/ObjectBuilder.css"/>
+    <fx:Script><![CDATA[
+        import flash.desktop.*;
+        import flash.events.*;
+        import flash.filesystem.*;
+        import flash.utils.*;
+        import flash.display.*;
+        import flash.geom.Matrix;
+        import mx.events.FlexEvent;
+        import mx.managers.PopUpManager;
+        import nail.components.controls.Alert;
+        import ob.studio.*;
+        import ob.commands.files.LoadFilesCommand;
+        import otlib.utils.ClientInfoLoader;
+        import otlib.core.VersionStorage;
+        import otlib.resources.Resources;
+        private var clock:Timer=new Timer(150);
+        private var started:int;
+        private var phase:int=0;
+        private var sdWindow:StableDiffusionWindow;
+        private var mode:int=0;
+        private var testRoot:File;
+        private var gateway:File;
+        private var clientExecutable:File;
+        private var helper:File;
+        private var window:PixelArtStudio;
+        private var external:NativeProcess;
+        private var externalOutput:String="";
+        private var externalError:String="";
+        private var externalExit:int=-999;
+        private var draftId:String;
+        private var originalMax:uint;
+        private var newId:uint;
+        private var clientInfoLoader:ClientInfoLoader;
+        private var closeCycles:int=0;
+        private var cycleMemory:Number;
+        override protected function applicationInvokeHandler(event:InvokeEvent):void {
+            testRoot=new File(event.arguments[0]);gateway=new File(event.arguments[1]);helper=new File(event.arguments[2]);clientExecutable=new File(event.arguments[3]);
+        }
+        override protected function applicationCompleteHandler(event:FlexEvent):void {
+            super.applicationCompleteHandler(event);started=getTimer();
+            systemManager.loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR,function(e:UncaughtErrorEvent):void{e.preventDefault();fail(e.error is Error?Error(e.error).getStackTrace():String(e.error));});
+            clock.addEventListener(TimerEvent.TIMER,tick);clock.start();
+        }
+        private function record(message:String):void {var stream:FileStream=new FileStream();try{stream.open(testRoot.resolvePath("result.txt"),FileMode.APPEND);stream.writeUTFBytes(message+"\n");}finally{stream.close();}}
+        private function check(value:Boolean,message:String):void {if(!value)throw new Error(message);}
+        private function fail(message:String):void {record("FAIL "+message);trace("FAIL Studio AIR: "+message);clock.stop();if(external&&external.running)external.exit(true);clear();NativeApplication.nativeApplication.exit(1);}
+        private function findWindow():PixelArtStudio {for(var i:int=0;i<systemManager.rawChildren.numChildren;i++)if(systemManager.rawChildren.getChildAt(i) is PixelArtStudio)return systemManager.rawChildren.getChildAt(i) as PixelArtStudio;return null;}
+        private function launchClient():void {
+            externalOutput=externalError="";externalExit=-999;
+            var info:NativeProcessStartupInfo=new NativeProcessStartupInfo();info.executable=clientExecutable;info.arguments=Vector.<String>(["--live"]);info.workingDirectory=clientExecutable.parent;
+            external=new NativeProcess();external.addEventListener(ProgressEvent.STANDARD_OUTPUT_DATA,function(e:ProgressEvent):void{externalOutput+=external.standardOutput.readUTFBytes(external.standardOutput.bytesAvailable);});
+            external.addEventListener(ProgressEvent.STANDARD_ERROR_DATA,function(e:ProgressEvent):void{externalError+=external.standardError.readUTFBytes(external.standardError.bytesAvailable);});
+            external.addEventListener(NativeProcessExitEvent.EXIT,function(e:NativeProcessExitEvent):void{externalExit=e.exitCode;});external.start(info);
+            studio.writeClientConnection(external.standardInput);
+        }
+        private function capture(name:String=null):void {
+            window.validateNow();var bitmap:BitmapData=new BitmapData(window.width,window.height,false,0x101C28);bitmap.draw(window,new Matrix());
+            var stream:FileStream=new FileStream();try{stream.open(testRoot.resolvePath(name||(mode==0?"studio-modern.png":"studio-legacy.png")),FileMode.WRITE);stream.writeBytes(bitmap.encode(bitmap.rect,new PNGEncoderOptions()));}finally{stream.close();bitmap.dispose();}
+        }
+        private function tick(event:TimerEvent):void {
+            try {
+                check(getTimer()-started<180000,"Timeout at phase "+phase+" mode "+mode);
+                if(phase==0&&visible&&running&&testRoot){
+                    if(mode==1){resourceManager.localeChain=["pt_BR"];Resources.locale="pt_BR";}
+                    if(mode==0){LegacyStudioTests.run(testRoot);openNativeProject(testRoot.resolvePath("native-source"),helper);}
+                    else {clientInfoLoader=new ClientInfoLoader();clientInfoLoader.addEventListener(ErrorEvent.ERROR,function(e:ErrorEvent):void{fail(e.text);});clientInfoLoader.addEventListener(Event.COMPLETE,function(e:Event):void{var info:otlib.utils.ClientInfo=clientInfoLoader.clientInfo;var folder:File=testRoot.resolvePath("legacy-source");sendCommand(new LoadFilesCommand(folder.resolvePath("Tibia.dat"),folder.resolvePath("Tibia.spr"),VersionStorage.getInstance().getBySignatures(info.datSignature,info.sprSignature),null,info.features));});clientInfoLoader.load(testRoot.resolvePath("legacy-source/Tibia.dat"),testRoot.resolvePath("legacy-source/Tibia.spr"),true);}
+                    phase=1;
+                }else if(phase==1&&clientLoaded&&thingData){
+                    originalMax=clientInfo.maxOutfitId;
+                    studio=new StudioController();studio.editor=this;studio.start(gateway);openPixelArtStudio();window=findWindow();check(window!=null,"Integrated Studio window missing");phase=2;
+                }else if(phase==2&&studio.ready){check(!window.snapshot&&!studio.hasUncommittedDrafts,"Opening Studio created a dirty draft");window.createDraft();phase=21;}
+                else if(phase==21&&window.snapshot){sdWindow=window.openStableDiffusion();check(sdWindow!=null,"Stable Diffusion window missing");phase=18;}
+                else if(phase==18&&sdWindow.report.length){
+                    sdWindow.validateNow();check(sdWindow.targetLabel.indexOf("32×32")>=0,"SD target context missing");
+                    check(sdWindow.endpoint.width>150&&sdWindow.prompt.height>=60&&sdWindow.height==640,"SD controls clipped");
+                    var bitmap:BitmapData=new BitmapData(sdWindow.width,sdWindow.height,false,0x101C28);bitmap.draw(sdWindow,new Matrix());
+                    var stream:FileStream=new FileStream();try{stream.open(testRoot.resolvePath(mode==0?"stable-diffusion-en.png":"stable-diffusion-pt.png"),FileMode.WRITE);stream.writeBytes(bitmap.encode(bitmap.rect,new PNGEncoderOptions()));}finally{stream.close();bitmap.dispose();}
+                    sdWindow.endpoint.text="http://localhost:7860";sdWindow.testConnection();phase=19;
+                }else if(phase==19&&sdWindow.report.indexOf("Use a local WebUI")>=0){
+                    sdWindow.close();sdWindow=null;record("PASS: Stable Diffusion native window, target/controls, localized labels and endpoint validation mode="+mode);studio.setEnabled(true);phase=3;
+                }
+                else if(phase==3&&studio.enabled){launchClient();phase=4;}
+                else if(phase==4&&externalExit==-999&&externalOutput.indexOf("\n")>=0){
+                    var progress:Object=JSON.parse(externalOutput);check(progress.state=="drawing","Missing external drawing checkpoint");draftId=progress.editId;externalOutput="";phase=17;
+                }else if(phase==17&&window.snapshot&&window.snapshot.document.editId==draftId&&window.snapshot.document.documentRevision==2){
+                    check(!window.snapshot.document.approvalRequested,"Live drawing only appeared after approval");
+                    record("PASS: Follow MCP displays drawing before approval mode="+mode);external.standardInput.writeUTFBytes("continue\n");phase=20;
+                }else if(phase==20&&externalExit!=-999){
+                    check(externalExit==0,"External MCP client failed: "+externalError+externalOutput);
+                    var result:Object=JSON.parse(externalOutput);check(result.passed,"External client did not finish");draftId=result.editId;
+                    check(clientInfo.maxOutfitId==originalMax,"Remote request mutated the editor before approval");
+                    phase=5;
+                }else if(phase==5&&window.snapshot&&window.snapshot.document.editId==draftId&&window.snapshot.document.approvalRequested){
+                    check(window.editId==draftId&&window.snapshot.document.category=="outfit","Approval did not automatically select its typed draft");
+                    check(window.snapshot.document.width==32&&window.snapshot.document.height==64&&window.snapshot.document.frameCount==16,"Outfit geometry/timeline missing");
+                    window.sheetToggle.selected=true;window.sheetToggle.dispatchEvent(new Event(Event.CHANGE));phase=14;
+                }else if(phase==14&&window.snapshot.sheet){
+                    check(window.snapshot.sheet.columns==4&&window.snapshot.sheet.rows==4,"Outfit sheet preview axes");
+                    check(window.sheet.cellAt(1,25)==0&&window.sheet.cellAt(window.sheet.width/4+1,24+(window.sheet.height-24)/4+1)==5&&window.sheet.cellAt(32*window.sheet.zoom+2,25)==-1,"Sheet cell hit mapping/gutters");
+                    capture(mode==0?"outfit-sheet-modern.png":"outfit-sheet-legacy.png");
+                    record("PASS: MCP sheet axes N/E/S/W and click time/direction navigation mode="+mode);
+                    window.sheet.selectedCell=6;window.sheet.dispatchEvent(new Event("cellSelected"));phase=15;
+                }else if(phase==15&&window.snapshot.frame==6){
+                    check(window.timePosition.value==1&&window.directionPosition.selectedIndex==2&&!window.sheetToggle.selected,"Sheet click selected the wrong time/direction");
+                    window.timePosition.value=0;window.directionPosition.selectedIndex=0;window.timePosition.dispatchEvent(new Event(Event.CHANGE));phase=16;
+                }else if(phase==16&&window.snapshot.frame==0){
+                    // Hold a real canvas drag while another client changes a disjoint pixel.
+                    window.canvas.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_DOWN,true));
+                    check(window.canvas.drawing,"Canvas did not start drawing");
+                    studio.call("set_pixels",{editId:draftId,expectedDocumentRevision:2,frame:0,layer:0,pixels:[{x:10,y:10,rgba:[91,92,93,255]}]},function(result:Object,error:String):void {
+                        if(error){fail(error);return;}
+                        var at:int=(2*32+2)*4;window.canvas.pixels[at]=51;window.canvas.pixels[at+1]=102;window.canvas.pixels[at+2]=153;window.canvas.pixels[at+3]=255;
+                        stage.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_UP,true));
+                    });phase=6;
+                }else if(phase==6&&window.snapshot.document.documentRevision==4){
+                    unloadProject();phase=22;
+                }else if(phase==22){
+                    var draftClose:StudioDraftCloseWindow=null;for(var ai:int=0;ai<systemManager.rawChildren.numChildren;ai++)if(systemManager.rawChildren.getChildAt(ai) is StudioDraftCloseWindow)draftClose=systemManager.rawChildren.getChildAt(ai) as StudioDraftCloseWindow;
+                    if(!draftClose||!draftClose.discardButton.enabled)return;
+                    check(clientLoaded&&studio.ready&&studio.hasUncommittedDrafts,"File Close lost Studio drafts");check(draftClose.saveButton.enabled,"Draft Save option unavailable");draftClose.cancel();record("PASS: File Close offers Save/Discard/Cancel and Cancel preserves edited drafts mode="+mode);phase=23;
+                }else if(phase==23){
+                    for(var ci:int=0;ci<systemManager.rawChildren.numChildren;ci++)if(systemManager.rawChildren.getChildAt(ci) is StudioDraftCloseWindow)return;
+                    capture();window.applyButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=7;}
+                else if(phase==7&&clientInfo.maxOutfitId==originalMax+1&&window.snapshot.document.committed){
+                    check(currentCategory=="outfit","Applied outfit did not select the Outfits section");
+                    check(window.maximumSnapshotRequests==1,"Concurrent preview requests escaped coalescing");
+                    check(clientChanged,"Studio insertion did not update dirty state");newId=originalMax+1;
+                    studioEditorRequest("get_frame",{category:"outfit",assetId:newId,group:0,frame:0,direction:0,layer:0},function(frame:Object,error:String=null):void {
+                        if(error){fail(error);return;}var spriteId:uint=frame.spriteId!==undefined?uint(frame.spriteId):uint(frame.references[frame.references.length-1]);
+                        studioEditorRequest("get_sprite",{spriteId:spriteId},function(sprite:Object,error:String=null):void {
+                            if(error){fail(error);return;}var pixels:ByteArray=StudioPixels.decode(sprite.argb);var ai:int=(1*32+1)*4,human:int=(2*32+2)*4;
+                            check(pixels[ai]==127&&pixels[ai+1]==23&&pixels[ai+2]==85&&pixels[ai+3]==171,"External MCP pixels changed channels/alpha");
+                            check(pixels[human]==255&&pixels[human+1]==51&&pixels[human+2]==102&&pixels[human+3]==153,"Human canvas pixels were not committed");check(pixels[(10*32+10)*4+1]==91,"Concurrent MCP edit was lost by manual stroke");pixels.clear();
+                            studioEditorRequest("get_project_info",{},function(info:Object,error:String=null):void {
+                                if(error){fail(error);return;}check(info.revision==window.snapshot.document.baseRevision+1,"One art transaction emitted multiple revision updates");phase=9;
+                            });
+                        });
+                    });phase=8;
+                }else if(phase==9){check(thingData&&thingData.id==newId,"Category refresh replaced the inserted outfit selection");compileProject();phase=10;}
+                else if(phase==10&&!nativeSaving&&!clientChanged&&!locked){
+                    record("PASS: mode="+mode+" outfit32x64 directions4 frames4 sparse-stroke merge coalesced-preview category-selection revision-once Save/Compile");
+                    trace("PASS: real AIR "+(mode==0?"modern":"legacy")+" + external official MCP client: read, draw, preview, remote approval request, manual canvas edit, Apply, exact stored pixels, dirty state and Save/Compile");
+                    check(window.maximumSnapshotRequests==1,"Preview concurrency");
+                    closeCycles=0;flash.system.System.gc();cycleMemory=flash.system.System.totalMemory;window.close();window=null;phase=12;
+                }else if(phase==12&&!studio.enabled){openPixelArtStudio();window=findWindow();phase=13;}
+                else if(phase==13&&window&&window.snapshot){
+                    window.close();if(findWindow()!=null)return;window=null;closeCycles++;
+                    if(closeCycles<50){phase=12;return;}
+                    flash.system.System.gc();
+                    record("PASS: 50 Studio open/close cycles mode="+mode+" managedMemoryDelta="+(flash.system.System.totalMemory-cycleMemory));
+                    clear();
+                    if(mode==0){mode=1;phase=0;}else{clock.stop();NativeApplication.nativeApplication.exit(0);}
+                }
+            }catch(error:Error){fail(error.getStackTrace()||error.message);}
+        }
+    ]]></fx:Script>
+</local:ObjectBuilder>

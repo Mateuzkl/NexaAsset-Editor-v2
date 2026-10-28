@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark" applicationComplete="run()">
+<fx:Script><![CDATA[
+import flash.utils.*;
+import flash.events.*;
+import flash.system.System;
+import flash.filesystem.*;
+import flash.desktop.NativeApplication;
+import ob.studio.*;
+import mx.core.IVisualElement;
+private function run():void {
+    var results:Array=[];
+    try {
+        for each(var size:int in [32,64])for each(var count:int in [1,8,16]){
+            var bytes:ByteArray=new ByteArray();bytes.length=size*size*4;for(var i:int=0;i<bytes.length;i++)bytes[i]=(i*17)%256;
+            var encoded:String=StudioPixels.encode(bytes),layers:Array=[];
+            for(i=0;i<count;i++)layers.push({name:"L"+i,locked:false,visible:true,opacity:255,rgba:encoded});
+            var value:Object={document:{width:size,height:size,documentRevision:0},layers:layers},expected:ByteArray;
+            for each(var kind:String in ["baseline","current"]){
+                var canvas:Object=kind=="baseline"?new BaselinePixelCanvas():new PixelCanvas();addElement(canvas as IVisualElement);
+                canvas.load(value,0);if("render" in canvas)canvas.render();var start:int=getTimer(),memory:Number=System.totalMemory;
+                for(i=0;i<120;i++){canvas.pixels[0]=i;canvas.draw();if("render" in canvas)canvas.render();}
+                var row:Object={kind:kind,size:size,layers:count,redraws:120,ms:getTimer()-start,memoryDelta:System.totalMemory-memory};results.push(row);
+                if(kind=="baseline"){expected=new ByteArray();expected.writeBytes(canvas.composed);}
+                else {for(i=0;i<expected.length;i++)if(expected[i]!=canvas.composed[i])throw new Error("Cached compositor changed exact RGBA at "+i);expected.clear();}
+                canvas.dispose();removeElement(canvas as IVisualElement);
+            }
+            bytes.clear();
+        }
+        var stream:FileStream=new FileStream();try{stream.open(new File(File.applicationDirectory.nativePath).resolvePath("canvas-benchmark.json"),FileMode.WRITE);stream.writeUTFBytes(JSON.stringify({passed:true,results:results}));}finally{stream.close();}
+        NativeApplication.nativeApplication.exit(0);
+    }catch(error:Error){var failure:FileStream=new FileStream();try{failure.open(new File(File.applicationDirectory.nativePath).resolvePath("canvas-benchmark.json"),FileMode.WRITE);failure.writeUTFBytes(JSON.stringify({passed:false,error:error.getStackTrace()}));}finally{failure.close();}NativeApplication.nativeApplication.exit(1);}
+}
+]]></fx:Script>
+</s:WindowedApplication>

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mg:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark" xmlns:mg="library://ns.mignari.com/mg"
+    title="{tr('closeDraftsTitle')}" width="620" height="300" creationComplete="start()" removedFromStage="shutdown()">
+    <fx:Metadata>[ResourceBundle("strings")]</fx:Metadata>
+    <fx:Script><![CDATA[
+        import flash.events.*;
+        import flash.filesystem.File;
+        public var controller:StudioController;
+        public var studioWindow:PixelArtStudio;
+        public var completed:Function;
+        [Bindable] private var busy:Boolean=true;
+        [Bindable] private var canSave:Boolean=false;
+        [Bindable] public var report:String="";
+        private var dead:Boolean=false;
+        [Bindable] private var finishing:Boolean=false;
+        private var picker:File;
+        public function tr(key:String):String {return resourceManager.getString("strings","studio."+key)||key;}
+        private function start():void {
+            report=tr('closeDraftsPreparing');
+            if(studioWindow)studioWindow.freezeForClose();
+            controller.beginClose(function(value:Object,error:String):void {
+                if(dead)return;
+                if(error){report=error;busy=false;return;}
+                function ready(issue:String=null):void {
+                    if(dead)return;
+                    controller.call('list_art_documents',{},function(list:Object,failure:String):void {
+                        if(dead)return;busy=false;
+                        if(failure){report=failure;return;}
+                        var count:int=0;for each(var row:Object in list.documents)if(row.dirty)count++;
+                        if(!count&&!issue&&!value.interrupted){finish(true);return;}
+                        canSave=!issue;report=tr('closeDraftsMessage')+'\n'+count+' '+tr('closeDraftsCount')+(issue?'\n'+issue:'')+(value.interrupted?'\n'+tr('closeDraftsGeneration'):'');
+                    });
+                }
+                if(studioWindow)studioWindow.flushForClose(ready);else ready();
+            });
+        }
+        private function save():void {
+            picker=new File();picker.addEventListener(Event.SELECT,selected);picker.addEventListener(Event.CANCEL,cancelPicker);
+            try{picker.browseForDirectory(tr('closeDraftsFolder'));}catch(error:Error){report=error.message;releasePicker();}
+        }
+        private function selected(event:Event):void {var directory:File=picker;releasePicker();saveTo(directory);}
+        public function saveTo(directory:File):void {
+            if(dead||busy||!canSave)return;busy=true;
+            StudioDraftExport.saveAll(controller,directory,function(error:String):void {if(dead)return;busy=false;if(error){report=tr('closeDraftsSaveFailed')+'\n'+error;return;}finish(true);},function():Boolean {return !dead&&!finishing;});
+        }
+        private function cancelPicker(event:Event):void {releasePicker();}
+        private function releasePicker():void {if(!picker)return;picker.removeEventListener(Event.SELECT,selected);picker.removeEventListener(Event.CANCEL,cancelPicker);picker=null;}
+        public function discard():void {
+            if(dead||busy)return;busy=true;
+            controller.call('ui_discard_drafts',{},function(value:Object,error:String):void {if(dead)return;busy=false;if(error){report=error;return;}if(studioWindow)studioWindow.discardLocalForClose();finish(true);});
+        }
+        public function cancel():void {if(!dead&&!finishing)finish(false);}
+        private function finish(proceed:Boolean):void {
+            if(dead||finishing)return;finishing=true;
+            controller.endClose(function(value:Object,error:String):void {
+                if(dead)return;if(error){finishing=false;report=error;return;}
+                var callback:Function=completed;completed=null;superClose();if(callback!=null)callback(proceed);
+            });
+        }
+        private function superClose():void {super.close();}
+        override public function close():void {cancel();}
+        public function abort():void {completed=null;superClose();}
+        public function shutdown():void {if(dead)return;dead=true;releasePicker();if(studioWindow)studioWindow.resumeAfterClose();completed=null;}
+    ]]></fx:Script>
+    <s:VGroup left="16" right="16" top="16" bottom="16" gap="12">
+        <s:Label width="100%" text="{tr('closeDraftsExplain')}"/>
+        <s:TextArea width="100%" height="100%" editable="false" text="{report}"/>
+        <s:HGroup width="100%" gap="8">
+            <s:Button id="saveButton" label="{tr('closeDraftsSave')}" enabled="{!busy &amp;&amp; canSave}" click="save()"/>
+            <s:Button id="discardButton" label="{tr('closeDraftsDiscard')}" enabled="{!busy}" click="discard()"/>
+            <s:Spacer width="100%"/><s:Button id="cancelButton" label="{tr('closeDraftsCancel')}" enabled="{!finishing}" click="cancel()"/>
+        </s:HGroup>
+    </s:VGroup>
+</mg:TitleWindow>

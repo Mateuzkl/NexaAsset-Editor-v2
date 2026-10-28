@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mg:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark" xmlns:mg="library://ns.mignari.com/mg"
+    title="Stable Diffusion" width="660" height="640" creationComplete="start()" removedFromStage="shutdown()">
+    <fx:Metadata>[ResourceBundle("strings")]</fx:Metadata>
+    <fx:Script><![CDATA[
+        import flash.events.*;
+        import flash.utils.Timer;
+        import mx.collections.ArrayCollection;
+        public var controller:StudioController;
+        public var editId:String;
+        public var frame:int;
+        public var layer:int;
+        [Bindable] public var targetLabel:String;
+        [Bindable] private var busy:Boolean=false;
+        [Bindable] private var running:Boolean=false;
+        [Bindable] private var configured:Boolean=false;
+        [Bindable] public var report:String="";
+        private var dead:Boolean=false;
+        private var polling:Boolean=false;
+        private var jobId:String="";
+        private var timer:Timer=new Timer(1000);
+        public function tr(key:String):String {return resourceManager.getString("strings","studio."+key)||key;}
+        private function start():void {
+            modes.dataProvider=new ArrayCollection([{label:tr('sdAuto'),value:'auto'},{label:tr('sdCreate'),value:'create'},{label:tr('sdVariation'),value:'variation'}]);modes.selectedIndex=0;
+            backgrounds.dataProvider=new ArrayCollection([{label:tr('sdAuto'),value:'auto'},{label:tr('sdReferenceAlpha'),value:'reference'},{label:tr('sdCorners'),value:'corners'},{label:tr('sdOpaque'),value:'opaque'}]);backgrounds.selectedIndex=0;
+            timer.addEventListener(TimerEvent.TIMER,poll);
+            request('ui_sd_info',{},function(value:Object):void {endpoint.text=value.url;configured=value.configured;consent.selected=value.consent;report=tr('sdSetup');});
+        }
+        private function request(method:String,args:Object,callback:Function=null):void {
+            if(dead||busy)return;busy=true;
+            controller.call(method,args,function(value:Object,error:String):void {if(dead){if(method=='generate_stable_diffusion'&&value&&value.jobId)controller.call('cancel_generation',{editId:editId,jobId:value.jobId});return;}busy=false;if(error){report=error;return;}if(callback!=null)callback(value);});
+        }
+        public function testConnection():void {
+            if(busy||running)return;
+            request('ui_sd_configure',{url:endpoint.text},function(value:Object):void {
+                configured=value.configured;consent.selected=false;
+                request('ui_sd_probe',{},function(result:Object):void {report=result.message;});
+            });
+        }
+        private function consentChanged():void {request('ui_provider_consent',{consent:consent.selected});}
+        public function generate():void {
+            if(busy||running||!consent.selected||!configured)return;
+            var parameters:Object={editId:editId,frame:frame,layer:layer,prompt:prompt.text,negativePrompt:negative.text,mode:modes.selectedItem.value,background:backgrounds.selectedItem.value,seed:seed.value,steps:steps.value,cfgScale:cfg.value,strength:strength.value,paletteColors:int(palette.selectedItem)};
+            // Fetch the current revision at the explicit Generate click. A later stroke still wins through CAS.
+            request('get_edit_preview',{editId:editId,frame:frame},function(value:Object):void {
+                parameters.expectedDocumentRevision=value.document.documentRevision;
+                request('generate_stable_diffusion',parameters,function(job:Object):void {jobId=job.jobId;running=true;report=job.message;timer.start();});
+            });
+        }
+        private function poll(event:TimerEvent):void {
+            if(dead||polling||!running)return;polling=true;
+            controller.call('get_generation_status',{editId:editId},function(value:Object,error:String):void {
+                if(dead)return;polling=false;
+                if(error){timer.stop();running=false;report=error;return;}
+                if(value.jobId!=jobId){timer.stop();running=false;jobId='';report=tr('sdJobChanged');return;}
+                report=value.message;
+                running=value.status=='running'||value.status=='cancelling';if(!running)timer.stop();
+            });
+        }
+        public function cancel():void {if(jobId.length)controller.call('cancel_generation',{editId:editId,jobId:jobId});}
+        public function shutdown():void {if(dead)return;dead=true;timer.stop();timer.removeEventListener(TimerEvent.TIMER,poll);if(running)cancel();}
+    ]]></fx:Script>
+    <s:VGroup left="16" right="16" top="16" bottom="16" gap="8">
+        <s:Label text="{tr('sdIntro')}" width="100%"/>
+        <s:HGroup width="100%" verticalAlign="middle">
+            <s:Label text="WebUI / Forge"/>
+            <s:TextInput id="endpoint" text="http://127.0.0.1:7860" width="100%" enabled="{!busy &amp;&amp; !running}" change="configured=false"/>
+            <s:Button label="{tr('sdTest')}" enabled="{!busy &amp;&amp; !running}" click="testConnection()"/>
+        </s:HGroup>
+        <s:Label text="{targetLabel}" width="100%"/>
+        <s:VGroup width="100%" gap="6" enabled="{!busy &amp;&amp; !running}">
+            <s:Label text="{tr('sdPrompt')}"/>
+            <s:TextArea id="prompt" width="100%" height="64" maxChars="2048"/>
+            <s:Label text="{tr('sdNegative')}"/>
+            <s:TextInput id="negative" width="100%" maxChars="2048"/>
+            <s:HGroup width="100%" verticalAlign="middle">
+                <s:Label text="{tr('sdMode')}"/><s:DropDownList id="modes" width="160" labelField="label"/>
+                <s:Label text="Seed"/><s:NumericStepper id="seed" minimum="-1" maximum="4294967295" value="-1" stepSize="1" width="150"/>
+            </s:HGroup>
+            <s:HGroup width="100%" verticalAlign="middle">
+                <s:Label text="{tr('sdSteps')}"/><s:NumericStepper id="steps" minimum="1" maximum="40" value="20" width="70"/>
+                <s:Label text="CFG"/><s:NumericStepper id="cfg" minimum="1" maximum="15" value="6" stepSize="0.5" width="70"/>
+                <s:Label text="{tr('sdStrength')}"/><s:NumericStepper id="strength" minimum="0" maximum="1" value="0.35" stepSize="0.05" width="80"/>
+            </s:HGroup>
+            <s:HGroup width="100%" verticalAlign="middle">
+                <s:Label text="{tr('sdPalette')}"/><s:DropDownList id="palette" width="70" selectedIndex="2"><s:dataProvider><s:ArrayList><fx:String>0</fx:String><fx:String>16</fx:String><fx:String>32</fx:String><fx:String>64</fx:String></s:ArrayList></s:dataProvider></s:DropDownList>
+                <s:Label text="{tr('sdBackground')}"/><s:DropDownList id="backgrounds" width="230" labelField="label"/>
+            </s:HGroup>
+        </s:VGroup>
+        <s:CheckBox id="consent" label="{tr('sdConsent')}" width="100%" enabled="{configured &amp;&amp; !busy}" change="consentChanged()"/>
+        <s:Label text="{tr('sdReview')}" width="100%"/>
+        <s:TextArea width="100%" height="100%" minHeight="65" editable="false" text="{report}"/>
+        <s:HGroup width="100%">
+            <s:Button label="{tr('sdGenerate')}" enabled="{configured &amp;&amp; consent.selected &amp;&amp; !busy &amp;&amp; !running}" click="generate()"/>
+            <s:Button label="{tr('sdCancel')}" enabled="{running}" click="cancel()"/>
+            <s:Spacer width="100%"/><s:Button label="{tr('close')}" click="close()"/>
+        </s:HGroup>
+    </s:VGroup>
+</mg:TitleWindow>

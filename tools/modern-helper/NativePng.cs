@@ -7,14 +7,20 @@ namespace NexaModern;
 /// <summary>Bounded PNG sprite decoder. Keeps straight RGBA bytes out of AIR's premultiplied bitmap pipeline.</summary>
 public static class NativePng
 {
+    public const int ArtSheetMaxAxis = 1024;
+    public const int ArtSheetMaxPixels = 262144;
+    public const int ArtSheetMaxBytes = 2 * 1024 * 1024;
+    public static bool ValidArtSheetSize(int width, int height) => width > 0 && height > 0 && width <= ArtSheetMaxAxis && height <= ArtSheetMaxAxis && (long)width * height <= ArtSheetMaxPixels;
     public static Pixels Read(string file)
     {
         AssetSet.RejectLinks(file);byte[] bytes=AssetSet.ReadBounded(file,1024*1024);
         return Read(bytes);
     }
-    public static Pixels Read(byte[] bytes)
+    public static Pixels Read(byte[] bytes) => Decode(bytes, false);
+    public static Pixels ReadArtSheet(byte[] bytes) => Decode(bytes, true);
+    private static Pixels Decode(byte[] bytes, bool artSheet)
     {
-        if(bytes.Length>1024*1024)throw new InvalidDataException("PNG input exceeds 1 MiB.");
+        if(bytes.Length>(artSheet ? ArtSheetMaxBytes : 1024*1024))throw new InvalidDataException("PNG input exceeds its encoded byte limit.");
         if(bytes.Length<33 || !bytes.AsSpan(0,8).SequenceEqual(new byte[]{137,80,78,71,13,10,26,10}))throw new InvalidDataException("Invalid PNG signature.");
         int at=8,width=0,height=0,depth=0,type=-1;byte[]? palette=null,alpha=null;bool ended=false,idat=false,idatEnded=false;using var compressed=new MemoryStream();
         while(at<bytes.Length){
@@ -28,7 +34,8 @@ public static class NativePng
                 case "IHDR":
                     if(width!=0 || size!=13)throw new InvalidDataException("Invalid/duplicate PNG IHDR.");
                     width=BinaryPrimitives.ReadInt32BigEndian(data);height=BinaryPrimitives.ReadInt32BigEndian(data[4..]);depth=data[8];type=data[9];
-                    if(width is not (32 or 64)||height is not (32 or 64)||data[10]!=0||data[11]!=0||data[12]!=0||type is not (0 or 2 or 3 or 4 or 6)||!(depth==8 || (type is 0 or 3 && depth is 1 or 2 or 4)))throw new InvalidDataException("Use a non-interlaced 32/64-pixel PNG (8-bit RGB/RGBA/grayscale, or 1/2/4/8-bit palette/grayscale).");break;
+                    bool validSize = artSheet ? ValidArtSheetSize(width, height) : width is (32 or 64) && height is (32 or 64);
+                    if(!validSize||data[10]!=0||data[11]!=0||data[12]!=0||type is not (0 or 2 or 3 or 4 or 6)||!(depth==8 || (type is 0 or 3 && depth is 1 or 2 or 4)))throw new InvalidDataException("Use a non-interlaced 32/64-pixel PNG (8-bit RGB/RGBA/grayscale, or 1/2/4/8-bit palette/grayscale).");break;
                 case "PLTE":if(idat||palette!=null||size==0||size>768||size%3!=0)throw new InvalidDataException("Invalid PNG palette.");palette=data.ToArray();break;
                 case "tRNS":if(idat||alpha!=null||size>256||type is 4 or 6)throw new InvalidDataException("Invalid PNG transparency chunk.");alpha=data.ToArray();break;
                 case "IDAT":if(idatEnded)throw new InvalidDataException("Non-consecutive PNG image chunks.");compressed.Write(data);idat=true;break;

@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<local:ObjectBuilder xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:local="*">
+    <fx:Style source="../src/ObjectBuilder.css"/>
+    <fx:Script><![CDATA[
+        import flash.desktop.*;
+        import flash.display.*;
+        import flash.events.*;
+        import flash.filesystem.*;
+        import flash.geom.Matrix;
+        import flash.utils.*;
+        import mx.events.FlexEvent;
+        import nail.components.controls.Alert;
+        import spark.components.Button;
+        import ob.studio.*;
+        import ob.commands.files.LoadFilesCommand;
+        import otlib.utils.ClientInfoLoader;
+        import otlib.core.VersionStorage;
+        import otlib.resources.Resources;
+        private var testRoot:File,gateway:File,helper:File;
+        private var mode:String,scenario:String;
+        private var phase:int=0,started:int,attempts:int=0;
+        private var clock:Timer=new Timer(100);
+        private var window:PixelArtStudio;
+        private var a:String,b:String;
+        private var saved:Object={};
+        private var directory:File;
+        private var loader:ClientInfoLoader;
+        override protected function applicationInvokeHandler(event:InvokeEvent):void {testRoot=new File(event.arguments[0]);gateway=new File(event.arguments[1]);helper=new File(event.arguments[2]);mode=event.arguments[3];scenario=event.arguments[4];}
+        override protected function applicationCompleteHandler(event:FlexEvent):void {
+            super.applicationCompleteHandler(event);started=getTimer();
+            systemManager.loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR,function(e:UncaughtErrorEvent):void {e.preventDefault();fail(e.error is Error?Error(e.error).getStackTrace():String(e.error));});
+            clock.addEventListener(TimerEvent.TIMER,tick);clock.start();
+        }
+        private function record(message:String):void {var out:FileStream=new FileStream();try{out.open(testRoot.resolvePath('closing-'+mode+'-'+scenario+'.txt'),FileMode.APPEND);out.writeUTFBytes(message+'\n');}finally{out.close();}}
+        private function check(value:Boolean,message:String):void {if(!value)throw new Error(message);}
+        private function fail(message:String):void {record('FAIL '+message);clock.stop();clear();NativeApplication.nativeApplication.exit(1);}
+        private function find(type:Class):Object {for(var i:int=0;i<systemManager.rawChildren.numChildren;i++){var value:Object=systemManager.rawChildren.getChildAt(i);if(value is type)return value;}return null;}
+        private function call(method:String,args:Object,callback:Function):void {studio.call(method,args,function(value:Object,error:String):void {if(error){fail(error);return;}callback(value);});}
+        private function begin(category:String,name:String,callback:Function):void {call('get_project_info',{},function(info:Object):void {call('begin_edit',{projectSessionId:info.projectSessionId,expectedRevision:info.revision,category:category,name:name,width:32,height:64},callback);});}
+        private function click(group:DisplayObjectContainer,labels:Array):Boolean {
+            for(var i:int=0;i<group.numChildren;i++){var value:Object=group.getChildAt(i);if(value is Button&&labels.indexOf(Button(value).label)>=0){Button(value).dispatchEvent(new MouseEvent(MouseEvent.CLICK,true));return true;}if(value is DisplayObjectContainer&&click(value as DisplayObjectContainer,labels))return true;}return false;
+        }
+        private function capture(dialog:StudioDraftCloseWindow):void {
+            dialog.validateNow();var image:BitmapData=new BitmapData(dialog.width,dialog.height,false,0x101C28);image.draw(dialog,new Matrix());var out:FileStream=new FileStream();try{out.open(testRoot.resolvePath('closing-'+mode+'-'+scenario+'.png'),FileMode.WRITE);out.writeBytes(image.encode(image.rect,new PNGEncoderOptions()));}finally{out.close();image.dispose();}
+        }
+        override protected function applicationClosingHandler(event:Event):void {
+            super.applicationClosingHandler(event);
+            if(!event.isDefaultPrevented()){record('PASS: actual application X accepted; no Studio reopen/closing loop');clock.stop();}
+        }
+        private function requestX():void {close();}
+        private function verifyExports():void {
+            var files:Array=directory.getDirectoryListing();check(files.length==2,'Save all omitted/added a draft');
+            for each(var file:File in files){check(file.extension=='nexaart','Temporary/incorrect draft extension');var stream:FileStream=new FileStream(),bytes:ByteArray=new ByteArray();try{stream.open(file,FileMode.READ);stream.readBytes(bytes);}finally{stream.close();}var json:Object=JSON.parse(bytes.toString());check(saved[json.name]==StudioPixels.encode(bytes),'Saved layers/frames/directions/durations/RGBA differ');delete saved[json.name];bytes.clear();}
+            for(var key:String in saved)throw new Error('Missing exported draft '+key);
+            record('PASS: Save all exact .nexaart bytes for two edited drafts; untouched draft omitted');
+        }
+        private function tick(event:TimerEvent):void {
+            try {
+                check(getTimer()-started<65000,'Closing timeout phase='+phase);
+                if(phase==0&&visible&&running&&testRoot){
+                    resourceManager.localeChain=['pt_BR'];Resources.locale='pt_BR';directory=testRoot.resolvePath('saved-'+mode+'-'+scenario);directory.createDirectory();
+                    if(mode=='modern')openNativeProject(testRoot.resolvePath('native-source'),helper);
+                    else {loader=new ClientInfoLoader();loader.addEventListener(ErrorEvent.ERROR,function(e:ErrorEvent):void {fail(e.text);});loader.addEventListener(Event.COMPLETE,function(e:Event):void {var info:otlib.utils.ClientInfo=loader.clientInfo,folder:File=testRoot.resolvePath('legacy-source');sendCommand(new LoadFilesCommand(folder.resolvePath('Tibia.dat'),folder.resolvePath('Tibia.spr'),VersionStorage.getInstance().getBySignatures(info.datSignature,info.sprSignature),null,info.features));});loader.load(testRoot.resolvePath('legacy-source/Tibia.dat'),testRoot.resolvePath('legacy-source/Tibia.spr'),true);}
+                    phase=1;
+                }else if(phase==1&&clientLoaded&&thingData){studio=new StudioController();studio.editor=this;studio.start(gateway);openPixelArtStudio();window=find(PixelArtStudio) as PixelArtStudio;phase=2;}
+                else if(phase==2&&studio.ready){
+                    check(window&&!window.snapshot&&!studio.hasUncommittedDrafts,'Opening Studio creates pending work');
+                    if(scenario=='empty'){phase=99;requestX();return;}
+                    phase=3;begin('outfit','untouched',function(value:Object):void {
+                        check(value.documentRevision==0&&!value.dirty&&value.directions==4,'Empty outfit classified as edited');
+                        if(scenario=='untouched'){phase=99;requestX();return;}
+                        begin('outfit','animated',function(created:Object):void {a=created.editId;call('set_animation',{editId:a,expectedDocumentRevision:0,frames:2,directions:4,duration:170},function(value:Object):void {call('add_layer',{editId:a,expectedDocumentRevision:1,frame:7,name:'glow'},function(value:Object):void {call('set_pixels',{editId:a,expectedDocumentRevision:2,frame:7,layer:1,pixels:[{x:2,y:5,rgba:[7,31,97,127]}]},function(value:Object):void {
+                            begin('effect','approval-only',function(created:Object):void {b=created.editId;call('commit_edit',{editId:b,expectedDocumentRevision:0},function(value:Object):void {
+                                call('ui_sidecar',{editId:a},function(value:Object):void {saved.animated=value.data;call('ui_sidecar',{editId:b},function(value:Object):void {saved['approval-only']=value.data;phase=4;});});
+                            });});
+                        });});});});
+                    });
+                }else if(phase==4&&window.snapshot&&window.snapshot.document.editId==b){
+                    check(studio.hasUncommittedDrafts,'MCP approval/modifications not tracked');if(scenario=='discard')window.canvas.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_DOWN,true));phase=5;requestX();
+                }else if(phase==5){
+                    var dialog:StudioDraftCloseWindow=find(StudioDraftCloseWindow) as StudioDraftCloseWindow;if(!dialog||!dialog.discardButton.enabled)return;
+                    check(dialog.saveButton.enabled,'Save not offered');check(dialog.report.indexOf('2 ')>=0,'Wrong dirty draft count');capture(dialog);dialog.cancelButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=6;
+                }else if(phase==6&&!find(StudioDraftCloseWindow)){
+                    check(clientLoaded&&studio.ready&&studio.hasUncommittedDrafts,'Cancel lost editor/drafts');check(!window.canvas.drawing,'X left a drag active');attempts++;
+                    if(scenario=='save'&&attempts<20){phase=5;requestX();return;}
+                    record('PASS: actual X offers Save/Discard/Cancel; Cancel preserves MCP work; cycles='+attempts);
+                    if(scenario=='discard'){phase=61;call('get_edit_preview',{editId:b},function(value:Object):void {check(value.changedPixels>0,'X lost the in-progress stroke');record('PASS: X finalized/published the active drag before Cancel');begin('item','published',function(created:Object):void {call('ui_apply',{editId:created.editId,expectedDocumentRevision:0},function(value:Object):void {phase=62;});});});}
+                    else{phase=7;requestX();}
+                }else if(phase==62&&clientChanged){phase=7;requestX();}
+                else if(phase==98&&find(Alert)){var noAlert:Alert=find(Alert) as Alert;record('PASS: existing project NO chosen after explicit draft discard');if(mode=='legacy')record('PASS: actual application X accepted after existing project NO');phase=99;check(click(noAlert,['No','Não']),'Project No missing');}
+                else if(phase==7){
+                    dialog=find(StudioDraftCloseWindow) as StudioDraftCloseWindow;if(!dialog||!dialog.discardButton.enabled)return;
+                    if(scenario=='discard'){record('PASS: explicit discard chosen');phase=98;dialog.discard();return;}
+                    dialog.saveTo(directory.resolvePath('missing-folder'));phase=8;
+                }else if(phase==8){
+                    dialog=find(StudioDraftCloseWindow) as StudioDraftCloseWindow;if(!dialog||!dialog.saveButton.enabled||dialog.report.indexOf('Não foi possível')<0)return;
+                    check(studio.hasUncommittedDrafts,'Failed export cleared dirty state');record('PASS: failed Save keeps editor and all drafts');dialog.cancel();phase=9;
+                }else if(phase==9&&!find(StudioDraftCloseWindow)){
+                    // Publish a separate blank item to exercise the existing project Yes/No/Cancel flow after draft export.
+                    phase=10;begin('item','published',function(created:Object):void {call('ui_apply',{editId:created.editId,expectedDocumentRevision:0},function(value:Object):void {phase=11;});});
+                }else if(phase==11&&clientChanged){phase=12;requestX();}
+                else if(phase==12){dialog=find(StudioDraftCloseWindow) as StudioDraftCloseWindow;if(!dialog||!dialog.saveButton.enabled)return;dialog.saveTo(directory);phase=13;}
+                else if(phase==13&&find(Alert)){
+                    verifyExports();check(!studio.hasUncommittedDrafts,'Saved drafts remain dirty');var alert:Alert=find(Alert) as Alert;check(click(alert,['Cancel','Cancelar']),'Project Cancel missing');record('PASS: normal project confirmation still appears after Save drafts');phase=14;
+                }else if(phase==14&&!find(Alert)){
+                    check(clientLoaded&&clientChanged,'Project Cancel lost unsaved assets');phase=15;requestX();
+                }else if(phase==15&&find(Alert)){
+                    alert=find(Alert) as Alert;record('PASS: existing project Save/Compile YES chosen');phase=16;check(click(alert,['Yes','Sim','Sí']),'Project Yes missing');
+                }else if(phase==16&&!clientChanged&&!nativeSaving&&!locked){record('PASS: project Save/Compile completed after resolving drafts');phase=99;requestX();}
+            }catch(error:Error){fail(error.getStackTrace()||error.message);}
+        }
+    ]]></fx:Script>
+</local:ObjectBuilder>

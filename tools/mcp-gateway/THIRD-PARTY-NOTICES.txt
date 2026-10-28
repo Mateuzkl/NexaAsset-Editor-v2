@@ -1,0 +1,22 @@
+NexaAsset MCP Gateway — third-party notices
+
+ModelContextProtocol.AspNetCore / ModelContextProtocol / ModelContextProtocol.Core 2.3.0
+https://github.com/modelcontextprotocol/csharp-sdk
+Package source: 9a327829ef066c44a0d737c58bf3c7617d7c701c
+Copyright (c) Model Context Protocol a Series of LF Projects, LLC.
+Apache-2.0, with the upstream licensing transition and retained MIT contributions
+described in the accompanying unmodified MCP-SDK-LICENSE.txt.
+
+Microsoft.Extensions.AI.Abstractions 10.11.0 and framework Microsoft.Extensions libraries
+https://github.com/dotnet/extensions
+Copyright (c) .NET Foundation and Contributors. MIT.
+See DOTNET-EXTENSIONS-LICENSE.txt.
+
+The portable build includes Microsoft.NETCore.App and Microsoft.AspNetCore.App.
+Their exact runtime-pack licenses and third-party notices are copied alongside
+the executable by build.ps1. Runtime and package versions are recorded in the
+generated .deps.json and checked-in packages.lock.json.
+
+The gateway references NexaModern's validated PNG/image implementation.
+See MODERN-HELPER-NOTICES.txt for its dependencies, including SharpCompress.
+Game artwork is not included in the gateway package.

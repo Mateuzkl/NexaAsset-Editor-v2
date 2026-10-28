@@ -56,6 +56,9 @@ package
 
     import nail.utils.FileQueueHelper;
 
+    import ob.studio.LegacyStudioAdapter;
+    import ob.commands.StudioCommand;
+    import ob.commands.StudioResultCommand;
     import ob.commands.FindResultCommand;
     import ob.commands.HideProgressBarCommand;
     import ob.commands.LoadVersionsCommand;
@@ -168,6 +171,10 @@ package
         // PROPERTIES
         // --------------------------------------------------------------------------
 
+        private var _studioRevision:Number=0;
+        private var _studioAdapter:LegacyStudioAdapter;
+        private var _studioCommitting:Boolean=false;
+        private var _studioStorageChanged:Boolean=false;
         private var _communicator:IWorkerCommunicator;
         private var _things:ThingTypeStorage;
         private var _sprites:SpriteStorage;
@@ -365,6 +372,7 @@ package
             _communicator.registerClass(Version);
             _communicator.registerClass(ClientFeatures);
 
+            _communicator.registerCallback(ob.commands.StudioCommand, studioCommandCallback);
             _communicator.registerCallback(SettingsCommand, settingsCallback);
 
             _communicator.registerCallback(LoadVersionsCommand, loadClientVersionsCallback);
@@ -798,6 +806,7 @@ package
 
             // Complete
             sendCommand(new ProgressCommand(ProgressBarID.METADATA, 3, 3, "Saving complete"));
+            sendCommand(new HideProgressBarCommand(ProgressBarID.METADATA));
 
             clientCompileComplete();
 
@@ -2946,6 +2955,7 @@ package
 
             function completeHandler(event:Event):void
             {
+                sendCommand(new HideProgressBarCommand(ProgressBarID.METADATA));
                 sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
 
                 var spriteDataList:Vector.<SpriteData> = loader.spriteDataList;
@@ -2964,6 +2974,7 @@ package
 
             function errorHandler(event:ErrorEvent):void
             {
+                sendCommand(new HideProgressBarCommand(ProgressBarID.METADATA));
                 sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
                 Log.error(event.text);
             }
@@ -3229,11 +3240,13 @@ package
         {
             sendClientInfo();
             sendCommand(new HideProgressBarCommand(ProgressBarID.DEFAULT));
+            sendCommand(new HideProgressBarCommand(ProgressBarID.METADATA));
             Log.info(Resources.getString("compileComplete"));
         }
 
         public function sendClientInfo():void
         {
+            _studioRevision++;
             var info:ClientInfo = new ClientInfo();
             info.loaded = clientLoaded;
 
@@ -3686,8 +3699,20 @@ package
             }
         }
 
+        private function studioCommandCallback(id:String,method:String,payload:String):void {
+            try {
+                if(!_studioAdapter||!_studioAdapter.owns(_things))_studioAdapter=new LegacyStudioAdapter(_things,_sprites,_features);
+                _studioCommitting=method=="commit_art";_studioStorageChanged=false;
+                var result:Object;
+                try{result=_studioAdapter.execute(method,JSON.parse(payload),_studioRevision);}
+                finally{_studioCommitting=false;if(_studioStorageChanged)sendClientInfo();}
+                sendCommand(new ob.commands.StudioResultCommand(id,JSON.stringify(result)));
+            }catch(error:Error){sendCommand(new ob.commands.StudioResultCommand(id,null,error.message));}
+        }
+
         protected function storageChangeHandler(event:StorageEvent):void
         {
+            if(_studioCommitting){_studioStorageChanged=true;return;}
             sendClientInfo();
         }
 
