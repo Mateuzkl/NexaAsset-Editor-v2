@@ -6,7 +6,7 @@ Branch: `feature/mcp-pixel-art-studio`. Baseline preservado: `0d7fccc`.
 
 O NexaAsset mantém AS3/Flex/AIR e seus fluxos existentes. Um Studio real permite pintar sprites, trabalhar em camadas e tempos/direções e compartilhar o mesmo draft com clientes MCP. A ponte lê o projeto que está aberto. Não há edição paralela dos binários de assets pelo gateway.
 
-- Gateway .NET 10 com SDK oficial MCP 2.3.0, 27 ferramentas, resources e imagens PNG em respostas de preview/sprite.
+- Gateway .NET 10 com SDK oficial MCP 2.3.0, 30 ferramentas, resources e imagens PNG em respostas de preview/sprite.
 - HTTP loopback autenticado, porta/token por instância, desligado por padrão, checagens de Host/Origin, limites de payload/fila/memória, cancelamento e timeout.
 - RGBA straight, preservação de bytes de camadas, paleta exata, flips, 90°, offset, PNG validado, composição e histórico limitado.
 - Canvas: lápis/pincel, borracha, conta-gotas, linha, retângulo, elipse, balde, seleção/movimento/copiar/colar, grade, zoom inteiro e atalhos.
@@ -28,6 +28,8 @@ O NexaAsset mantém AS3/Flex/AIR e seus fluxos existentes. Um Studio real permit
 | `src/ObjectBuilder.mxml`, `src/ObjectBuilderWorker.as` | Pontos explícitos de integração, seleção, dirty state, sessão e lifecycle |
 | `tools/mcp-gateway/ArtDocument.cs`, `StudioService.cs` | Documento, transações, histórico, composição, revisões e operações compartilhadas |
 | `tools/mcp-gateway/Program.cs`, `EditorBridge.cs`, `StudioTools.cs`, `StudioResources.cs` | HTTP/MCP, autenticação, limites, schemas e IPC |
+| `tools/mcp-gateway/StableDiffusion.cs` / `StableDiffusionJobs.cs` | WebUI/Forge local, texto/variação, conversão e jobs com status/cancelamento |
+| `src/ob/studio/StableDiffusionWindow.mxml` | Configuração/teste, consentimento e controles de geração |
 | `tools/mcp-gateway/ArtGeneration.cs` | Contrato e provider HTTPS opcional |
 | `tools/modern-helper/StudioWorkspace.cs`, `Program.cs`, `NativeWorkspace.cs`, `NativePng.cs` | Integração moderna, pacote validado, criação animada e decoder separado de sheet |
 | `build.ps1`, `tools/mcp-gateway/build.ps1`, csproj/lock/licenças | Build portátil reproduzível e dependências do gateway |
@@ -71,7 +73,7 @@ O teste AIR/MCP usa um processo cliente independente, o editor real e o botão r
 
 Capturas da execução final: `bin-tests/studio-ddbeab93a1084313b856cee9607dc7f0/studio-modern.png` e `studio-legacy.png` (pt_BR). Os diretórios de teste são ignorados pelo Git.
 
-Os avisos já presentes de registro de callbacks internos e binding de category continuam aparecendo nos harnesses AIR; as suítes terminam em PASS. O gateway compila com zero avisos/erros. Não foram usados créditos ou uma API de geração externa real: o contrato do provider foi verificado com handler em processo. Codex/Claude proprietários não foram executados como clientes nesta validação; foi usado o SDK MCP oficial, com configurações conferidas nas respectivas documentações oficiais.
+Os avisos já presentes de registro de callbacks internos e binding de category continuam aparecendo nos harnesses AIR; as suítes terminam em PASS. O gateway compila com zero avisos/erros. Não foram usados créditos ou uma API de geração externa real: o contrato do provider foi verificado com handler em processo. A integração SD foi verificada também por HTTP real contra stub WebUI local, cliente MCP oficial através do gateway e janela AIR em dois idiomas; não houve inferência de modelo/GPU. Guia e pesquisa: [STABLE_DIFFUSION.md](STABLE_DIFFUSION.md). Codex/Claude proprietários não foram executados como clientes nesta validação; foi usado o SDK MCP oficial, com configurações conferidas nas respectivas documentações oficiais.
 
 ## Compatibilidade e pendências
 
@@ -83,7 +85,7 @@ Os avisos já presentes de registro de callbacks internos e binding de category 
 | Máscaras/outfits existentes | Leitura/referência; não há substituição estrutural nem remapeamento automático de máscaras |
 | Conflitos | Revisão obsoleta é recusada; ainda não há rebase automático |
 | Undo | Draft somente; não desfaz um asset já inserido/publicado |
-| IA | Endpoint HTTPS com contrato documentado; animação por offsets é derivação explícita, não geração artística de caminhada |
+| IA | WebUI/Forge local opcional, uma camada/célula por job, e endpoint HTTPS com contrato próprio; animação por offsets é derivação explícita, não geração artística de caminhada |
 | Clientes/transporte | Streamable HTTP; ainda sem proxy STDIO, OAuth ou perfis individuais por cliente |
 
 O Markdown mestre não está 100% concluído: faltam atribuição a slots existentes via MCP, edição arbitrária de grupos/máscaras existentes, rebase, undo de assets aplicados e geração multiframe artística automática. Esta entrega contém o núcleo funcional integrado e verificável, sem apresentar essas pendências como prontas. Veja [arquitetura](MCP_ARCHITECTURE.md), [ferramentas](MCP_TOOLS.md), [segurança](MCP_SECURITY.md) e [provider](AI_GENERATION.md).

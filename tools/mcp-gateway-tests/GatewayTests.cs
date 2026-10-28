@@ -5,6 +5,7 @@ using System.Threading.Channels;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using NexaAsset.Mcp;
+using NexaModern;
 
 internal static class GatewayTests
 {
@@ -46,6 +47,7 @@ internal static class GatewayTests
         string gateway = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../bin-debug/mcp-gateway/nexa-mcp-gateway.exe"));
         using var process = new Process { StartInfo = new(gateway) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true } };
         Check(process.Start(), "Gateway launch");
+        process.ErrorDataReceived += (_, _) => { }; process.BeginErrorReadLine();
         var output = Channel.CreateUnbounded<JsonElement>(); var writeLock = new SemaphoreSlim(1);
         int editorCommits = 0; string session = "project-A"; long revision = 9;
         async Task Write(object value)
@@ -89,11 +91,18 @@ internal static class GatewayTests
             await Write(new { type = "uiRequest", id = "enable", method = "ui_enable", args = new { enabled = true } }); await Next("uiResponse", "enable");
             await using var transport = Transport(endpoint, token); await using var client = await McpClient.CreateAsync(transport);
             var tools = await client.ListToolsAsync(); Check(tools.Count >= 20 && tools.All(t => !t.Name.Contains("save")), "Tool discovery/scopes");
+            Check(new[] { "nexa_generate_stable_diffusion", "nexa_get_generation_status", "nexa_cancel_generation" }.All(name => tools.Any(t => t.Name == name)), "Stable Diffusion MCP discovery");
             var project = await Call(client, "nexa_get_project_info", new { }); Check(project.GetProperty("revision").GetInt64() == 9, "Editor bridge read");
             var spriteResponse = await client.CallToolAsync("nexa_get_sprite", new Dictionary<string, object?> { ["spriteId"] = 1 });
             Check(spriteResponse.Content.OfType<ImageContentBlock>().Any(i => i.MimeType == "image/png"), "MCP sprite image block missing");
             var draft = await Call(client, "nexa_begin_edit", new { projectSessionId = session, expectedRevision = 9, category = "item", spriteId = 1 }); string editId = draft.GetProperty("editId").GetString()!;
+            var unavailable = await client.CallToolAsync("nexa_generate_stable_diffusion", new Dictionary<string, object?> { ["editId"] = editId, ["expectedDocumentRevision"] = 0, ["parameters"] = new { prompt = "ring" } });
+            Check(unavailable.IsError == true && unavailable.Content.OfType<TextContentBlock>().Any(t => t.Text.Contains("configure/test")), "Missing SD configuration did not surface as MCP error");
+            Check((await Call(client, "nexa_get_generation_status", new { editId })).GetProperty("status").GetString() == "none", "Unexpected MCP generation job");
+            await StableDiffusionGateway(client, Write, Next, session, revision);
             await Call(client, "nexa_set_pixels", new { editId, expectedDocumentRevision = 0, parameters = new { pixels = new[] { new { x = 3, y = 3, rgba = new[] { 1, 2, 3, 128 } } } } });
+            var missing = await client.CallToolAsync("nexa_set_pixels", new Dictionary<string, object?> { ["editId"] = editId, ["expectedDocumentRevision"] = 1, ["parameters"] = new { } });
+            Check(missing.IsError == true && missing.Content.OfType<TextContentBlock>().Any(t => t.Text.Contains("Missing a required operation parameter")), "Missing nested parameter did not surface as actionable MCP error");
             var preview = await Call(client, "nexa_get_edit_preview", new { editId }); Check(preview.GetProperty("changedPixels").GetInt32() == 1, "MCP pixel diff");
             var approve = await Call(client, "nexa_commit_edit", new { editId, expectedDocumentRevision = 1, parameters = new { } });
             Check(approve.GetProperty("status").GetString() == "awaiting-human-approval" && editorCommits == 0, "Remote approval bypass");
@@ -127,8 +136,39 @@ internal static class GatewayTests
         finally
         {
             process.StandardInput.Close();
-            if (!process.WaitForExit(5000)) throw new Exception("Gateway failed to terminate after closing its owning editor pipe");
+            if (!process.WaitForExit(5000)) { process.Kill(true); await process.WaitForExitAsync(); throw new Exception("Gateway failed to terminate after closing its owning editor pipe"); }
             await reader;
         }
+    }
+    private static async Task StableDiffusionGateway(McpClient client, Func<object, Task> write, Func<string, string?, Task<JsonElement>> next, string session, long revision)
+    {
+        var probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0); probe.Start(); int port = ((IPEndPoint)probe.LocalEndpoint).Port; probe.Stop();
+        using var server = new HttpListener(); server.Prefixes.Add($"http://127.0.0.1:{port}/"); server.Start();
+        var response = Task.Run(async () => {
+            var context = await server.GetContextAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            using var input = new StreamReader(context.Request.InputStream); using var body = JsonDocument.Parse(await input.ReadToEndAsync());
+            Check(context.Request.Url!.AbsolutePath == "/sdapi/v1/txt2img" && body.RootElement.GetProperty("width").GetInt32() == 512, "MCP SD route/body contract");
+            byte[] rgba = new byte[512 * 512 * 4]; for (int i = 0; i < rgba.Length; i += 4) { rgba[i] = 19; rgba[i + 3] = 255; }
+            byte[] json = JsonSerializer.SerializeToUtf8Bytes(new { images = new[] { Convert.ToBase64String(Png.Encode(new(512, 512, rgba))) } });
+            context.Response.ContentType = "application/json"; context.Response.ContentLength64 = json.Length; await context.Response.OutputStream.WriteAsync(json); context.Response.Close();
+        });
+        try {
+            await write(new { type = "uiRequest", id = "sd-config", method = "ui_sd_configure", args = new { url = $"http://127.0.0.1:{port}" } });
+            Check(!(await next("uiResponse", "sd-config")).TryGetProperty("error", out _), "Private SD configuration failed");
+            await write(new { type = "uiRequest", id = "sd-consent", method = "ui_provider_consent", args = new { consent = true } }); await next("uiResponse", "sd-consent");
+            var draft = await Call(client, "nexa_begin_edit", new { projectSessionId = session, expectedRevision = revision, category = "item" }); string id = draft.GetProperty("editId").GetString()!;
+            var job = await Call(client, "nexa_generate_stable_diffusion", new { editId = id, expectedDocumentRevision = 0, parameters = new { prompt = "potion", mode = "create", background = "opaque" } });
+            Check(job.GetProperty("status").GetString() == "running", "MCP SD did not return a job immediately");
+            using var deadline = new CancellationTokenSource(10000);
+            while (true) {
+                var status = await Call(client, "nexa_get_generation_status", new { editId = id }); string state = status.GetProperty("status").GetString()!;
+                if (state == "complete") { Check(status.GetProperty("documentRevision").GetInt32() == 1, "MCP SD revision count"); break; }
+                Check(state == "running", "MCP SD failed: " + state); await Task.Delay(100, deadline.Token);
+            }
+            var preview = await Call(client, "nexa_get_edit_preview", new { editId = id }); byte[] pixels = Convert.FromBase64String(preview.GetProperty("rgba").GetString()!);
+            Check(pixels.Length == 4096 && pixels[0] == 19 && pixels[3] == 255, "MCP SD pixels did not reach the shared draft");
+            await Call(client, "nexa_cancel_generation", new { editId = id }); await Call(client, "nexa_cancel_edit", new { editId = id }); await response;
+            Console.WriteLine("PASS: official MCP client → live gateway → local WebUI stub → completed shared draft and exact RGBA");
+        } finally { server.Stop(); try { await response; } catch (Exception error) when (error is HttpListenerException or ObjectDisposedException) { } }
     }
 }

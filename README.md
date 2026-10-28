@@ -20,7 +20,11 @@ format. MCP starts disabled. Existing objects and outfit masks are preserved.
 [Delivery and validation](docs/MCP_DELIVERY.md) · [Studio guide](docs/PIXEL_ART_STUDIO.md) · [Codex setup](docs/MCP_SETUP_CODEX.md) ·
 [Claude Code setup](docs/MCP_SETUP_CLAUDE.md) · [Tools](docs/MCP_TOOLS.md) ·
 [Architecture and current limits](docs/MCP_ARCHITECTURE.md) ·
-[Security](docs/MCP_SECURITY.md) · [Optional AI provider](docs/AI_GENERATION.md)
+[Security](docs/MCP_SECURITY.md) · [Optional AI provider](docs/AI_GENERATION.md) · [Local Stable Diffusion](docs/STABLE_DIFFUSION.md)
+
+The Studio also offers optional local Stable Diffusion text/variation through the
+AUTOMATIC1111/Forge API, from the UI or MCP. Install the server/checkpoint separately;
+the integration tests use a local stub and do not certify GPU inference quality.
 
 Build with `./build.ps1`. Run the new end-to-end suite with `./tests/run-mcp.ps1`;
 it launches the real AIR editor plus an independent official MCP SDK client and

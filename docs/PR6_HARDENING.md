@@ -43,3 +43,9 @@ RGBA idêntico em todos os casos. A medição força composição completa para 
 A leitura JSONL de 4 MiB ficou com p50 de 4,32 ms e máximo de 4,49 ms em cinco amostras de uma execução. Esses números são locais e variam com a máquina.
 
 As limitações funcionais previamente documentadas (slots existentes, máscaras arbitrárias, rebase e undo de assets publicados) permanecem fora desta rodada; a aprovação no editor continua necessária antes da inserção e Save/Compile é separado.
+
+## Revisão adicional e Stable Diffusion
+
+A rodada seguinte verificou seis comentários novos da PR: checkout sem persistir credenciais; ID pendente antes da mudança de categoria no commit; File Close protegido contra drafts não aplicados (inclusive após resposta NO); fase exclusiva de espera pelo EXIT do cliente MCP; stderr drenado e kill/join no timeout do teste; erros de parâmetro obrigatório legíveis via MCP. O harness AIR verifica File Close preservando a sessão e o draft e a seleção do outfit após o refresh de categoria.
+
+Stable Diffusion é opcional e documentado em [STABLE_DIFFUSION.md](STABLE_DIFFUSION.md): API WebUI/Forge, jobs sem bloqueio, controles de geração/conversão e três ferramentas MCP (30 no total). Testes usam stub HTTP local e não representam inferência real ou medição de GPU; servidor/checkpoint ainda não estavam instalados.

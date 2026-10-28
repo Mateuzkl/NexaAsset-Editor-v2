@@ -824,6 +824,7 @@ THE SOFTWARE.
             {
                 if (!clientLoaded)
                     return;
+                if (!canCloseStudioProject()) return;
             
                 if (clientChanged)
                 {
@@ -846,6 +847,7 @@ THE SOFTWARE.
                         compileProject();
                     else if (event.detail == Alert.NO)
                     {
+                        if (!canCloseStudioProject()) return;
                         clear();
                         sendCommand(new UnloadFilesCommand());
                     }
@@ -1131,7 +1133,7 @@ THE SOFTWARE.
                 function finish(result:Object,error:String=null):void {
                     if(sessionId!=_studioProjectId){callback(null,"Project session expired.");return;}
                     if(!error&&method=="get_project_info"){result.projectSessionId=sessionId;result.pendingInspectorChanges=thingTypeEditor.changed;}
-                    if(!error&&method=="commit_art"){currentCategory=result.category;sendCommand(new GetThingListCommand(result.selected,result.category));sendCommand(new GetSpriteListCommand(result.sprite));sendCommand(new GetThingCommand(result.selected,result.category));}
+                    if(!error&&method=="commit_art"){if(currentCategory!=result.category)_pendingEditId=result.selected;currentCategory=result.category;sendCommand(new GetThingListCommand(result.selected,result.category));sendCommand(new GetSpriteListCommand(result.sprite));sendCommand(new GetThingCommand(result.selected,result.category));}
                     callback(result,error);
                 }
                 if(_nativeSource){
@@ -1290,6 +1292,10 @@ THE SOFTWARE.
             {
                 // A legacy conversion is an export, not persistence of the modern document.
                 updateNexaSaveState();
+            }
+            private function canCloseStudioProject():Boolean {
+                if(studio&&studio.hasUncommittedDrafts){Alert.show("Export or discard the open Pixel Art Studio drafts before closing this project.","Pixel Art Studio",Alert.OK,this);openPixelArtStudio();return false;}
+                return true;
             }
             protected function canSwitchAssetProject():Boolean
             {

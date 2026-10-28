@@ -6,7 +6,7 @@ using System.Security.Cryptography;
 namespace NexaAsset.Mcp;
 
 /// <summary>Serializes draft transactions; external generation releases the gate and revalidates before publication.</summary>
-public sealed class StudioService(IEditorBridge bridge)
+public sealed partial class StudioService(IEditorBridge bridge)
 {
     private readonly Dictionary<string, ArtDocument> documents = [];
     private readonly SemaphoreSlim gate = new(1);
@@ -19,7 +19,7 @@ public sealed class StudioService(IEditorBridge bridge)
     private long consentGeneration;
     public byte[] Secret { get; private set; } = RandomNumberGenerator.GetBytes(32);
     private sealed record PendingGeneration(ArtDocument Document, long Revision, int Frame, int Layer, long Consent, ArtGenerationRequest Request, CancellationTokenSource Cancellation);
-    private void RevokeProvider() { ProviderConsent = false; consentGeneration++; generation?.Cancellation.Cancel(); }
+    private void RevokeProvider() { ProviderConsent = false; consentGeneration++; generation?.Cancellation.Cancel(); CancelStableDiffusion(); }
 
     public ArtDocument Document(string id) => documents.TryGetValue(id, out var doc) ? doc : throw new InvalidOperationException("Draft not found or project session expired.");
     /// <summary>Read the owning editor session and invalidate drafts/consent when its identity changes.</summary>
@@ -38,6 +38,12 @@ public sealed class StudioService(IEditorBridge bridge)
         try {
             if (!local) await bridge.EmitAsync(new { type = "activity", action = method, state = "working" });
             object result = await Execute(method, args, local, ct);
+            if (result is StableDiffusionProbe probe) {
+                held = false; gate.Release();
+                try { result = await probe.Provider.Probe(ct); }
+                finally { await gate.WaitAsync(CancellationToken.None); held = true; }
+                if (!ReferenceEquals(stableDiffusion, probe.Provider)) throw new InvalidOperationException("Stable Diffusion configuration changed. Test the connection again.");
+            }
             if (result is PendingGeneration pending) {
                 work = pending; held = false; gate.Release();
                 byte[] pixels;
@@ -59,7 +65,7 @@ public sealed class StudioService(IEditorBridge bridge)
         }
         catch (Exception error) {
             if (!local || method == "ui_apply") { audit.Enqueue(new { action = method, timestamp = DateTimeOffset.UtcNow, success = false }); while (audit.Count > 100) audit.Dequeue(); await bridge.EmitAsync(new { type = "activity", action = method, state = "failed" }); }
-            if (!local && error is InvalidOperationException or InvalidDataException or FormatException or JsonException or ArgumentException) throw new McpException(error.Message);
+            if (!local && error is (InvalidOperationException or InvalidDataException or FormatException or JsonException or ArgumentException or KeyNotFoundException)) throw new McpException(error is KeyNotFoundException ? "Missing a required operation parameter. Check the tool parameters/schema and retry." : error.Message);
             throw;
         }
         finally {
@@ -71,7 +77,10 @@ public sealed class StudioService(IEditorBridge bridge)
     private static string S(JsonElement e, string key, string fallback = "") => e.TryGetProperty(key, out var v) ? v.GetString() ?? fallback : fallback;
     private async Task<object> Execute(string method, JsonElement args, bool local, CancellationToken ct)
     {
-        if (method == "ui_enable" && local) { Enabled = args.GetProperty("enabled").GetBoolean(); if (!Enabled) generation?.Cancellation.Cancel(); return new { enabled = Enabled }; }
+        if (method == "ui_enable" && local) { Enabled = args.GetProperty("enabled").GetBoolean(); if (!Enabled) { generation?.Cancellation.Cancel(); CancelStableDiffusion(); } return new { enabled = Enabled }; }
+        if (method == "ui_sd_info" && local) return StableDiffusionInfo();
+        if (method == "ui_sd_configure" && local) return ConfigureStableDiffusion(S(args, "url"));
+        if (method == "ui_sd_probe" && local) return new StableDiffusionProbe(stableDiffusion ?? throw new InvalidOperationException("Configure the local Stable Diffusion endpoint first."));
         if (method == "ui_provider_consent" && local) { if (!args.GetProperty("consent").GetBoolean()) RevokeProvider(); else ProviderConsent = true; return new { providerConfigured = Provider != null, consent = ProviderConsent }; }
         if (method == "ui_suspend" && local) { Enabled = false; RevokeProvider(); Secret = RandomNumberGenerator.GetBytes(32); return new { enabled = false, token = Convert.ToHexString(Secret) }; }
         if (method == "ui_stroke_png" && local) {
@@ -107,7 +116,7 @@ public sealed class StudioService(IEditorBridge bridge)
         }
         var doc = Document(S(args, "editId"));
         if (method is "get_edit_preview" or "ui_snapshot") return doc.Preview(I(args, "frame"), local, local && args.TryGetProperty("includeSheet", out var showSheet) && showSheet.GetBoolean());
-        if (method == "cancel_edit") { documents.Remove(doc.Id); if (generation?.Document == doc) generation.Cancellation.Cancel(); await bridge.EmitAsync(new { type = "changed", editId = doc.Id, closed = true }); return new { cancelled = !doc.Committed, closed = true, appliedAssetPreserved = doc.Committed }; }
+        if (method == "cancel_edit") { documents.Remove(doc.Id); if (generation?.Document == doc) generation.Cancellation.Cancel(); if (stableJob?.Document == doc) CancelStableDiffusion(); await bridge.EmitAsync(new { type = "changed", editId = doc.Id, closed = true }); return new { cancelled = !doc.Committed, closed = true, appliedAssetPreserved = doc.Committed }; }
         if (method == "get_edit_sheet") return doc.Sheet();
         if (method == "export_spritesheet")
         {
@@ -126,6 +135,8 @@ public sealed class StudioService(IEditorBridge bridge)
         }
         if (method == "ui_sidecar" && local) return new { data = Convert.ToBase64String(doc.Sidecar()) };
         if (method == "ui_png" && local) return new { data = Convert.ToBase64String(Png.Encode(new(doc.State.Width, doc.State.Height, ArtDocument.Composite(doc.State, I(args, "frame"))))) };
+        if (method == "get_generation_status") return stableJob?.Document == doc ? stableJob.Info() : new { status = "none", editId = doc.Id };
+        if (method == "cancel_generation") { if (stableJob?.Document == doc && (!args.TryGetProperty("jobId", out var jobId) || jobId.GetString() == stableJob.Id)) CancelStableDiffusion(); return stableJob?.Document == doc ? stableJob.Info() : new { status = "none", editId = doc.Id }; }
         long revision = args.GetProperty("expectedDocumentRevision").GetInt64();
         if (method == "ui_stroke" && local) {
             if (args.GetProperty("structureRevision").GetInt64() != doc.StructureRevision) throw new InvalidOperationException("STROKE_CONFLICT: frame/layer layout changed. Your stroke is retained; export it or choose the remote version.");
@@ -145,11 +156,12 @@ public sealed class StudioService(IEditorBridge bridge)
             var result = await bridge.RequestAsync("commit_art", new { packet = Convert.ToBase64String(packet), sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(packet)) }, ct);
             doc.Committed = true; doc.ApprovalRequested = false; await Changed(doc); return result;
         }
+        if (method == "generate_stable_diffusion") return StartStableDiffusion(doc, revision, args);
         if (method == "generate_variation")
         {
             if (!ProviderConsent || Provider == null) throw new InvalidOperationException("Configure NEXA_ART_PROVIDER_URL and explicitly allow sending references in the editor AI panel first. Deterministic drawing/palette tools remain available without a provider.");
             int frame = I(args, "frame"), layer = I(args, "layer");
-            if (generation != null) throw new InvalidOperationException("An art generation is already running. Wait or cancel its draft first.");
+            if (generation != null || stableJob?.Running == true) throw new InvalidOperationException("An art generation is already running. Wait or cancel its draft first.");
             var reference = ArtDocument.Layer(doc.State, frame, layer, true).Rgba.ToArray();
             string prompt = S(args, "prompt");
             if (prompt.Length is < 1 or > 2048) throw new InvalidDataException("Prompt must have 1–2048 characters.");

@@ -14,7 +14,8 @@ var bridge = new EditorBridge();
 using var providerClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(22) };
 var providerUrl = Environment.GetEnvironmentVariable("NEXA_ART_PROVIDER_URL");
 IArtGenerationProvider? provider = Uri.TryCreate(providerUrl, UriKind.Absolute, out var configured) && configured.Scheme == "https" ? new HttpArtGenerationProvider(providerClient, configured, Environment.GetEnvironmentVariable("NEXA_ART_PROVIDER_TOKEN")) : null;
-var studio = new StudioService(bridge) { Provider = provider };
+using var sdClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false }) { Timeout = Timeout.InfiniteTimeSpan };
+var studio = new StudioService(bridge) { Provider = provider, StableDiffusionFactory = endpoint => new(sdClient, endpoint, Environment.GetEnvironmentVariable("NEXA_SD_USERNAME"), Environment.GetEnvironmentVariable("NEXA_SD_PASSWORD")) };
 builder.Services.AddSingleton(bridge); builder.Services.AddSingleton(studio);
 builder.Services.AddMcpServer().WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless).WithTools<StudioTools>().WithResources<StudioResources>();
 await using var app = builder.Build();
@@ -51,7 +52,7 @@ try
     }
 }
 catch (OperationCanceledException) { }
-finally { bridge.Close(); await app.StopAsync(); await Task.WhenAll(tasks); }
+finally { bridge.Close(); app.Lifetime.StopApplication(); await studio.StopAsync(); await app.StopAsync(); await Task.WhenAll(tasks); }
 async Task Handle(JsonElement message)
 {
     string? id = message.GetProperty("id").GetString();

@@ -9,6 +9,8 @@
         import flash.display.*;
         import flash.geom.Matrix;
         import mx.events.FlexEvent;
+        import mx.managers.PopUpManager;
+        import nail.components.controls.Alert;
         import ob.studio.*;
         import ob.commands.files.LoadFilesCommand;
         import otlib.utils.ClientInfoLoader;
@@ -17,6 +19,7 @@
         private var clock:Timer=new Timer(150);
         private var started:int;
         private var phase:int=0;
+        private var sdWindow:StableDiffusionWindow;
         private var mode:int=0;
         private var testRoot:File;
         private var gateway:File;
@@ -68,14 +71,23 @@
                 }else if(phase==1&&clientLoaded&&thingData){
                     originalMax=clientInfo.maxOutfitId;
                     studio=new StudioController();studio.editor=this;studio.start(gateway);openPixelArtStudio();window=findWindow();check(window!=null,"Integrated Studio window missing");phase=2;
-                }else if(phase==2&&studio.ready&&window.snapshot){studio.setEnabled(true);phase=3;}
+                }else if(phase==2&&studio.ready&&window.snapshot){sdWindow=window.openStableDiffusion();check(sdWindow!=null,"Stable Diffusion window missing");phase=18;}
+                else if(phase==18&&sdWindow.report.length){
+                    sdWindow.validateNow();check(sdWindow.targetLabel.indexOf("32×32")>=0,"SD target context missing");
+                    check(sdWindow.endpoint.width>150&&sdWindow.prompt.height>=60&&sdWindow.height==640,"SD controls clipped");
+                    var bitmap:BitmapData=new BitmapData(sdWindow.width,sdWindow.height,false,0x101C28);bitmap.draw(sdWindow,new Matrix());
+                    var stream:FileStream=new FileStream();try{stream.open(testRoot.resolvePath(mode==0?"stable-diffusion-en.png":"stable-diffusion-pt.png"),FileMode.WRITE);stream.writeBytes(bitmap.encode(bitmap.rect,new PNGEncoderOptions()));}finally{stream.close();bitmap.dispose();}
+                    sdWindow.endpoint.text="http://localhost:7860";sdWindow.testConnection();phase=19;
+                }else if(phase==19&&sdWindow.report.indexOf("Use a local WebUI")>=0){
+                    sdWindow.close();sdWindow=null;record("PASS: Stable Diffusion native window, target/controls, localized labels and endpoint validation mode="+mode);studio.setEnabled(true);phase=3;
+                }
                 else if(phase==3&&studio.enabled){launchClient();phase=4;}
                 else if(phase==4&&externalExit==-999&&externalOutput.indexOf("\n")>=0){
                     var progress:Object=JSON.parse(externalOutput);check(progress.state=="drawing","Missing external drawing checkpoint");draftId=progress.editId;externalOutput="";phase=17;
                 }else if(phase==17&&window.snapshot&&window.snapshot.document.editId==draftId&&window.snapshot.document.documentRevision==2){
                     check(!window.snapshot.document.approvalRequested,"Live drawing only appeared after approval");
-                    record("PASS: Follow MCP displays drawing before approval mode="+mode);external.standardInput.writeUTFBytes("continue\n");phase=4;
-                }else if(phase==4&&externalExit!=-999){
+                    record("PASS: Follow MCP displays drawing before approval mode="+mode);external.standardInput.writeUTFBytes("continue\n");phase=20;
+                }else if(phase==20&&externalExit!=-999){
                     check(externalExit==0,"External MCP client failed: "+externalError+externalOutput);
                     var result:Object=JSON.parse(externalOutput);check(result.passed,"External client did not finish");draftId=result.editId;
                     check(clientInfo.maxOutfitId==originalMax,"Remote request mutated the editor before approval");
@@ -102,7 +114,11 @@
                         var at:int=(2*32+2)*4;window.canvas.pixels[at]=51;window.canvas.pixels[at+1]=102;window.canvas.pixels[at+2]=153;window.canvas.pixels[at+3]=255;
                         stage.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_UP,true));
                     });phase=6;
-                }else if(phase==6&&window.snapshot.document.documentRevision==4){capture();window.applyButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=7;}
+                }else if(phase==6&&window.snapshot.document.documentRevision==4){
+                    unloadProject();check(clientLoaded&&studio.ready&&studio.hasUncommittedDrafts,"File Close lost Studio drafts");
+                    var foundAlert:Boolean=false;for(var ai:int=0;ai<systemManager.rawChildren.numChildren;ai++){var alert:Alert=systemManager.rawChildren.getChildAt(ai) as Alert;if(alert){foundAlert=true;PopUpManager.removePopUp(alert);break;}}
+                    check(foundAlert,"File Close did not explain draft preservation");record("PASS: File Close preserves uncommitted drafts mode="+mode);
+                    capture();window.applyButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=7;}
                 else if(phase==7&&clientInfo.maxOutfitId==originalMax+1&&window.snapshot.document.committed){
                     check(currentCategory=="outfit","Applied outfit did not select the Outfits section");
                     check(window.maximumSnapshotRequests==1,"Concurrent preview requests escaped coalescing");
@@ -118,7 +134,7 @@
                             });
                         });
                     });phase=8;
-                }else if(phase==9){compileProject();phase=10;}
+                }else if(phase==9){check(thingData&&thingData.id==newId,"Category refresh replaced the inserted outfit selection");compileProject();phase=10;}
                 else if(phase==10&&!nativeSaving&&!clientChanged&&!locked){
                     record("PASS: mode="+mode+" outfit32x64 directions4 frames4 sparse-stroke merge coalesced-preview category-selection revision-once Save/Compile");
                     trace("PASS: real AIR "+(mode==0?"modern":"legacy")+" + external official MCP client: read, draw, preview, remote approval request, manual canvas edit, Apply, exact stored pixels, dirty state and Save/Compile");

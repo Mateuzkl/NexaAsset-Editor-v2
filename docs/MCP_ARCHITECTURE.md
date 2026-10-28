@@ -25,6 +25,7 @@ MCP edita drafts. `nexa_commit_edit` solicita aprovação, sem modificar o proje
 - Formatos legados sem improved animations aceitam o fallback de 100 ms; durações customizadas são recusadas. Moderno e legado compatível preservam tempos por fase.
 - Edição de draft: pixels, PNG, paleta exata, flip, rotação de 90°, offset, camadas, timeline, undo/redo; sheet PNG + JSON; sidecar editável.
 - Referência: leitura de sprite real e dos IDs/grupos/frames. Não há conversão automática de um outfit inteiro com múltiplas máscaras em um novo documento de pintura.
+- Stable Diffusion opcional: adaptador WebUI/Forge local, texto/variação de uma camada/célula, conversão nearest-neighbour e paleta/alpha. Job retorna imediatamente, HTTP fora do gate, revalidação antes de uma revisão/undo. Status/cancelamento separados e cancelamento/join no encerramento. UI e MCP compartilham o mesmo job, configuração apenas pela UI privada. Ver STABLE_DIFFUSION.md.
 - IA opcional: contrato HTTPS documentado em `AI_GENERATION.md`. Sem provedor, ferramentas determinísticas funcionam. Animação derivada por offsets é explícita; não é geração automática de caminhada coerente.
 
 ## Pendências explícitas do prompt completo

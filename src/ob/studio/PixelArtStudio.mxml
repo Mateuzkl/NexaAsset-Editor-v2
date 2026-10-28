@@ -18,6 +18,7 @@
         [Bindable] private var providerConfigured:Boolean=false;
         [Bindable] private var generating:Boolean=false;
         [Bindable] private var report:String="Starting Studio…";
+        private var sdWindow:StableDiffusionWindow;
         private var frame:int=0;
         private var layer:int=0;
         private var updating:Boolean=false;
@@ -190,16 +191,25 @@
                 });
             }catch(error:Error){report=error.message;}
         }
+        public function openStableDiffusion():StableDiffusionWindow {
+            if(dead||busy||!snapshot||!canApply||canvas.drawing||pendingStroke)return null;
+            if(sdWindow)sdWindow.close();
+            playback.stop();sdWindow=new StableDiffusionWindow();sdWindow.controller=controller;sdWindow.editId=editId;sdWindow.frame=frame;sdWindow.layer=layer;
+            sdWindow.targetLabel=snapshot.document.category+" · "+(snapshot.document.name||editId.substr(0,8))+" · "+snapshot.document.width+"×"+snapshot.document.height+" · cell "+frame+" · "+snapshot.layers[layer].name;
+            sdWindow.addEventListener(Event.REMOVED_FROM_STAGE,function(event:Event):void {if(event.target==sdWindow)sdWindow=null;});
+            sdWindow.open(this);return sdWindow;
+        }
         override public function close():void {
             if(!dead&&(canvas.drawing||pendingStroke||busy)){report="Finish the current operation or resolve your retained stroke before closing. Drafts remain available when reopening this project.";return;}
             super.close();
         }
-        public function shutdown():void {if(dead)return;dead=true;generation++;controller.suspend();playback.stop();playback.removeEventListener(TimerEvent.TIMER,tick);releasePicker();controller.removeEventListener("ready",ready);controller.removeEventListener("status",statusChanged);controller.removeEventListener("studioChanged",changed);canvas.dispose();sheet.dispose();original.dispose();}
+        public function shutdown():void {if(dead)return;dead=true;generation++;if(sdWindow)sdWindow.close();controller.suspend();playback.stop();playback.removeEventListener(TimerEvent.TIMER,tick);releasePicker();controller.removeEventListener("ready",ready);controller.removeEventListener("status",statusChanged);controller.removeEventListener("studioChanged",changed);canvas.dispose();sheet.dispose();original.dispose();}
     ]]></fx:Script>
     <s:VGroup left="12" right="12" top="12" bottom="12" gap="8">
         <s:HGroup width="100%" verticalAlign="middle">
             <s:CheckBox id="mcpToggle" label="{tr('enableMcp')}" change="controller.setEnabled(mcpToggle.selected)"/>
             <s:Label id="connection" width="100%" maxDisplayedLines="1"/>
+            <s:Button id="sdButton" label="Stable Diffusion" enabled="{!busy &amp;&amp; canApply &amp;&amp; !pendingStroke}" click="openStableDiffusion()"/>
             <s:Button label="Activity" enabled="{!busy}" click="showActivity()"/>
             <s:Button label="{tr('copyConfig')}" click="controller.copyConfiguration()"/>
             <s:Button label="{tr('copyToken')}" click="controller.copyToken();report=tr('tokenNotice')"/>

@@ -2,6 +2,10 @@
 
 MCP é o canal de ferramentas. Recoloração exata, flip, rotação de 90°, deslocamento, camadas, PNG, sheets e edição de pixels são locais e independem de qualquer conta de IA. `nexa_generate_animation` aceita offsets explícitos por tempo e deriva movimento da primeira célula de cada direção. Não inventa anatomia/caminhada nem afirma consistência artística.
 
+O botão **Stable Diffusion** oferece texto/variação por WebUI/Forge local e também três ferramentas MCP de geração/status/cancelamento. Configuração, comparação dos projetos, controles e limites: [STABLE_DIFFUSION.md](STABLE_DIFFUSION.md). Servidor e checkpoint são instalados separadamente; não há inferência real certificada nesta entrega.
+
+O contrato genérico abaixo permanece disponível para serviços próprios e é diferente da API WebUI.
+
 `IArtGenerationProvider` recebe prompt, largura/altura e RGBA de referência. `HttpArtGenerationProvider` é um adaptador HTTPS para um serviço configurado pelo próprio usuário, não uma integração proprietária automaticamente habilitada.
 
 Antes de iniciar o NexaAsset, forneça `NEXA_ART_PROVIDER_URL` (HTTPS) e, se o serviço exigir, `NEXA_ART_PROVIDER_TOKEN` no ambiente do processo. O token é mantido em memória; não é gravado em config/log. A aplicação não lê credenciais arbitrárias. No Studio, marque **Permitir enviar referências ao provedor IA configurado** e informe o prompt. O mesmo consentimento habilita `nexa_generate_variation` para MCP nesta sessão.

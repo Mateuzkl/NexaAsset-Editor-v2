@@ -20,3 +20,5 @@ O fluxo normal não pede chave de provedor no Nexa: conecte o agente MCP, peça 
 `nexa_get_edit_sheet` permite ao agente revisar todas as células com tempo, direção, duração e RGBA exato. O editor mostra Norte/Leste/Sul/Oeste na ordem nativa 0/1/2/3. Camadas como corpo/arma/reflexos podem ser pintadas separadamente por célula. Uma camada de pintura não equivale à máscara colorizável nativa de um outfit.
 
 Um serviço externo só aparece como opção avançada quando NEXA_ART_PROVIDER_URL foi configurada antes de iniciar o aplicativo; não é requisito do MCP. A aprovação pelo botão e Save/Compile continuam no editor.
+
+O botão **Stable Diffusion** no topo abre configuração/teste do WebUI/Forge local, descrição, variação por referência, seed, passos, força, paleta e transparência. O servidor/modelo são separados. A geração fica em um draft e pode ser cancelada; detalhes em [STABLE_DIFFUSION.md](STABLE_DIFFUSION.md).

@@ -15,6 +15,8 @@ Os schemas completos são gerados pelo SDK oficial a partir dos métodos em `too
 | nexa_get_frame | category, assetId, group=0, frame=0, direction=0, layer=0; padrões Y/Z são zero nesta ferramenta |
 | nexa_list_art_documents | nenhuma |
 | nexa_get_edit_sheet | editId; todas as células achatadas, columns/rows, directionOrder, RGBA, tempo/direção/duração |
+| nexa_get_generation_status | editId; status do último trabalho SD desse draft |
+| nexa_cancel_generation | editId; cancela o resultado local do trabalho SD atual |
 | nexa_get_edit_preview | editId, frame=0; RGBA, hash, diferenças, camadas/timeline e avisos |
 
 Resources: `nexa://session/{sessionId}/sprite/{spriteId}` e `nexa://session/{sessionId}/asset/{category}/{assetId}`, MIME application/json. Incluem bytes/mapeamentos limitados; não incluem paths do usuário.
@@ -42,6 +44,7 @@ Todas abaixo recebem **editId**, **expectedDocumentRevision** e **parameters** (
 | nexa_set_animation | frames (tempos),directions 1/4,duration opcional em ms (omitido preserva tempos); até 64 células |
 | nexa_import_sprite_png | frame,layer,png base64; dimensões devem coincidir |
 | nexa_import_spritesheet | png base64,cellWidth,cellHeight,directions,duration,cells opcional com metadata exportada |
+| nexa_generate_stable_diffusion | prompt,frame=0,layer=0,mode=auto/create/variation,negativePrompt,seed=-1,steps=20,cfgScale=6,strength=0.35,paletteColors=32,background=auto/reference/corners/opaque; retorna job imediato; exige configuração/consentimento local |
 | nexa_generate_variation | prompt,frame,layer; exige provider e consentimento no editor |
 | nexa_generate_animation | offsets:[[dx,dy],...]; deriva movimento local, sem inventar caminhada |
 | nexa_undo_edit | {} |
@@ -75,7 +78,9 @@ Chame `nexa_set_pixels`, examine `nexa_get_edit_preview`, e use a revisão atual
 
 Não há ferramenta para trocar máscaras/grupos existentes, gravar binários, apagar objetos ou salvar o projeto. Um agente deve consultar as capabilities e explicar essas limitações antes de prometer tais ações.
 
-Inventário atual: 27 ferramentas. A descoberta automatizada cobre os nomes e schemas efetivamente publicados.
+Inventário atual: 30 ferramentas. A descoberta automatizada cobre os nomes e schemas efetivamente publicados.
+
+Geração SD usa status/cancelamento separados: atualize o preview/revisão após o status `complete`. O MCP não pode configurar servidor/modelo/workflows nem aprovar/salvar o resultado. Veja [STABLE_DIFFUSION.md](STABLE_DIFFUSION.md).
 
 As conversões 1↔4 direções preservam os tempos e usam a direção zero ao reduzir. Novos tempos repetem o último tempo de cada direção. Erros esperados chegam ao cliente com textos como `DOCUMENT_CONFLICT` e `PROJECT_CONFLICT`.
 
