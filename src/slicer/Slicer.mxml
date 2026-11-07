@@ -902,7 +902,6 @@ THE SOFTWARE.
                 right="0"
                 top="0"
                 bottom="0"
-                cellColors="{[0x182633, 0x202E3C]}"
                 mouseChildren="false"
                 mouseEnabled="false"/>
 

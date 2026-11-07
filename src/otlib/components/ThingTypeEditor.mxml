@@ -125,6 +125,7 @@ THE SOFTWARE.
             [Bindable] private var _currentDirectionLabel:String = "South";
             private var _pixelsModified:Boolean = false;
             private var _filmRollBitmaps:Vector.<BitmapData> = new Vector.<BitmapData>();
+            private const _filmRollBackgrounds:Dictionary = new Dictionary(true);
             private var _suppressDrawCropSize:Boolean = false;  // guards drawCropSize() during batch button adds
             private var _multiSelectedFrames:Dictionary = new Dictionary();
             private var _rect:Rectangle;
@@ -1496,6 +1497,24 @@ THE SOFTWARE.
                 drawCropSize();
             }
 
+            override public function styleChanged(styleProp:String):void
+            {
+                super.styleChanged(styleProp);
+                if (!styleProp && _filmRollBackgrounds)
+                {
+                    var color:uint = NexaTheme.palette.preview;
+                    for (var fill:Object in _filmRollBackgrounds)
+                        SolidColor(fill).color = color;
+                }
+            }
+
+            private function createFilmRollBackground():SolidColor
+            {
+                var fill:SolidColor = new SolidColor(NexaTheme.palette.preview);
+                _filmRollBackgrounds[fill] = true;
+                return fill;
+            }
+
             private function updateFilmRollView():void
             {
                 removeButtons();
@@ -1554,7 +1573,7 @@ THE SOFTWARE.
                     var bgRect:Rect = new Rect();
                     bgRect.width = frameW;
                     bgRect.height = frameH;
-                    bgRect.fill = new SolidColor(NexaTheme.palette.preview);
+                    bgRect.fill = createFilmRollBackground();
                     frameGrp.addElement(bgRect);
 
                     // Compose frame bitmap
@@ -1761,7 +1780,7 @@ THE SOFTWARE.
                         var mdBgRect:Rect = new Rect();
                         mdBgRect.width = frameW;
                         mdBgRect.height = frameH;
-                        mdBgRect.fill = new SolidColor(NexaTheme.palette.preview);
+                        mdBgRect.fill = createFilmRollBackground();
                         mdFrameGrp.addElement(mdBgRect);
 
                         var img:Image = new Image();

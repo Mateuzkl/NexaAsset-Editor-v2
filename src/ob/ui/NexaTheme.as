@@ -93,9 +93,6 @@ package ob.ui
         public static function apply(id:String, styles:IStyleManager2):void
         {
             var colors:ObjectProxy = id == BLACK ? BLACK_COLORS : id == PURPLE ? PURPLE_COLORS : BLUE_COLORS;
-            if (palette === colors)
-                return;
-
             palette = colors;
             applyStyles(styles, "global", {
                 chromeColor:colors.surface, rollOverColor:colors.hover, selectionColor:colors.selected,

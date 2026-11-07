@@ -22,6 +22,7 @@
 
 package com.mignari.animator.renders
 {
+    import ob.ui.NexaTheme;
     import flash.display.NativeMenuItem;
     import flash.events.ContextMenuEvent;
     import flash.events.Event;
@@ -63,9 +64,6 @@ package com.mignari.animator.renders
 
         private var _hovered:Boolean = false;
 
-        private static const COLOR_NORMAL:uint = 0x1B2937;
-        private static const COLOR_HOVERED:uint = 0x213143;
-        private static const COLOR_SELECTED:uint = 0x193D55;
 
         public function FrameListRenderer()
         {
@@ -84,8 +82,8 @@ package com.mignari.animator.renders
             _fill.right = 0;
             _fill.top = 0;
             _fill.bottom = 0;
-            _fill.fill = new SolidColor(COLOR_NORMAL);
-            _fill.stroke = new SolidColorStroke(0x2C3C4D, 0.1);
+            _fill.fill = new SolidColor(NexaTheme.palette.surface);
+            _fill.stroke = new SolidColorStroke(NexaTheme.palette.border, 0.1);
             addElement(_fill);
 
             // 2. Image Background Group elements
@@ -93,16 +91,16 @@ package com.mignari.animator.renders
             // But wait, the image is in a VGroup with padding.
 
             _bgRect = new Rect();
-            _bgRect.fill = new SolidColor(0x101C29);
-            _bgRect.stroke = new SolidColorStroke(0x2C3C4D);
+            _bgRect.fill = new SolidColor(NexaTheme.palette.input);
+            _bgRect.stroke = new SolidColorStroke(NexaTheme.palette.border);
             addElement(_bgRect);
 
             _lineTop = new Line();
-            _lineTop.stroke = new SolidColorStroke(0x2C3C4D);
+            _lineTop.stroke = new SolidColorStroke(NexaTheme.palette.border);
             addElement(_lineTop);
 
             _lineLeft = new Line();
-            _lineLeft.stroke = new SolidColorStroke(0x2C3C4D);
+            _lineLeft.stroke = new SolidColorStroke(NexaTheme.palette.border);
             addElement(_lineLeft);
 
             _imageDisplay = new BitmapImage();
@@ -142,16 +140,29 @@ package com.mignari.animator.renders
             }
         }
 
+        override public function styleChanged(styleProp:String):void
+        {
+            super.styleChanged(styleProp);
+            if (!styleProp)
+                invalidateDisplayList();
+        }
+
         override protected function updateDisplayList(unscaledWidth:Number, unscaledHeight:Number):void
         {
             super.updateDisplayList(unscaledWidth, unscaledHeight);
 
+            SolidColor(_bgRect.fill).color = NexaTheme.palette.input;
+            SolidColorStroke(_fill.stroke).color = NexaTheme.palette.border;
+            SolidColorStroke(_bgRect.stroke).color = NexaTheme.palette.border;
+            SolidColorStroke(_lineTop.stroke).color = NexaTheme.palette.border;
+            SolidColorStroke(_lineLeft.stroke).color = NexaTheme.palette.border;
+
             // Background color
-            var color:uint = COLOR_NORMAL;
+            var color:uint = NexaTheme.palette.surface;
             if (selected)
-                color = COLOR_SELECTED;
+                color = NexaTheme.palette.selected;
             else if (_hovered)
-                color = COLOR_HOVERED;
+                color = NexaTheme.palette.hover;
 
             if (_fill && _fill.fill is SolidColor)
             {
