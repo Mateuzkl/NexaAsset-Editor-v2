@@ -42,6 +42,58 @@ internal static class GatewayTests
         Console.WriteLine(JsonSerializer.Serialize(new { passed = true, editId, format = info.GetProperty("format").GetString() }));
     }
 
+    public static async Task LiveRecolor()
+    {
+        using var credentials = JsonDocument.Parse((await Console.In.ReadLineAsync())!);
+        await using var transport = Transport(credentials.RootElement.GetProperty("endpoint").GetString()!,
+            credentials.RootElement.GetProperty("token").GetString()!);
+        await using var client = await McpClient.CreateAsync(transport);
+        var tools = await client.ListToolsAsync();
+        Check(new[] { "nexa_get_recolor_preview", "nexa_adjust_recolor", "nexa_select_recolor_area" }
+            .All(name => tools.Any(tool => tool.Name == name)), "Recolor MCP tools were not discovered.");
+        var response = await client.CallToolAsync("nexa_get_recolor_preview", new Dictionary<string, object?>());
+        Check(response.Content.OfType<ImageContentBlock>().Any(image => image.MimeType == "image/png"),
+            "Recolor preview image is missing.");
+        var preview = Result(response);
+        string sessionId = preview.GetProperty("sessionId").GetString()!;
+        long revision = preview.GetProperty("revision").GetInt64();
+        var invalid = await client.CallToolAsync("nexa_adjust_recolor", new Dictionary<string, object?>
+        {
+            ["sessionId"] = sessionId, ["expectedRevision"] = revision,
+            ["parameters"] = new { hue = 181, zoom = 10 }
+        });
+        Check(invalid.IsError == true, "Invalid Recolor range was accepted.");
+        Check((await Call(client, "nexa_get_recolor_preview", new { })).GetProperty("revision").GetInt64() == revision,
+            "Invalid parameters changed the preview.");
+        var selected = await Call(client, "nexa_select_recolor_area", new
+        {
+            sessionId, expectedRevision = revision,
+            parameters = new { action = "rectangle", x = 35, y = 35, endX = 45, endY = 45 }
+        });
+        Check(selected.GetProperty("selectedPixels").GetInt32() == 121, "Remote rectangle mask is wrong.");
+        var adjusted = await Call(client, "nexa_adjust_recolor", new
+        {
+            sessionId, expectedRevision = selected.GetProperty("revision").GetInt64(),
+            parameters = new { hue = 120, zoom = 10, maskOnly = true }
+        });
+        var shown = await Call(client, "nexa_get_recolor_preview", new { });
+        byte[] original = Convert.FromBase64String(shown.GetProperty("originalArgb").GetString()!);
+        byte[] recolored = Convert.FromBase64String(shown.GetProperty("argb").GetString()!);
+        int width = shown.GetProperty("width").GetInt32(), at = (40 * width + 40) * 4;
+        Check(!original.AsSpan(at, 4).SequenceEqual(recolored.AsSpan(at, 4)), "Remote HSL did not recolor selected pixels.");
+        Check(original.AsSpan(0, 4).SequenceEqual(recolored.AsSpan(0, 4)), "Remote adjustment escaped its mask.");
+        Console.WriteLine(JsonSerializer.Serialize(new { state = "preview", revision = adjusted.GetProperty("revision").GetInt64() }));
+        Check(await Console.In.ReadLineAsync() == "continue", "The editor did not verify the remote preview.");
+        var stale = await client.CallToolAsync("nexa_adjust_recolor", new Dictionary<string, object?>
+        {
+            ["sessionId"] = sessionId, ["expectedRevision"] = adjusted.GetProperty("revision").GetInt64(),
+            ["parameters"] = new { hue = 0 }
+        });
+        Check(stale.IsError == true && stale.Content.OfType<TextContentBlock>().Any(t => t.Text.Contains("RECOLOR_CONFLICT")),
+            "MCP overwrote a newer manual adjustment.");
+        Console.WriteLine(JsonSerializer.Serialize(new { passed = true, state = "complete" }));
+    }
+
     public static async Task Run()
     {
         string gateway = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../bin-debug/mcp-gateway/nexa-mcp-gateway.exe"));

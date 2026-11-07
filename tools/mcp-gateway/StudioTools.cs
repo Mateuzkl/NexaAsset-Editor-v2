@@ -21,6 +21,19 @@ public sealed class StudioTools(StudioService studio)
     public Task<object> Project(CancellationToken ct) => Read("get_project_info", new { }, ct);
     [McpServerTool(Name = "nexa_get_capabilities", ReadOnly = true), Description("Read real supported operations and limits for the active project.")]
     public Task<object> Capabilities(CancellationToken ct) => Read("get_capabilities", new { }, ct);
+    [McpServerTool(Name = "nexa_get_recolor_preview", ReadOnly = true), Description("Inspect the open Recolor window after the user enables MCP there. Returns sessionId, revision, texture coordinates, HSL/replacement settings, selection mask, original and adjusted pixels, plus a PNG preview. Coordinates are unscaled image pixels. Changes remain a preview until the user clicks Create New or Replace Current.")]
+    public async Task<CallToolResult> RecolorPreview(CancellationToken ct)
+    {
+        var metadata = JsonSerializer.SerializeToElement(await Read("get_recolor_preview", new { }, ct), ArtDocument.Json);
+        return ImageResult(metadata, ArtDocument.FromArgb(Convert.FromBase64String(metadata.GetProperty("argb").GetString()!)),
+            metadata.GetProperty("width").GetInt32(), metadata.GetProperty("height").GetInt32());
+    }
+    [McpServerTool(Name = "nexa_adjust_recolor"), Description("Adjust the visible Recolor preview using its exact sessionId and expectedRevision. parameters may contain hue (-180..180), saturation/lightness (-100..100), hsl/colorize/replace/shading/maskOnly/applyAllFrames/showOverlay (boolean), source/target (six hex digits), tolerance (0..100 percent), zoom (1..10), group/frame/direction/patternY/patternZ/layer (zero based). Outfit dye template layers are protected. Read nexa_get_recolor_preview again to inspect changes. The human applies the result in Recolor.")]
+    public Task<object> AdjustRecolor(string sessionId, long expectedRevision, JsonElement parameters, CancellationToken ct)
+        => Read("adjust_recolor", new { sessionId, expectedRevision, parameters }, ct);
+    [McpServerTool(Name = "nexa_select_recolor_area"), Description("Edit the current Recolor selection with exact sessionId and expectedRevision. parameters: action (all/clear/invert/wand/brush/erase/rectangle). Wand uses x,y,tolerance (0..100 percent),add (boolean). Brush/erase use x,y,endX,endY,size (1..4). Rectangle uses x,y,endX,endY. All coordinates are unscaled image pixels. Only changes the live preview selection; the user applies the result.")]
+    public Task<object> RecolorSelection(string sessionId, long expectedRevision, JsonElement parameters, CancellationToken ct)
+        => Read("select_recolor_area", new { sessionId, expectedRevision, parameters }, ct);
     [McpServerTool(Name = "nexa_list_assets", ReadOnly = true), Description("List up to 100 active assets. Category: item, outfit, effect, missile, sprite. Page is zero based.")]
     public Task<object> List(string category, CancellationToken ct, int page = 0, string query = "") => Read("list_assets", new { category, page, query }, ct);
     [McpServerTool(Name = "nexa_get_asset", ReadOnly = true), Description("Read geometry, animation timings and actual sprite references.")]

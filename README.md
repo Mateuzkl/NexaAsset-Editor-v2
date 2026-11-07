@@ -25,6 +25,17 @@ Build with `./build.ps1`. Run the new end-to-end suite with `./tests/run-mcp.ps1
 it launches the real AIR editor plus an independent official MCP SDK client and
 checks drawing, human approval, stored pixels and Save/Compile in both formats.
 
+The **Recolor** window also supports MCP. Open an object with **Recolor**, click
+**MCP**, enable **Allow MCP adjustments**, and use **Copy config** and **Copy token**
+to connect the local client. The token is supplied through `NEXA_MCP_TOKEN` in the
+client environment. `nexa_get_recolor_preview` returns the current image, mask,
+settings, session ID and revision. `nexa_adjust_recolor` updates HSL, replacement
+colors, texture coordinates or zoom up to 10×. `nexa_select_recolor_area` edits
+the selection with a wand, brush, eraser or rectangle. Each adjustment uses the
+latest session ID and revision so it can detect intervening manual edits. Review
+the visible result and use **Create New** or **Replace Current** to apply it.
+Run `./tests/run-recolor.ps1` to exercise this flow with an independent MCP client.
+
 ### Native modern assets in the standard workspace
 
 Use **Open Asset Files** to open a modern client folder containing

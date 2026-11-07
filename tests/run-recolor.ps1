@@ -8,6 +8,9 @@ $jdk = @(Get-ChildItem -LiteralPath (Join-Path $ToolsRoot 'java') -Directory)
 if ($jdk.Count -ne 1) { throw 'Expected one portable JDK.' }
 Push-Location -LiteralPath $project
 try {
+    & (Join-Path $project 'tools/mcp-gateway/build.ps1')
+    & dotnet build tools/mcp-gateway-tests/NexaAsset.Mcp.Tests.csproj
+    if ($LASTEXITCODE -ne 0) { throw 'Recolor MCP client compilation failed.' }
     & (Join-Path $jdk[0].FullName 'bin/java.exe') -Xmx2g ('-Dapplication.home=' + $sdk) -jar (Join-Path $sdk 'lib/mxmlc.jar') '+configname=air' `
         '-source-path=src' '-source-path+=tests' '-library-path+=libs' '-locale=en_US,es_ES,pt_BR' '-source-path+=locale/{locale}' `
         '-debug=true' '-warnings=false' '-output=bin-tests/RecolorMainTests.swf' 'tests/RecolorMainTests.mxml'

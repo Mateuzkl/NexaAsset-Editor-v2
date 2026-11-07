@@ -12,6 +12,7 @@
         import mx.events.FlexEvent;
         import ob.commands.files.LoadFilesCommand;
         import ob.recolor.RecolorWindow;
+        import ob.studio.StudioController;
         import ob.ui.NexaTheme;
         import otlib.core.*;
         import otlib.animation.FrameGroup;
@@ -25,6 +26,10 @@
         private var dialog:RecolorWindow;
         private var previousMax:uint;
         private var sourceId:uint = 101;
+        private var external:NativeProcess;
+        private var externalOutput:String = "";
+        private var externalError:String = "";
+        private var externalExit:int = -999;
 
         override protected function applicationInvokeHandler(event:InvokeEvent):void {}
         override protected function applicationCompleteHandler(event:FlexEvent):void
@@ -61,6 +66,21 @@
                 }
                 else if (phase == 2 && findDialog())
                 {
+                    dialog.validateNow();
+                    for (var zoomStep:int = 0; zoomStep < 7; zoomStep++)
+                        dialog.zoomInButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    dialog.validateNow();
+                    check(dialog.zoomLabel.text == "10×" && dialog.imageArea.width == 640 && !dialog.zoomInButton.enabled,
+                        "Zoom did not reach its 10x limit.");
+                    capture("recolor-zoom-10x.png");
+                    dialog.setZoom(3);
+                    dialog.brushSize.validateNow();
+                    var stepper:Object = dialog.brushSize.skin;
+                    check(stepper.incrementButton.y + stepper.incrementButton.height <= stepper.decrementButton.y + 1,
+                        "Numeric stepper plus and minus buttons overlap.");
+                    stepper.incrementButton.dispatchEvent(new FlexEvent(FlexEvent.BUTTON_DOWN));
+                    check(dialog.brushSize.value == 2, "The plus button did not increment brush size.");
+                    dialog.brushSize.value = 1;
                     dialog.validateNow();
                     check(dialog.sourceData.id == sourceId, "Context menu loaded the wrong object.");
                     dialog.hue.value = 120;
@@ -128,14 +148,62 @@
                     var controlsBottom:Point = dialog.replaceCurrentButton.localToGlobal(new Point(0, dialog.replaceCurrentButton.height));
                     var dialogBottom:Point = dialog.localToGlobal(new Point(0, dialog.height));
                     check(controlsBottom.y <= dialogBottom.y, "Save controls overflow the dialog.");
+                    studio = new StudioController(); studio.editor = this;
+                    studio.start(new File(File.applicationDirectory.nativePath).parent.resolvePath("bin-debug/mcp-gateway/nexa-mcp-gateway.exe"));
+                    dialog.openMcpButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    phase = 7;
+                }
+                else if (phase == 7 && studio.ready)
+                {
+                    dialog.mcpToggle.selected = true;
+                    dialog.mcpToggle.dispatchEvent(new Event(Event.CHANGE));
+                    phase = 8;
+                }
+                else if (phase == 8 && studio.enabled)
+                {
+                    var info:NativeProcessStartupInfo = new NativeProcessStartupInfo();
+                    info.executable = new File(File.applicationDirectory.nativePath).parent.resolvePath(
+                        "tools/mcp-gateway-tests/bin/Debug/net10.0/NexaAsset.Mcp.Tests.exe");
+                    info.arguments = new <String>["--live-recolor"];
+                    external = new NativeProcess();
+                    external.addEventListener(ProgressEvent.STANDARD_OUTPUT_DATA, function(e:ProgressEvent):void {
+                        externalOutput += external.standardOutput.readUTFBytes(external.standardOutput.bytesAvailable);
+                    });
+                    external.addEventListener(ProgressEvent.STANDARD_ERROR_DATA, function(e:ProgressEvent):void {
+                        externalError += external.standardError.readUTFBytes(external.standardError.bytesAvailable);
+                    });
+                    external.addEventListener(NativeProcessExitEvent.EXIT, function(e:NativeProcessExitEvent):void { externalExit = e.exitCode; });
+                    external.start(info);
+                    studio.writeClientConnection(external.standardInput);
+                    phase = 9;
+                }
+                else if (phase == 9 && externalOutput.indexOf("\n") >= 0)
+                {
+                    var message:Object = JSON.parse(externalOutput);
+                    check(message.state == "preview" && dialog.hue.value == 120, "MCP did not update the visible Recolor controls.");
+                    dialog.validateNow();
+                    check(dialog.zoomLabel.text == "10×", "MCP did not set the visible zoom.");
+                    check(clientInfo.maxItemId == previousMax + 1, "MCP applied the preview to the project.");
+                    capture("recolor-mcp-preview.png");
+                    dialog.hue.value = 60;
+                    dialog.hue.dispatchEvent(new Event(Event.CHANGE));
+                    externalOutput = "";
+                    external.standardInput.writeUTFBytes("continue\n");
+                    phase = 10;
+                }
+                else if (phase == 10 && externalExit != -999)
+                {
+                    check(externalExit == 0, "MCP client failed: " + externalError + externalOutput);
+                    check(JSON.parse(externalOutput).passed, "MCP validation did not complete.");
                     dialog.close();
-                    record("PASS: real editor context menu, worker source, wand/overlay, Create New, Replace Current, all-frame masks and dirty state");
+                    record("PASS: 10x zoom, visible steppers, selections/save, live MCP discovery/PNG/mask/HSL and manual conflict protection");
                     timer.stop(); clear(); NativeApplication.nativeApplication.exit(0);
                 }
             }
             catch (error:Error)
             {
                 record("FAIL: " + error.getStackTrace());
+                if (external && external.running) external.exit(true);
                 timer.stop(); clear(); NativeApplication.nativeApplication.exit(1);
             }
         }

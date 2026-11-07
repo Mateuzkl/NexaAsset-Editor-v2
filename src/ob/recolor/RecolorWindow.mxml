@@ -13,6 +13,9 @@
         import flash.geom.Point;
         import flash.geom.Rectangle;
         import flash.utils.ByteArray;
+        import mx.utils.UIDUtil;
+        import ob.studio.StudioController;
+        import ob.studio.StudioPixels;
         import otlib.animation.FrameGroup;
         import otlib.sprites.SpriteData;
         import otlib.things.ThingCategory;
@@ -21,6 +24,14 @@
 
         [Bindable] public var sourceData:ThingData;
         public var saveHandler:Function;
+        public var startMcpHandler:Function;
+        private var controller:StudioController;
+        private const recolorSession:String = UIDUtil.createUID();
+        private var recolorRevision:Number = 0;
+        private var released:Boolean;
+        [Bindable] private var mcpVisible:Boolean;
+        [Bindable] private var mcpReady:Boolean;
+        [Bindable] private var mcpStatus:String = "";
         [Bindable] private var sourceLabel:String;
 
         [Bindable] private var group:FrameGroup;
@@ -48,6 +59,12 @@
         private function tr(key:String):String
         {
             return resourceManager.getString("strings", "recolor." + key);
+        }
+
+        public function setZoom(value:int):void
+        {
+            zoom = Math.max(1, Math.min(10, value));
+            recolorRevision++;
         }
 
         private function loadView():void
@@ -167,6 +184,7 @@
         private function updatePreview():void
         {
             if (!preview) return;
+            recolorRevision++;
             var mask:RecolorMask = selection();
             if (maskToggle.selected && !mask)
                 preview.copyPixels(original, original.rect, new Point());
@@ -281,8 +299,182 @@
 
         private function releasePreview():void
         {
+            released = true;
+            if (controller)
+            {
+                if (mcpToggle.selected) controller.suspend();
+                controller.removeEventListener("ready", mcpStatusChanged);
+                controller.removeEventListener("status", mcpStatusChanged);
+            }
             finishDrag();
             disposeBitmaps();
+        }
+
+        private function openMcp():void
+        {
+            mcpVisible = true;
+            if (controller) return;
+            try
+            {
+                controller = startMcpHandler();
+                controller.addEventListener("ready", mcpStatusChanged);
+                controller.addEventListener("status", mcpStatusChanged);
+                mcpStatusChanged(null);
+            }
+            catch (error:Error) { mcpStatus = error.message; }
+        }
+
+        private function mcpStatusChanged(event:Event):void
+        {
+            mcpReady = controller.ready;
+            mcpStatus = controller.status;
+            if (!controller.enabled) mcpToggle.selected = false;
+        }
+
+        /** The gateway can only adjust this window's uncommitted preview. */
+        public function mcpRequest(method:String, args:Object):Object
+        {
+            if (released || !controller || !controller.ready || !controller.enabled || !mcpToggle.selected)
+                throw new Error("Enable MCP in the open Recolor window first.");
+            if (busy || dragStage)
+                throw new Error("Finish the active selection or save before adjusting Recolor.");
+            if (method == "get_recolor_preview")
+                return mcpPreview();
+            if (args.sessionId != recolorSession || args.expectedRevision !== recolorRevision)
+                throw new Error("RECOLOR_CONFLICT: refresh the Recolor preview and retry.");
+            var parameters:Object = args.parameters;
+            if (!parameters) throw new Error("Missing Recolor parameters.");
+            if (method == "adjust_recolor") adjustFromMcp(parameters);
+            else if (method == "select_recolor_area") selectFromMcp(parameters);
+            else throw new Error("Unsupported Recolor operation.");
+            return mcpState();
+        }
+
+        private function mcpState():Object
+        {
+            var mask:RecolorMask = selection();
+            var count:int;
+            if (mask)
+                for (var i:int = 0; i < mask.pixels.length; i++) count += mask.pixels[i] ? 1 : 0;
+            return {sessionId:recolorSession, revision:recolorRevision, category:sourceData.category,
+                assetId:sourceData.id, width:imageWidth, height:imageHeight, zoom:zoom,
+                texture:{group:group.type, frame:frameControl.value, direction:direction,
+                    patternY:patternY.value, patternZ:patternZ.value, layer:outfit ? 0 : layerControl.value,
+                    frames:group.frames, directions:group.patternX, patternsY:group.patternY,
+                    patternsZ:group.patternZ, layers:outfit ? 1 : group.layers, groups:groupCount},
+                settings:{hsl:hslToggle.selected, hue:hue.value, saturation:saturation.value, lightness:lightness.value,
+                    colorize:colorize.selected, replace:replaceToggle.selected, source:sourceColor.text, target:targetColor.text,
+                    tolerance:tolerance.value, shading:shading.selected, maskOnly:maskToggle.selected,
+                    applyAllFrames:allVariants.selected, showOverlay:showOverlay.selected},
+                selectedPixels:count, status:"preview", applyInEditor:true};
+        }
+
+        private function mcpPreview():Object
+        {
+            if (imageWidth * imageHeight > 262144)
+                throw new Error("This texture exceeds the MCP preview size limit.");
+            var state:Object = mcpState();
+            var pixels:ByteArray = preview.getPixels(preview.rect);
+            state.argb = StudioPixels.encode(pixels);
+            pixels.clear();
+            pixels = original.getPixels(original.rect);
+            state.originalArgb = StudioPixels.encode(pixels);
+            pixels.clear();
+            var mask:RecolorMask = selection();
+            state.mask = mask ? StudioPixels.encode(mask.pixels) : null;
+            return state;
+        }
+
+        private function numberParameter(values:Object, key:String, fallback:Number, minimum:Number, maximum:Number):Number
+        {
+            if (!values.hasOwnProperty(key)) return fallback;
+            var value:* = values[key];
+            if (!(value is Number) || !isFinite(value) || value != Math.floor(value) || value < minimum || value > maximum)
+                throw new Error(key + " must be an integer between " + minimum + " and " + maximum + ".");
+            return value;
+        }
+
+        private function boolParameter(values:Object, key:String, fallback:Boolean):Boolean
+        {
+            if (!values.hasOwnProperty(key)) return fallback;
+            if (!(values[key] is Boolean)) throw new Error(key + " must be boolean.");
+            return values[key];
+        }
+
+        private function colorParameter(values:Object, key:String, fallback:String):String
+        {
+            if (!values.hasOwnProperty(key)) return fallback;
+            if (!(values[key] is String) || !/^[0-9a-f]{6}$/i.test(values[key]))
+                throw new Error(key + " must contain six hexadecimal digits.");
+            return String(values[key]).toUpperCase();
+        }
+
+        private function checkKeys(values:Object, allowed:Array):void
+        {
+            for (var key:String in values)
+                if (allowed.indexOf(key) < 0) throw new Error("Unknown Recolor parameter: " + key);
+        }
+
+        private function adjustFromMcp(values:Object):void
+        {
+            checkKeys(values, ["hsl", "hue", "saturation", "lightness", "colorize", "replace", "source", "target",
+                "tolerance", "shading", "maskOnly", "applyAllFrames", "showOverlay", "zoom", "group", "frame",
+                "direction", "patternY", "patternZ", "layer"]);
+            var nextGroup:int = numberParameter(values, "group", group.type, 0, groupCount - 1);
+            var texture:FrameGroup = sourceData.getFrameGroup(nextGroup);
+            var changedGroup:Boolean = nextGroup != group.type;
+            var nextFrame:int = numberParameter(values, "frame", changedGroup ? 0 : frameControl.value, 0, texture.frames - 1);
+            var nextDirection:int = numberParameter(values, "direction", changedGroup ? 0 : direction, 0, texture.patternX - 1);
+            var nextY:int = numberParameter(values, "patternY", changedGroup ? 0 : patternY.value, 0, texture.patternY - 1);
+            var nextZ:int = numberParameter(values, "patternZ", changedGroup ? 0 : patternZ.value, 0, texture.patternZ - 1);
+            var nextLayer:int = numberParameter(values, "layer", changedGroup ? 0 : layerControl.value, 0, outfit ? 0 : texture.layers - 1);
+            var nextZoom:int = numberParameter(values, "zoom", zoom, 1, 10);
+            var nextHue:int = numberParameter(values, "hue", hue.value, -180, 180);
+            var nextSat:int = numberParameter(values, "saturation", saturation.value, -100, 100);
+            var nextLight:int = numberParameter(values, "lightness", lightness.value, -100, 100);
+            var nextTolerance:int = numberParameter(values, "tolerance", tolerance.value, 0, 100);
+            var nextHsl:Boolean = boolParameter(values, "hsl", hslToggle.selected);
+            var nextColorize:Boolean = boolParameter(values, "colorize", colorize.selected);
+            var nextReplace:Boolean = boolParameter(values, "replace", replaceToggle.selected);
+            var nextShading:Boolean = boolParameter(values, "shading", shading.selected);
+            var nextMask:Boolean = boolParameter(values, "maskOnly", maskToggle.selected);
+            var nextShared:Boolean = boolParameter(values, "applyAllFrames", allVariants.selected);
+            var nextOverlay:Boolean = boolParameter(values, "showOverlay", showOverlay.selected);
+            var nextSource:String = colorParameter(values, "source", sourceColor.text);
+            var nextTarget:String = colorParameter(values, "target", targetColor.text);
+
+            if (changedGroup) { groupControl.value = nextGroup; changeGroup(); }
+            frameControl.value = nextFrame; direction = nextDirection; directionControl.value = nextDirection;
+            patternY.value = nextY; patternZ.value = nextZ; layerControl.value = nextLayer;
+            zoom = nextZoom; hue.value = nextHue; saturation.value = nextSat; lightness.value = nextLight;
+            tolerance.value = nextTolerance; hslToggle.selected = nextHsl; colorize.selected = nextColorize;
+            replaceToggle.selected = nextReplace; shading.selected = nextShading;
+            maskToggle.selected = nextMask; showOverlay.selected = nextOverlay;
+            sourceColor.text = nextSource; targetColor.text = nextTarget;
+            if (allVariants.selected != nextShared) { allVariants.selected = nextShared; shareSelection(); }
+            changeTexture();
+        }
+
+        private function selectFromMcp(values:Object):void
+        {
+            checkKeys(values, ["action", "x", "y", "endX", "endY", "size", "tolerance", "add"]);
+            var action:String = values.action;
+            if (["all", "clear", "invert", "wand", "brush", "erase", "rectangle"].indexOf(action) < 0)
+                throw new Error("Unknown Recolor selection action.");
+            var x:int = numberParameter(values, "x", 0, 0, imageWidth - 1);
+            var y:int = numberParameter(values, "y", 0, 0, imageHeight - 1);
+            var endX:int = numberParameter(values, "endX", x, 0, imageWidth - 1);
+            var endY:int = numberParameter(values, "endY", y, 0, imageHeight - 1);
+            var size:int = numberParameter(values, "size", 1, 1, 4);
+            var threshold:int = numberParameter(values, "tolerance", wandTolerance.value, 0, 100);
+            var add:Boolean = boolParameter(values, "add", false);
+            var mask:RecolorMask = selection(true);
+            if (action == "all" || action == "clear") mask.fill(action == "all");
+            else if (action == "invert") mask.invert();
+            else if (action == "wand") mask.wand(original, x, y, Math.round(threshold * 255 / 100), add);
+            else if (action == "rectangle") mask.rectangle(x, y, endX, endY);
+            else mask.stroke(x, y, endX, endY, size, action == "brush");
+            updatePreview();
         }
 
         private function save(createNew:Boolean):void
@@ -347,10 +539,25 @@
             </s:BorderContainer>
             <s:HGroup verticalAlign="middle" width="100%">
                 <s:Label text="Zoom"/>
-                <s:NumericStepper minimum="1" maximum="4" value="3" width="62" change="zoom = event.currentTarget.value"/>
+                <s:Button id="zoomOutButton" label="-" width="32" height="28" fontSize="18" fontWeight="bold"
+                    enabled="{zoom > 1}" click="setZoom(zoom - 1)"/>
+                <s:Label id="zoomLabel" text="{zoom + '×'}" width="32" textAlign="center"/>
+                <s:Button id="zoomInButton" label="+" width="32" height="28" fontSize="16" fontWeight="bold"
+                    enabled="{zoom &lt; 10}" click="setZoom(zoom + 1)"/>
+                <s:Button id="openMcpButton" label="MCP" click="openMcp()"/>
                 <s:Spacer width="100%"/>
-                <s:CheckBox id="showOverlay" selected="true" label="@Resource(key='recolor.overlay', bundle='strings')"/>
+                <s:CheckBox id="showOverlay" selected="true" change="recolorRevision++"
+                    label="@Resource(key='recolor.overlay', bundle='strings')"/>
             </s:HGroup>
+            <s:VGroup width="100%" gap="5" visible="{mcpVisible}" includeInLayout="{mcpVisible}">
+                <s:HGroup gap="5" enabled="{mcpReady}">
+                    <s:CheckBox id="mcpToggle" label="@Resource(key='recolor.enableMcp', bundle='strings')"
+                        change="controller.setEnabled(mcpToggle.selected)"/>
+                    <s:Button label="@Resource(key='studio.copyConfig', bundle='strings')" click="controller.copyConfiguration()"/>
+                    <s:Button label="@Resource(key='studio.copyToken', bundle='strings')" click="controller.copyToken()"/>
+                </s:HGroup>
+                <s:Label width="100%" text="{mcpStatus}" maxDisplayedLines="2"/>
+            </s:VGroup>
             <s:HGroup width="100%" gap="4" enabled="{maskToggle.selected}">
                 <s:ToggleButton label="@Resource(key='recolor.wand', bundle='strings')" selected="{tool == 'wand'}" click="tool = 'wand';"/>
                 <s:ToggleButton id="brushButton" label="@Resource(key='recolor.brush', bundle='strings')" selected="{tool == 'brush'}" click="tool = 'brush';"/>

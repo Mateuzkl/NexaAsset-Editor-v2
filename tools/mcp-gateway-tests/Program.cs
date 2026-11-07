@@ -3,6 +3,7 @@ using NexaAsset.Mcp;
 using NexaModern;
 
 if (args.Length > 0 && args[0] == "--live") { await GatewayTests.Live(); return; }
+if (args.Length > 0 && args[0] == "--live-recolor") { await GatewayTests.LiveRecolor(); return; }
 string root = args.Length == 0 ? Path.Combine(Path.GetTempPath(), "nexa-studio-tests-" + Guid.NewGuid().ToString("N")) : Path.GetFullPath(args[0]);
 Directory.CreateDirectory(root);
 byte[] rgba = new byte[4096];

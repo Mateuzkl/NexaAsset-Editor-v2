@@ -101,6 +101,8 @@ public sealed partial class StudioService(IEditorBridge bridge)
         if (method == "ui_audit" && local) return new { events = audit.ToArray() };
         if (method == "ui_reset" && local) { documents.Clear(); projectSession = null; RevokeProvider(); return new { reset = true }; }
         if (!local && !Enabled) throw new InvalidOperationException("MCP is disabled in the editor.");
+        if (method is "get_recolor_preview" or "adjust_recolor" or "select_recolor_area")
+            return await bridge.RequestAsync(method, args, ct);
         if (method is "get_project_info" or "get_capabilities") return await Project(ct);
         if (method is "list_assets" or "get_asset" or "get_sprite" or "get_frame")
         {

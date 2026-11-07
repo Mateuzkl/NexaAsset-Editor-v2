@@ -1135,6 +1135,16 @@ THE SOFTWARE.
             /** Only the private child-process pipe reaches this adapter. Remote tools cannot approve or save. */
             public function studioEditorRequest(method:String,args:Object,callback:Function):void {
                 if(!clientLoaded){callback(null,"Open a project first.");return;}
+                if (method == "get_recolor_preview" || method == "adjust_recolor" || method == "select_recolor_area")
+                {
+                    try
+                    {
+                        if (!_recolorWindow) throw new Error("Open Recolor and enable MCP in that window first.");
+                        callback(_recolorWindow.mcpRequest(method, args));
+                    }
+                    catch (recolorError:Error) { callback(null, recolorError.message); }
+                    return;
+                }
                 var sessionId:String=_studioProjectId;
                 if(method=="commit_art"){
                     if(locked||thingTypeEditor.changed||_nativeSaving){callback(null,"Finish the active editor operation and save inspector changes before applying art.");return;}
@@ -3641,6 +3651,13 @@ THE SOFTWARE.
 
                 var window:RecolorWindow = new RecolorWindow();
                 window.sourceData = data;
+                var editor:ObjectBuilder = this;
+                window.startMcpHandler = function():StudioController
+                {
+                    if (!studio) { studio = new StudioController(); studio.editor = editor; }
+                    studio.start();
+                    return studio;
+                };
                 window.saveHandler = function(options:Object, masks:Object, createNew:Boolean):void
                 {
                     sendCommand(new SaveRecolorCommand(request, data.id, data.category, revision, options, masks, createNew));
