@@ -3642,6 +3642,7 @@ package
             // A committed save must always be acknowledged, even if a refresh fails.
             try
             {
+                sendClientInfo();
                 if (createNew) syncItemsHelper(new <uint>[saved], category);
                 else if (otbLoaded && category == ThingCategory.ITEM)
                 {
@@ -3650,7 +3651,6 @@ package
                         item.spriteHash = _sprites.getSpriteHash(_things.getThingType(saved, category));
                     if (mapped && mapped.length) _items.invalidate();
                 }
-                sendClientInfo();
                 sendThingList(new <uint>[saved], category, true);
                 sendSpriteList(new <uint>[_sprites.spritesCount], true);
                 getThingCallback(saved, category);
@@ -3783,8 +3783,8 @@ package
 
         private function storageMutationHandler(event:StorageEvent):void
         {
-            _studioRevision++;
             if (_studioCommitting) _studioStorageChanged = true;
+            else _studioRevision++;
         }
 
         protected function thingsProgressHandler(event:ProgressEvent):void
