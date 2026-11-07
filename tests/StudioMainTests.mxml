@@ -8,6 +8,7 @@
         import flash.utils.*;
         import flash.display.*;
         import flash.geom.Matrix;
+        import flash.geom.Rectangle;
         import mx.events.FlexEvent;
         import mx.managers.PopUpManager;
         import nail.components.controls.Alert;
@@ -20,6 +21,7 @@
         private var started:int;
         private var phase:int=0;
         private var sdWindow:StableDiffusionWindow;
+        private var breathingWindow:BreathingWindow;
         private var mode:int=0;
         private var testRoot:File;
         private var gateway:File;
@@ -72,7 +74,42 @@
                     originalMax=clientInfo.maxOutfitId;
                     studio=new StudioController();studio.editor=this;studio.start(gateway);openPixelArtStudio();window=findWindow();check(window!=null,"Integrated Studio window missing");phase=2;
                 }else if(phase==2&&studio.ready){check(!window.snapshot&&!studio.hasUncommittedDrafts,"Opening Studio created a dirty draft");window.createDraft();phase=21;}
-                else if(phase==21&&window.snapshot){sdWindow=window.openStableDiffusion();check(sdWindow!=null,"Stable Diffusion window missing");phase=18;}
+                else if(phase==21&&window.snapshot){
+                    var body:Array=[];for(var py:int=4;py<30;py++)for(var px:int=8;px<24;px++)body.push({x:px,y:py,rgba:[70,80+py*2,90+px,255]});
+                    window.mutate("set_pixels",{pixels:body});phase=24;
+                }
+                else if(phase==24&&window.snapshot&&window.snapshot.document.documentRevision==1){
+                    window.canvas.selection=new Rectangle(5,2,24,26);
+                    breathingWindow=window.openBreathing();check(breathingWindow!=null&&breathingWindow.regionCount==1,"Manual breathing lost the captured canvas region");
+                    breathingWindow.manual.selected=true;breathingWindow.validateNow();
+                    var options:BitmapData=new BitmapData(breathingWindow.width,breathingWindow.height,false,0x101C28);options.draw(breathingWindow);
+                    var optionsFile:FileStream=new FileStream();try{optionsFile.open(testRoot.resolvePath(mode==0?"breathing-options-en.png":"breathing-options-pt.png"),FileMode.WRITE);optionsFile.writeBytes(options.encode(options.rect,new PNGEncoderOptions()));}finally{optionsFile.close();options.dispose();}
+                    check(breathingWindow.generateButton.y+breathingWindow.generateButton.height<breathingWindow.height,"Breathing options overflow");
+                    breathingWindow.generateButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));breathingWindow=null;phase=25;
+                }
+                else if(phase==25&&window.snapshot&&window.snapshot.document.frameCount==4){
+                    check(window.snapshot.document.documentRevision==2&&!window.canvas.selection,"Breathing did not use one edit/captured selection");
+                    check(clientInfo.maxOutfitId==originalMax,"Manual breathing changed the active project");
+                    window.sheetToggle.selected=true;window.sheetToggle.dispatchEvent(new Event(Event.CHANGE));phase=26;
+                }
+                else if(phase==26&&window.snapshot&&window.snapshot.sheet){
+                    var cells:Array=window.snapshot.sheet.cells;
+                    check(cells.length==4&&cells[0].rgba!=cells[2].rgba,"Manual breathing preview has no motion");
+                    capture(mode==0?"breathing-sheet-modern.png":"breathing-sheet-legacy.png");
+                    window.mutate("undo_edit");phase=27;
+                }
+                else if(phase==27&&window.snapshot&&window.snapshot.document.documentRevision==3){
+                    check(window.snapshot.document.frameCount==1,"Manual breathing undo was not one step");window.mutate("ui_redo");phase=28;
+                }
+                else if(phase==28&&window.snapshot&&window.snapshot.document.documentRevision==4){
+                    check(window.snapshot.document.frameCount==4,"Manual breathing redo lost phases");
+                    window.mutate("cancel_edit");phase=29;
+                }
+                else if(phase==29&&!window.snapshot){window.sheetToggle.selected=false;window.createDraft();phase=30;}
+                else if(phase==30&&window.snapshot){
+                    record("PASS: manual breathing options/region capture, four draft poses, atlas, one-step undo/redo and original preservation mode="+mode);
+                    sdWindow=window.openStableDiffusion();check(sdWindow!=null,"Stable Diffusion window missing");phase=18;
+                }
                 else if(phase==18&&sdWindow.report.length){
                     sdWindow.validateNow();check(sdWindow.targetLabel.indexOf("32×32")>=0,"SD target context missing");
                     check(sdWindow.endpoint.width>150&&sdWindow.prompt.height>=60&&sdWindow.height==640,"SD controls clipped");

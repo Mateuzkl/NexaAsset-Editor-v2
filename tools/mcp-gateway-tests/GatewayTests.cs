@@ -94,6 +94,19 @@ internal static class GatewayTests
         Console.WriteLine(JsonSerializer.Serialize(new { passed = true, state = "complete" }));
     }
 
+    public static async Task LiveRecolorPreview()
+    {
+        using var credentials=JsonDocument.Parse((await Console.In.ReadLineAsync())!);
+        await using var transport=Transport(credentials.RootElement.GetProperty("endpoint").GetString()!,credentials.RootElement.GetProperty("token").GetString()!);
+        await using var client=await McpClient.CreateAsync(transport);
+        var response=await client.CallToolAsync("nexa_get_recolor_preview",new Dictionary<string,object?>());
+        var preview=Result(response);
+        int width=preview.GetProperty("width").GetInt32(),height=preview.GetProperty("height").GetInt32();
+        Check(response.Content.OfType<ImageContentBlock>().Any(i=>i.MimeType=="image/png"),"Real preview PNG missing");
+        Check(Convert.FromBase64String(preview.GetProperty("argb").GetString()!).Length==width*height*4,"Real preview pixel length mismatch");
+        Console.WriteLine(JsonSerializer.Serialize(new{passed=true,width,height}));
+    }
+
     public static async Task Run()
     {
         string gateway = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../bin-debug/mcp-gateway/nexa-mcp-gateway.exe"));
@@ -144,6 +157,9 @@ internal static class GatewayTests
             await using var transport = Transport(endpoint, token); await using var client = await McpClient.CreateAsync(transport);
             var tools = await client.ListToolsAsync(); Check(tools.Count >= 20 && tools.All(t => !t.Name.Contains("save")), "Tool discovery/scopes");
             Check(new[] { "nexa_generate_stable_diffusion", "nexa_get_generation_status", "nexa_cancel_generation" }.All(name => tools.Any(t => t.Name == name)), "Stable Diffusion MCP discovery");
+            Check(tools.Any(t => t.Name == "nexa_generate_breathing"), "Breathing MCP discovery");
+            await BreathingGateway(client, session, revision);
+            Check(editorCommits == 0, "Breathing published an asset without local approval");
             var project = await Call(client, "nexa_get_project_info", new { }); Check(project.GetProperty("revision").GetInt64() == 9, "Editor bridge read");
             var spriteResponse = await client.CallToolAsync("nexa_get_sprite", new Dictionary<string, object?> { ["spriteId"] = 1 });
             Check(spriteResponse.Content.OfType<ImageContentBlock>().Any(i => i.MimeType == "image/png"), "MCP sprite image block missing");
@@ -192,6 +208,34 @@ internal static class GatewayTests
             await reader;
         }
     }
+    private static async Task BreathingGateway(McpClient client, string session, long revision)
+    {
+        var source=BreathingTests.Fixture(32,64,4);
+        byte[] atlas=new byte[128*64*4];
+        for(int d=0;d<4;d++)for(int y=0;y<64;y++)source.Frames[d].Layers[0].Rgba.AsSpan(y*32*4,32*4).CopyTo(atlas.AsSpan((y*128+d*32)*4));
+        var draft=await Call(client,"nexa_begin_edit",new{projectSessionId=session,expectedRevision=revision,width=32,height=64,category="outfit"});
+        string id=draft.GetProperty("editId").GetString()!;
+        var malformed=await client.CallToolAsync("nexa_generate_breathing",new Dictionary<string,object?>{["editId"]=id,["expectedDocumentRevision"]=0,["parameters"]=Array.Empty<object>()});
+        Check(malformed.IsError==true,"Non-object breathing parameters were silently defaulted");
+        await Call(client,"nexa_import_spritesheet",new{editId=id,expectedDocumentRevision=0,parameters=new{png=Convert.ToBase64String(Png.Encode(new(128,64,atlas))),cellWidth=32,cellHeight=64,directions=4,duration=100}});
+        var parameters=new{amplitude=1,regionMode="auto",durationsMs=new[]{500,300,500,300}};
+        var concurrent=await Task.WhenAll(Enumerable.Range(0,2).Select(_=>client.CallToolAsync("nexa_generate_breathing",new Dictionary<string,object?>{["editId"]=id,["expectedDocumentRevision"]=1,["parameters"]=parameters}).AsTask()));
+        Check(concurrent.Count(r=>r.IsError==true)==1&&concurrent.Single(r=>r.IsError==true).Content.OfType<TextContentBlock>().Any(t=>t.Text.Contains("DOCUMENT_CONFLICT")),"Concurrent breathing failed revision protection");
+        var sheet=await Call(client,"nexa_get_edit_sheet",new{editId=id});
+        BreathingGenerator.Generate(source,J(parameters));
+        Check(sheet.GetProperty("cells").GetArrayLength()==16,"Breathing MCP lost directions/phases");
+        for(int i=0;i<16;i++)Check(Convert.FromBase64String(sheet.GetProperty("cells")[i].GetProperty("rgba").GetString()!).AsSpan().SequenceEqual(source.Frames[i].Layers[0].Rgba),"HTTP breathing differed from the manual engine");
+        var preview=await client.CallToolAsync("nexa_get_edit_preview",new Dictionary<string,object?>{["editId"]=id,["frame"]=8});
+        Check(preview.Content.OfType<ImageContentBlock>().Any(),"Breathing MCP image preview missing");
+        await Call(client,"nexa_undo_edit",new{editId=id,expectedDocumentRevision=2,parameters=new{}});
+        Check((await Call(client,"nexa_get_edit_sheet",new{editId=id})).GetProperty("cells").GetArrayLength()==4,"MCP breathing undo split its transaction");
+        await Call(client,"nexa_generate_breathing",new{editId=id,expectedDocumentRevision=3,parameters});
+        var approval=await Call(client,"nexa_commit_edit",new{editId=id,expectedDocumentRevision=4,parameters=new{}});
+        Check(approval.GetProperty("status").GetString()=="awaiting-human-approval","MCP breathing bypassed approval");
+        await Call(client,"nexa_cancel_edit",new{editId=id});
+        Console.WriteLine("PASS: official MCP breathing discovery, 16 exact cells, preview PNG, concurrent revision checks, one-step undo and approval isolation");
+    }
+
     private static async Task StableDiffusionGateway(McpClient client, Func<object, Task> write, Func<string, string?, Task<JsonElement>> next, string session, long revision)
     {
         var probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0); probe.Start(); int port = ((IPEndPoint)probe.LocalEndpoint).Port; probe.Stop();

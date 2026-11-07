@@ -16,6 +16,11 @@ try {
     $jdk=@(Get-ChildItem -LiteralPath (Join-Path $tools 'java') -Directory)
     if($jdk.Count -ne 1){throw 'Expected one portable JDK for AIR integration tests.'}
     & (Join-Path $project 'tools/modern-helper/build.ps1')
+    New-Item -ItemType Directory -Path workerswfs -Force | Out-Null
+    & (Join-Path $jdk[0].FullName 'bin/java.exe') -Xmx2g ('-Dapplication.home='+$sdk) -jar (Join-Path $sdk 'lib/mxmlc.jar') '+configname=air' `
+        '-source-path=src' '-library-path+=libs' '-locale=en_US,es_ES,pt_BR' '-source-path+=locale/{locale}' '-debug=true' '-warnings=false' `
+        '-output=workerswfs/ObjectBuilderWorker.swf' 'src/ObjectBuilderWorker.as'
+    if($LASTEXITCODE -ne 0){throw 'Studio worker compilation failed.'}
     & (Join-Path $jdk[0].FullName 'bin/java.exe') -Xmx2g ('-Dapplication.home='+$sdk) -jar (Join-Path $sdk 'lib/mxmlc.jar') '+configname=air' `
         '-source-path=src' '-source-path+=tests' '-library-path+=libs' '-locale=en_US,es_ES,pt_BR' '-source-path+=locale/{locale}' '-debug=true' '-warnings=false' `
         ('-output='+ (Join-Path $project 'bin-tests/StudioMainTests.swf')) 'tests/StudioMainTests.mxml'

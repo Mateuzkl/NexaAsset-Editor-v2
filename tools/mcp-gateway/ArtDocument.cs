@@ -41,6 +41,7 @@ public sealed class ArtDocument
     public long Revision { get; private set; }
     public long StructureRevision { get; private set; }
     public bool TargetTransparency { get; set; } = true;
+    public bool TargetTiming { get; set; } = true;
     public bool ApprovalRequested { get; set; }
     public bool Committed { get; set; }
     public long ExportedRevision { get; private set; }
@@ -160,10 +161,11 @@ public sealed class ArtDocument
         int changed = 0;
         if (Reference?.Length == rgba.Length) for (int p = 0; p < rgba.Length; p += 4) { if (!rgba.AsSpan(p, 4).SequenceEqual(Reference.AsSpan(p, 4))) changed++; }
         else changed = State.Width * State.Height;
-        return new { document = Info(), sheet = includeSheet ? Sheet() : null, frame, duration = State.Frames[frame].Duration, rgba = Convert.ToBase64String(rgba), reference = Reference == null || Reference.Length != rgba.Length ? null : Convert.ToBase64String(Reference), sha256 = Convert.ToHexString(SHA256.HashData(rgba)), changedPixels = changed,
+        return new { document = Info(), sheet = includeSheet ? Sheet() : null, frame, duration = State.Frames[frame].Duration, timingCompatible = TargetTiming || State.Frames.All(f => f.Duration == 100), rgba = Convert.ToBase64String(rgba), reference = Reference == null || Reference.Length != rgba.Length ? null : Convert.ToBase64String(Reference), sha256 = Convert.ToHexString(SHA256.HashData(rgba)), changedPixels = changed,
             layers = State.Frames[frame].Layers.Select((l, i) => new { index = i, l.Name, l.Visible, l.Locked, l.Opacity, rgba = includeLayers ? Convert.ToBase64String(l.Rgba) : null }).ToArray(),
             timeline = State.Frames.Select((f, i) => new { cell = i, time = i / State.Directions, direction = i % State.Directions, f.Duration }).ToArray(),
-            warnings = new[] { "Apply creates a NEW asset with one native raster layer. Originals and outfit masks are not replaced. Save/Compile remains a separate editor action.", TargetTransparency ? "Target supports RGBA. Editable layer bytes remain in .nexaart." : "RGB SPR target: nonzero alpha becomes opaque; alpha-zero RGB is not retained by SPR. Preserve .nexaart for exact editable pixels." } };
+            warnings = new[] { "Apply creates a NEW asset with one native raster layer. Originals and outfit masks are not replaced. Save/Compile remains a separate editor action.", TargetTransparency ? "Target supports RGBA. Editable layer bytes remain in .nexaart." : "RGB SPR target: nonzero alpha becomes opaque; alpha-zero RGB is not retained by SPR. Preserve .nexaart for exact editable pixels.",
+                !TargetTiming && State.Frames.Any(f => f.Duration != 100) ? "This target cannot store variable phase timings. Preview/export is available; Apply requires an explicit 100 ms profile. In-game idle playback is not guaranteed." : "Frame generation does not guarantee in-game idle playback." } };
     }
     /// <summary>Return all flattened cells in time/direction order for MCP and local atlas review.</summary>
     public object Sheet()

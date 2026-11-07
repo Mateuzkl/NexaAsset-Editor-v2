@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mg:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark"
+    xmlns:mg="library://ns.mignari.com/mg" width="510" height="420"
+    title="@Resource(key='studio.breathing', bundle='strings')" close="generateHandler=null">
+    <fx:Metadata>[ResourceBundle("strings")]</fx:Metadata>
+    <fx:Script><![CDATA[
+        public var generateHandler:Function;
+        public var regions:Array = [];
+        [Bindable] public var directionCount:int = 1;
+        [Bindable] public var regionCount:int = 0;
+        [Bindable] private var errorText:String = "";
+        private function tr(key:String):String {return resourceManager.getString("strings","studio."+key);}
+        private function generate():void {
+            if(manual.selected && regions.length != directionCount){errorText=tr("breathingNeedRegions");return;}
+            var timing:Array=legacyTiming.selected?[100,100,100,100]:[int(neutral.value),int(inhale.value),int(expanded.value),int(exhale.value)];
+            var handler:Function=generateHandler;
+            var parameters:Object={amplitude:int(amplitude.value),durationsMs:timing,regionMode:manual.selected?"rectangle":"auto",regions:manual.selected?regions:[]};
+            close();if(handler!=null)handler(parameters);
+        }
+    ]]></fx:Script>
+    <s:VGroup left="14" right="14" top="14" bottom="14" gap="10">
+        <s:Label width="100%" text="{tr('breathingHint')}" maxDisplayedLines="3"/>
+        <s:HGroup verticalAlign="middle"><s:Label text="{tr('breathingAmplitude')}"/><s:NumericStepper id="amplitude" minimum="1" maximum="2" value="1" width="65"/><s:Label text="px"/></s:HGroup>
+        <s:CheckBox id="manual" label="{tr('breathingManual')}" toolTip="{tr('breathingRegionHint')}"/>
+        <s:Label text="{tr('breathingRegions') + ': ' + regionCount + ' / ' + directionCount}"/>
+        <s:Label text="{tr('breathingNeutral') + ' / ' + tr('breathingInhale') + ' / ' + tr('breathingExpanded') + ' / ' + tr('breathingExhale')}"/>
+        <s:HGroup verticalAlign="middle" enabled="{!legacyTiming.selected}">
+            <s:Label text="ms"/>
+            <s:NumericStepper id="neutral" minimum="10" maximum="10000" value="500" width="88" toolTip="{tr('breathingNeutral')}"/>
+            <s:NumericStepper id="inhale" minimum="10" maximum="10000" value="300" width="88" toolTip="{tr('breathingInhale')}"/>
+            <s:NumericStepper id="expanded" minimum="10" maximum="10000" value="500" width="88" toolTip="{tr('breathingExpanded')}"/>
+            <s:NumericStepper id="exhale" minimum="10" maximum="10000" value="300" width="88" toolTip="{tr('breathingExhale')}"/>
+        </s:HGroup>
+        <s:CheckBox id="legacyTiming" label="{tr('breathingLegacy')}"/>
+        <s:Label width="100%" text="{tr('breathingCompatibility')}" maxDisplayedLines="3"/>
+        <s:Label width="100%" text="{errorText}"/>
+        <s:HGroup width="100%"><s:Spacer width="100%"/><s:Button id="generateButton" label="{tr('breathingGenerate')}" click="generate()"/><s:Button label="{tr('close')}" click="close()"/></s:HGroup>
+    </s:VGroup>
+</mg:TitleWindow>

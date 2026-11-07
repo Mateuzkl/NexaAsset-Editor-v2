@@ -123,6 +123,7 @@ public sealed partial class StudioService(IEditorBridge bridge)
                 pixels = ArtDocument.FromArgb(Convert.FromBase64String(sprite.GetProperty("argb").GetString()!));
             }
             var created = ArtDocument.Create(projectSession!, info.GetProperty("revision").GetInt64(), w, h, pixels, S(args, "category", "item"), S(args, "name")); if (created.State.Category == "outfit") ArtDocument.SetAnimation(created.State, 1, 4, null); created.TargetTransparency = !info.TryGetProperty("transparency", out var alpha) || alpha.GetBoolean(); documents.Add(created.Id, created);
+            created.TargetTiming = SupportsTiming(info);
             await Changed(created, true); return created.Info();
         }
         var doc = Document(S(args, "editId"));
@@ -162,6 +163,8 @@ public sealed partial class StudioService(IEditorBridge bridge)
         }
         if (method == "ui_apply" && local)
         {
+            if (!SupportsTiming(info) && doc.State.Frames.Any(f => f.Duration != 100))
+                throw new InvalidOperationException("This target cannot store phase timings. Use an explicit 100 ms profile or export the draft; no asset was inserted.");
             if (info.GetProperty("revision").GetInt64() != doc.BaseRevision) throw new InvalidOperationException("PROJECT_CONFLICT: the editor changed since this draft began. Keep/export this draft and begin again from the current project.");
             if (args.TryGetProperty("category", out var target) && target.GetString() != doc.State.Category) throw new InvalidDataException("CATEGORY_CONFLICT: update the draft category and review it before applying.");
             var packet = JsonSerializer.SerializeToUtf8Bytes(doc.CommitPacket(), ArtDocument.Json);
@@ -229,6 +232,9 @@ public sealed partial class StudioService(IEditorBridge bridge)
                     foreach (var offset in offsets) foreach (var original in originals) state.Frames.Add(ArtDocument.CopyFrame(original));
                     for (int index = 0; index < state.Frames.Count; index++) for (int l = 0; l < state.Frames[index].Layers.Count; l++) ArtDocument.Transform(state, index, l, "offset", offsets[index / state.Directions][0], offsets[index / state.Directions][1]);
                     break;
+                case "generate_breathing":
+                    BreathingGenerator.Generate(state, args, ct);
+                    break;
                 case "import_spritesheet":
                     var sheet = NativePng.ReadArtSheet(Convert.FromBase64String(S(args, "png")));
                     int cw = I(args, "cellWidth", state.Width), ch = I(args, "cellHeight", state.Height), dirs = I(args, "directions", 1), ms = I(args, "duration", 100);
@@ -260,4 +266,6 @@ public sealed partial class StudioService(IEditorBridge bridge)
         await Changed(doc); return doc.Info();
     }
     private Task Changed(ArtDocument doc, bool created = false) => bridge.EmitAsync(new { type = "changed", created, editId = doc.Id, documentRevision = doc.Revision, category = doc.State.Category, name = doc.State.Name, approvalRequested = doc.ApprovalRequested, committed = doc.Committed, dirty = doc.Dirty, exportedRevision = doc.ExportedRevision });
+    private static bool SupportsTiming(JsonElement info) => !info.TryGetProperty("capabilities", out var capabilities)
+        || !capabilities.TryGetProperty("timing", out var timing) || timing.GetBoolean();
 }

@@ -1,5 +1,7 @@
 package {
     import flash.filesystem.File;
+    import flash.filesystem.FileStream;
+    import flash.filesystem.FileMode;
     import flash.utils.ByteArray;
     import mx.utils.UIDUtil;
     import ob.settings.ObjectBuilderSettings;
@@ -10,6 +12,7 @@ package {
     import otlib.animation.FrameGroup;
     public class LegacyStudioTests {
         public static function run(folder:File):void {
+            breathingLegacy(folder);
             var version:Version=VersionStorage.getInstance().getByValueString("10.98");
             var features:ClientFeatures=new ClientFeatures(true,true,true,true);
             var things:ThingTypeStorage=new ThingTypeStorage(new ObjectBuilderSettings()),sprites:SpriteStorage=new SpriteStorage();
@@ -45,5 +48,43 @@ package {
             trace("PASS: legacy Studio 64x64, 4 directions x 3 frames, idle/walk groups, exact tiles/alpha, timings, rejected-batch integrity, idempotence and Compile/reopen");
         }
         private static function check(value:Boolean,message:String):void {if(!value)throw new Error(message);}
+        /** Read actual C# generator output through the legacy adapter, compressor and DAT/SPR reader. */
+        private static function breathingLegacy(folder:File):void {
+            var input:FileStream=new FileStream();
+            input.open(folder.resolvePath("breathing-legacy-variable.json"),FileMode.READ);
+            var variable:Object=JSON.parse(input.readUTFBytes(input.bytesAvailable));input.close();
+            input.open(folder.resolvePath("breathing-legacy-100.json"),FileMode.READ);
+            var compatible:Object=JSON.parse(input.readUTFBytes(input.bytesAvailable));input.close();
+            var version:Version=VersionStorage.getInstance().getByValueString("8.60 v1");
+            var features:ClientFeatures=new ClientFeatures();
+            var things:ThingTypeStorage=new ThingTypeStorage(new ObjectBuilderSettings()),sprites:SpriteStorage=new SpriteStorage();
+            things.createNew(version,features);sprites.createNew(version,features);
+            var adapter:LegacyStudioAdapter=new LegacyStudioAdapter(things,sprites,features);
+            var before:uint=sprites.spritesCount;
+            try {adapter.execute("commit_art",variable,8);throw new Error("8.60 accepted variable breathing timings");}
+            catch(error:Error){check(error.message.indexOf("cannot store phase timings")>=0,"Wrong legacy breathing error: "+error.message);}
+            check(sprites.spritesCount==before,"Rejected breathing inserted partial legacy sprites");
+            var result:Object=adapter.execute("commit_art",compatible,8);
+            var dat:File=folder.resolvePath("breathing-860.dat"),spr:File=folder.resolvePath("breathing-860.spr");
+            check(things.compile(dat,version,features)&&sprites.compile(spr,version,features),"Breathing legacy compile failed");
+            var reopened:ThingTypeStorage=new ThingTypeStorage(new ObjectBuilderSettings()),pixels:SpriteStorage=new SpriteStorage();
+            reopened.load(dat,version,features);pixels.load(spr,version,features);
+            var group:FrameGroup=reopened.getThingType(result.selected,"outfit").getFrameGroup(0);
+            check(group.frames==4&&group.patternX==4&&group.width==2&&group.height==2,"Breathing 8.60 geometry/direction order changed");
+            for(var c:int=0;c<16;c++){
+                var rgba:ByteArray=StudioPixels.decode(compatible.frames[c].rgba);
+                for(var tileIndex:int=0;tileIndex<4;tileIndex++){
+                    var tile:ByteArray=pixels.getPixelsStrict(group.spriteIndex[c*4+tileIndex]);
+                    var ox:int=(1-tileIndex%2)*32,oy:int=(1-int(tileIndex/2))*32;
+                    for(var y:int=0;y<32;y++)for(var x:int=0;x<32;x++){
+                        var a:int=((oy+y)*64+ox+x)*4,b:int=(y*32+x)*4;
+                        check(tile[b]==(rgba[a+3]?255:0),"8.60 breathing alpha conversion changed");
+                        if(rgba[a+3])check(tile[b+1]==rgba[a]&&tile[b+2]==rgba[a+1]&&tile[b+3]==rgba[a+2],"Breathing bottom-right tile order or RGB changed");
+                    }tile.clear();
+                }rgba.clear();
+            }
+            reopened.unload();pixels.unload();things.unload();sprites.unload();
+            trace("PASS: C# breathing -> 8.60 adapter, variable timing rejection, explicit 100 ms, 64x64/4 directions/4 phases, bottom-right tiles and Compile/reopen (no client runtime claim)");
+        }
     }
 }

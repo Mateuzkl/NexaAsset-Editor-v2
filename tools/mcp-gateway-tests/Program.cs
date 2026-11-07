@@ -4,6 +4,7 @@ using NexaModern;
 
 if (args.Length > 0 && args[0] == "--live") { await GatewayTests.Live(); return; }
 if (args.Length > 0 && args[0] == "--live-recolor") { await GatewayTests.LiveRecolor(); return; }
+if (args.Length > 0 && args[0] == "--live-recolor-preview") { await GatewayTests.LiveRecolorPreview(); return; }
 string root = args.Length == 0 ? Path.Combine(Path.GetTempPath(), "nexa-studio-tests-" + Guid.NewGuid().ToString("N")) : Path.GetFullPath(args[0]);
 Directory.CreateDirectory(root);
 byte[] rgba = new byte[4096];
@@ -35,6 +36,7 @@ NativeArtTests.Run(root);
 Check(!JsonSerializer.SerializeToElement(ArtDocument.Create("close-regression", 0, 32, 32).Info(), ArtDocument.Json).GetProperty("dirty").GetBoolean(), "Untouched revision-zero draft blocks closing the editor");
 await DraftLifecycleTests.Run();
 await RecolorGatewayTests.Run();
+await BreathingTests.Run(root);
 await ProviderTests.Run();
 await StableDiffusionTests.Run();
 await StudioRegressionTests.Run();
