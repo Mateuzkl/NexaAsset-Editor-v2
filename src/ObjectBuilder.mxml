@@ -36,7 +36,6 @@ THE SOFTWARE.
     fontSize="12"
     showStatusBar="false"
     visible="false"
-    backgroundColor="0x0B141E"
     invoke="applicationInvokeHandler(event)"
     preinitialize="applicationPreinitializeHandler(event)"
     creationComplete="creationCompleteHandler(event)"
@@ -51,6 +50,7 @@ THE SOFTWARE.
 
     <fx:Script>
         <![CDATA[
+            import ob.ui.NexaTheme;
             import com.mignari.animator.AnimationEditor;
             import ob.components.ReadableProgressWidget;
             import ob.ui.NexaUiEvent;
@@ -894,6 +894,7 @@ THE SOFTWARE.
                 var window:PreferencesWindow = new PreferencesWindow();
                 window.settings = _settings;
                 window.otbLoaded = _clientInfo && _clientInfo.otbLoaded;
+                var previousTheme:String = _settings.theme;
                 window.addEventListener(Event.CLOSE, closeHandler);
                 window.open(this);
             
@@ -903,6 +904,11 @@ THE SOFTWARE.
             
                     if (window.detail == DialogDetail.OK)
                     {
+                        if (_settings.theme != previousTheme)
+                        {
+                            NexaTheme.apply(_settings.theme, styleManager);
+                            saveSettings();
+                        }
                         thingStepper.amount = _settings.objectsListAmount;
                         spriteStepper.amount = _settings.spritesListAmount;
                         thingList.clipboardAction = _settings.thingListClipboardAction;
@@ -2051,6 +2057,7 @@ THE SOFTWARE.
             
                 Resources.locale = _settings.getLanguage()[0];
                 resourceManager.localeChain = _settings.getLanguage();
+                NexaTheme.apply(_settings.theme, styleManager);
             
                 thingStepper.lastDisplayedIdCallback = getLastDisplayedThingId;
                 thingStepper.firstDisplayedIdCallback = getFirstDisplayedThingId;
@@ -5263,7 +5270,7 @@ THE SOFTWARE.
                                 height="100%"
                                 fontSize="11"
                                 borderAlpha="0"
-                                contentBackgroundColor="0x16232F"
+                                contentBackgroundColor="{NexaTheme.palette.panel}"
                                 horizontalScrollPolicy="off"
                                 doubleClickEnabled="true"
                                 allowMultipleSelection="true"
@@ -5309,7 +5316,7 @@ THE SOFTWARE.
                                     height="100%"
                                     fontSize="11"
                                     borderAlpha="0"
-                                    contentBackgroundColor="0x16232F"
+                                    contentBackgroundColor="{NexaTheme.palette.panel}"
                                     horizontalScrollPolicy="off"
                                     doubleClickEnabled="true"
                                     allowMultipleSelection="true"
@@ -5342,7 +5349,7 @@ THE SOFTWARE.
                                 height="100%"
                                 fontSize="11"
                                 borderAlpha="0"
-                                contentBackgroundColor="0x16232F"
+                                contentBackgroundColor="{NexaTheme.palette.panel}"
                                 horizontalScrollPolicy="off"
                                 doubleClickEnabled="true"
                                 allowMultipleSelection="true"
@@ -5457,8 +5464,8 @@ THE SOFTWARE.
                 </s:BorderContainer>
 
                 <s:BorderContainer width="100%"
-                    backgroundColor="0x111D2A"
-                    borderColor="0x2C3C4D">
+                    backgroundColor="{NexaTheme.palette.toolbar}"
+                    borderColor="{NexaTheme.palette.border}">
                     <s:layout>
                         <s:HorizontalLayout horizontalAlign="right"
                             verticalAlign="middle"
@@ -5521,7 +5528,7 @@ THE SOFTWARE.
                                 dragEnabled="true"
                                 fontSize="11"
                                 borderAlpha="0"
-                                contentBackgroundColor="0x16232F"
+                                contentBackgroundColor="{NexaTheme.palette.panel}"
                                 requireSelection="true"
                                 change="spritesListChangeHandler(event)"
                                 copy="onCopySprite()"
@@ -5555,7 +5562,7 @@ THE SOFTWARE.
                                     allowMultipleSelection="true"
                                     dragEnabled="true"
                                     borderAlpha="0"
-                                    contentBackgroundColor="0x16232F"
+                                    contentBackgroundColor="{NexaTheme.palette.panel}"
                                     itemRenderer="otlib.components.renders.SpriteGridRenderer"
                                     change="spritesListChangeHandler(event)"
                                     copy="onCopySprite()"
@@ -5644,12 +5651,12 @@ THE SOFTWARE.
             dataProvider="{_logs}"
             clear="logPanelClearHandler(event)"/>
     </mx:VDividedBox>
-    <s:BorderContainer width="100%" height="26" backgroundColor="0x0A1520" borderColor="0x2C3C4D">
+    <s:BorderContainer width="100%" height="26" backgroundColor="{NexaTheme.palette.status}" borderColor="{NexaTheme.palette.border}">
         <s:HGroup left="12" right="12" top="0" bottom="0" verticalAlign="middle" gap="12">
-            <s:Label id="statusLabel" text="{resourceManager.getString('strings', 'nexa.ready')}" fontSize="11" color="0xADC0D4"/>
+            <s:Label id="statusLabel" text="{resourceManager.getString('strings', 'nexa.ready')}" fontSize="11" color="{NexaTheme.palette.secondary}"/>
             <s:Spacer width="100%"/>
-            <s:Label id="documentLabel" fontSize="11" color="0xADC0D4" maxDisplayedLines="1"/>
-            <s:Label text="NexaAsset Editor v2" fontSize="11" color="0x8498AC"/>
+            <s:Label id="documentLabel" fontSize="11" color="{NexaTheme.palette.secondary}" maxDisplayedLines="1"/>
+            <s:Label text="NexaAsset Editor v2" fontSize="11" color="{NexaTheme.palette.muted}"/>
         </s:HGroup>
     </s:BorderContainer>
     </s:VGroup>

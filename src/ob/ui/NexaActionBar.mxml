@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <s:BorderContainer xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark"
-    height="50" backgroundColor="0x111D2A" borderColor="0x2C3C4D">
+    height="50" styleName="nexaToolbarSurface">
     <fx:Metadata>[Event(name="nexaAction", type="ob.ui.NexaUiEvent")][ResourceBundle("strings")]</fx:Metadata>
     <fx:Script><![CDATA[
+        import ob.ui.NexaTheme;
         import ob.ui.NexaIcons;
         import ob.ui.NexaUiEvent;
         [Bindable] public var loaded:Boolean = false;
@@ -23,7 +24,7 @@
         <s:Button id="exportButton" height="36" minWidth="96" label="{resourceManager.getString('strings','export')}"
             toolTip="{resourceManager.getString('strings','exportObject')}" icon="{NexaIcons.EXPORT}" enabled="{loaded &amp;&amp; hasSelection &amp;&amp; !readOnly}" click="act('export')"/>
         <s:Button id="nativeConvertButton" height="36" label="Convert DAT/SPR…" visible="{nativeModern}" includeInLayout="{nativeModern}" enabled="{loaded}" click="act('convertModern')"/>
-        <s:Rect width="1" height="24"><s:fill><s:SolidColor color="0x2C3C4D"/></s:fill></s:Rect>
+        <s:Rect width="1" height="24"><s:fill><s:SolidColor color="{NexaTheme.palette.border}"/></s:fill></s:Rect>
         <s:Button id="addButton" height="36" minWidth="116" label="{resourceManager.getString('strings','nexa.addObject')}"
             toolTip="{addButton.label}" icon="{NexaIcons.ADD}" enabled="{loaded &amp;&amp; !readOnly}" click="act('add')"/>
         <s:Button id="duplicateButton" height="36" minWidth="108" label="{resourceManager.getString('strings','duplicate')}"

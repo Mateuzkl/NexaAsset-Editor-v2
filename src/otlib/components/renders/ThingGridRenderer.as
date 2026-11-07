@@ -70,13 +70,6 @@ package otlib.components.renders
         private var _border:Rect;
         private var _imageBackground:Rect;
 
-        // Colors
-        private static const COLOR_NORMAL:uint = NexaTheme.PANEL_ALT;
-        private static const COLOR_HOVERED:uint = NexaTheme.RAISED;
-        private static const COLOR_SELECTED:uint = NexaTheme.SELECTED;
-        private static const COLOR_BORDER:uint = NexaTheme.BORDER;
-        private static const COLOR_IMAGE_BG:uint = NexaTheme.INPUT;
-
         // Layout: outer cell padding around icon (4px sides, 3px top + 12px label-area below)
         public static const OUTER_WIDTH_PADDING:uint = 10;
         public static const OUTER_HEIGHT_PADDING:uint = 17;
@@ -139,7 +132,7 @@ package otlib.components.renders
             _fill.right = 1;
             _fill.top = 1;
             _fill.bottom = 1;
-            _fill.fill = new SolidColor(COLOR_NORMAL);
+            _fill.fill = new SolidColor(NexaTheme.palette.surface);
             addElement(_fill);
 
             // 2. Border
@@ -148,7 +141,7 @@ package otlib.components.renders
             _border.right = 1;
             _border.top = 0;
             _border.bottom = 0;
-            _border.stroke = new SolidColorStroke(COLOR_BORDER, 1);
+            _border.stroke = new SolidColorStroke(NexaTheme.palette.border, 1);
             addElement(_border);
 
             // 3. Image Background
@@ -157,8 +150,8 @@ package otlib.components.renders
             _imageBackground.top = 3;
             _imageBackground.width = _iconSize + IMAGE_BG_PADDING;
             _imageBackground.height = _iconSize + IMAGE_BG_PADDING;
-            _imageBackground.fill = new SolidColor(COLOR_IMAGE_BG);
-            _imageBackground.stroke = new SolidColorStroke(COLOR_BORDER);
+            _imageBackground.fill = new SolidColor(NexaTheme.palette.input);
+            _imageBackground.stroke = new SolidColorStroke(NexaTheme.palette.border);
             addElement(_imageBackground);
 
             // 4. Bitmap Image
@@ -219,23 +212,35 @@ package otlib.components.renders
             invalidateDisplayList();
         }
 
+        override public function styleChanged(styleProp:String):void
+        {
+            super.styleChanged(styleProp);
+            if (!styleProp)
+                invalidateDisplayList();
+        }
+
         override protected function updateDisplayList(unscaledWidth:Number, unscaledHeight:Number):void
         {
             super.updateDisplayList(unscaledWidth, unscaledHeight);
 
             // Update background color based on state
-            var color:uint = COLOR_NORMAL;
+            var color:uint = NexaTheme.palette.surface;
             if (selected)
-                color = COLOR_SELECTED;
+                color = NexaTheme.palette.selected;
             else if (_hovered)
-                color = COLOR_HOVERED;
+                color = NexaTheme.palette.hover;
 
             if (_fill && _fill.fill is SolidColor)
             {
                 SolidColor(_fill.fill).color = color;
             }
             if (_border && _border.stroke is SolidColorStroke)
-                SolidColorStroke(_border.stroke).color = selected ? NexaTheme.ACCENT : COLOR_BORDER;
+                SolidColorStroke(_border.stroke).color = selected ? NexaTheme.palette.accent : NexaTheme.palette.border;
+            if (_imageBackground)
+            {
+                SolidColor(_imageBackground.fill).color = NexaTheme.palette.input;
+                SolidColorStroke(_imageBackground.stroke).color = NexaTheme.palette.border;
+            }
         }
 
         override public function set data(value:Object):void

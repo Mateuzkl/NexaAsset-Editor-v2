@@ -28,12 +28,13 @@ THE SOFTWARE.
     minWidth="550"
     minHeight="500"
     showStatusBar="false"
-    backgroundColor="0x111D2A"
+    styleName="nexaToolbarSurface"
     fontSize="11"
     title="@Resource(key='error', bundle='strings')">
 
     <fx:Script>
         <![CDATA[
+            import ob.ui.NexaTheme;
             import nail.utils.Descriptor;
             import nail.utils.StringUtil;
             import nail.utils.isNullOrEmpty;
@@ -87,10 +88,10 @@ THE SOFTWARE.
         height="100%"
         text="{message}"
         editable="false"
-        color="0xF0F5FB"
+        color="{NexaTheme.palette.text}"
         fontSize="12"
-        focusedTextSelectionColor="0x193D55"
-        contentBackgroundColor="0x101C29"
+        focusedTextSelectionColor="{NexaTheme.palette.selected}"
+        contentBackgroundColor="{NexaTheme.palette.input}"
         lineBreak="explicit"/>
 
     <nail:ShadowLine width="100%"/>

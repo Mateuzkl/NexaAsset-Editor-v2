@@ -31,7 +31,7 @@ THE SOFTWARE.
     minWidth="600"
     minHeight="400"
     fontSize="11"
-    backgroundColor="0x111D2A"
+    styleName="nexaToolbarSurface"
     showStatusBar="false"
     title="Slicer"
     creationComplete="creationCompleteHandler(event)"
@@ -43,6 +43,7 @@ THE SOFTWARE.
 
     <fx:Script>
         <![CDATA[
+            import ob.ui.NexaTheme;
             import com.mignari.workers.IWorkerCommunicator;
             
             import mx.collections.ArrayCollection;
@@ -714,14 +715,14 @@ THE SOFTWARE.
         <!-- highlight -->
         <s:Rect left="-1" right="-1" top="1" bottom="0">
             <s:stroke>
-                <s:SolidColorStroke color="0x3B5368"/>
+                <s:SolidColorStroke color="{NexaTheme.palette.strongBorder}"/>
             </s:stroke>
         </s:Rect>
 
         <!-- border -->
         <s:Rect left="-1" right="-1" top="0" bottom="0">
             <s:stroke>
-                <s:SolidColorStroke color="0x2C3C4D"/>
+                <s:SolidColorStroke color="{NexaTheme.palette.border}"/>
             </s:stroke>
         </s:Rect>
 
@@ -910,7 +911,7 @@ THE SOFTWARE.
                 height="100%"
                 mouseChildren="false"
                 mouseEnabled="false"
-                lineColor="0x3B5368"/>
+                lineColor="{NexaTheme.palette.strongBorder}"/>
 
             <s:Scroller left="15"
                 right="0"
@@ -956,7 +957,7 @@ THE SOFTWARE.
                 <s:List id="spritePartList"
                     width="100%"
                     height="100%"
-                    contentBackgroundColor="0x16232F"
+                    contentBackgroundColor="{NexaTheme.palette.panel}"
                     borderVisible="false"
                     itemRenderer="otlib.components.renders.BitmapListRenderer"/>
             </nail:GroupBox>

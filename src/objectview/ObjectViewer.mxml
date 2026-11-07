@@ -31,13 +31,14 @@ THE SOFTWARE.
     minHeight="400"
     fontSize="11"
     showStatusBar="false"
-    backgroundColor="0x111D2A"
+    styleName="nexaToolbarSurface"
     title="@Resource(key='objectViewer', bundle='strings')"
     creationComplete="creationCompleteHandler(event)"
     closing="closingHandler(event)">
 
     <fx:Script>
         <![CDATA[
+            import ob.ui.NexaTheme;
             import com.mignari.utils.FileUtil;
             import com.mignari.utils.WindowUtil;
             import com.mignari.workers.IWorkerCommunicator;
@@ -550,14 +551,14 @@ THE SOFTWARE.
         <!-- highlight -->
         <s:Rect left="-1" right="-1" top="1" bottom="0">
             <s:stroke>
-                <s:SolidColorStroke color="0x3B5368"/>
+                <s:SolidColorStroke color="{NexaTheme.palette.strongBorder}"/>
             </s:stroke>
         </s:Rect>
 
         <!-- border -->
         <s:Rect left="-1" right="-1" top="0" bottom="0">
             <s:stroke>
-                <s:SolidColorStroke color="0x2C3C4D"/>
+                <s:SolidColorStroke color="{NexaTheme.palette.border}"/>
             </s:stroke>
         </s:Rect>
 

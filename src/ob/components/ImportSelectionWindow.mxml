@@ -36,6 +36,7 @@ THE SOFTWARE.
 
     <fx:Script>
         <![CDATA[
+            import ob.ui.NexaTheme;
             import com.mignari.utils.DialogDetail;
 
             import flash.filesystem.File;
@@ -222,10 +223,10 @@ THE SOFTWARE.
             dataProvider="{_fileList}"
             labelField="name"
             borderAlpha="0"
-            contentBackgroundColor="0x16232F"/>
+            contentBackgroundColor="{NexaTheme.palette.panel}"/>
     </s:VGroup>
 
-    <s:BorderContainer width="100%" backgroundColor="0x111D2A" borderColor="0x2C3C4D">
+    <s:BorderContainer width="100%" styleName="nexaToolbarSurface">
         <s:layout>
             <s:HorizontalLayout gap="10" padding="10" verticalAlign="middle" horizontalAlign="right"/>
         </s:layout>
