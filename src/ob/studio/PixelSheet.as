@@ -7,6 +7,7 @@ package ob.studio {
     import flash.text.TextFormat;
     import flash.utils.ByteArray;
     import mx.core.UIComponent;
+    import ob.ui.NexaTheme;
 
     /** Read-only atlas review. Clicking a cell opens its exact time/direction for painting. */
     [Event(name="cellSelected",type="flash.events.Event")]
@@ -37,12 +38,40 @@ package ob.studio {
                 try {for(var at:int=0;at<raw.length;at+=4)surface.setPixel32(int(at/4)%cellWidth,int(at/4/cellWidth),(uint(raw[at+3])<<24)|(uint(raw[at])<<16)|(uint(raw[at+1])<<8)|uint(raw[at+2]));}
                 finally {raw.clear();}
                 bitmaps.push(surface);var view:Bitmap=new Bitmap(surface);view.smoothing=false;view.scaleX=view.scaleY=zoom;view.x=int(i%columns)*pitchX;view.y=24+int(i/columns)*pitchY;
-                for(var y:int=0;y<cellHeight;y+=4)for(var x:int=0;x<cellWidth;x+=4){graphics.beginFill(((x/4+y/4)%2)?0x263746:0x172633);graphics.drawRect(view.x+x*zoom,view.y+y*zoom,4*zoom,4*zoom);graphics.endFill();}
                 addChild(view);label("T"+(sheet.cells[i].time+1)+" · "+sheet.cells[i].duration+"ms",view.x,view.y+cellHeight*zoom+1);
             }
-            addChild(highlight);drawSelection();invalidateDisplayList();
+            addChild(highlight);redrawTheme();invalidateDisplayList();
         }
-        private function label(value:String,x:int,y:int):void {var text:TextField=new TextField();text.defaultTextFormat=new TextFormat("Segoe UI",11,0xADC0D4);text.text=value;text.width=pitchX;text.height=18;text.x=x;text.y=y;text.selectable=false;text.mouseEnabled=false;addChild(text);}
+        private function label(value:String,x:int,y:int):void {var text:TextField=new TextField();text.defaultTextFormat=new TextFormat("Segoe UI",11,NexaTheme.palette.secondary);text.text=value;text.width=pitchX;text.height=18;text.x=x;text.y=y;text.selectable=false;text.mouseEnabled=false;addChild(text);}
+
+        override public function styleChanged(styleProp:String):void {
+            super.styleChanged(styleProp);
+            if (!styleProp && count) redrawTheme();
+        }
+
+        private function redrawTheme():void {
+            graphics.clear();
+            var dark:uint = NexaTheme.palette.checkerDark;
+            var light:uint = NexaTheme.palette.checkerLight;
+            for (var i:int = 0; i < count; i++) {
+                var left:int = (i % columns) * pitchX;
+                var top:int = 24 + int(i / columns) * pitchY;
+                for (var y:int = 0; y < cellHeight; y += 4) {
+                    for (var x:int = 0; x < cellWidth; x += 4) {
+                        graphics.beginFill((x / 4 + y / 4) % 2 ? light : dark);
+                        graphics.drawRect(left + x * zoom, top + y * zoom,
+                            Math.min(4, cellWidth - x) * zoom, Math.min(4, cellHeight - y) * zoom);
+                        graphics.endFill();
+                    }
+                }
+            }
+            var color:uint = NexaTheme.palette.secondary;
+            for (var child:int = 0; child < numChildren; child++) {
+                var label:TextField = getChildAt(child) as TextField;
+                if (label) label.textColor = color;
+            }
+            drawSelection();
+        }
         /** Ignore gutters and labels instead of selecting a neighbouring cell. */
         public function cellAt(x:Number,y:Number):int {
             y-=24;if(x<0||y<0)return -1;
@@ -50,7 +79,7 @@ package ob.studio {
             return col<columns&&row<rows&&index<count&&x%pitchX<cellWidth*zoom&&y%pitchY<cellHeight*zoom?index:-1;
         }
         private function clicked(event:MouseEvent):void {if(!enabled)return;var index:int=cellAt(mouseX,mouseY);if(index<0)return;selectedCell=index;dispatchEvent(new Event("cellSelected"));}
-        private function drawSelection():void {highlight.graphics.clear();if(chosen<0||chosen>=count)return;highlight.graphics.lineStyle(2,0x24C8FF);highlight.graphics.drawRect(chosen%columns*pitchX,24+int(chosen/columns)*pitchY,cellWidth*zoom,cellHeight*zoom);}
+        private function drawSelection():void {highlight.graphics.clear();if(chosen<0||chosen>=count)return;highlight.graphics.lineStyle(2,NexaTheme.palette.accent);highlight.graphics.drawRect(chosen%columns*pitchX,24+int(chosen/columns)*pitchY,cellWidth*zoom,cellHeight*zoom);}
         private function clear():void {for each(var surface:BitmapData in bitmaps)surface.dispose();bitmaps=[];while(numChildren)removeChildAt(0);graphics.clear();}
         public function dispose():void {clear();removeEventListener(MouseEvent.CLICK,clicked);ownId="";revision=-1;count=0;}
     }

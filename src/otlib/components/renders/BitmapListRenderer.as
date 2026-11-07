@@ -22,6 +22,7 @@
 
 package otlib.components.renders
 {
+    import ob.ui.NexaTheme;
     import flash.display.BitmapData;
     import flash.display.Graphics;
 
@@ -40,15 +41,8 @@ package otlib.components.renders
         private var _hovered:Boolean = false;
         private var _fill:Rect;
         private var _border:Rect;
+        private var _imageBackground:Rect;
 
-        // Colors (Matching SpriteListRenderer/ThingListRenderer)
-        private static const COLOR_NORMAL:uint = 0x1B2937;
-        // But for consistency we use SpriteListRenderer values if we go manual.
-        // Wait, SpriteListRenderer uses 0x535353.
-        private static const COLOR_HOVERED:uint = 0x213143;
-        private static const COLOR_SELECTED:uint = 0x193D55;
-        private static const COLOR_BORDER:uint = 0x2C3C4D;
-        private static const COLOR_IMAGE_BG:uint = 0x101C29;
 
         public function BitmapListRenderer()
         {
@@ -67,7 +61,7 @@ package otlib.components.renders
             _fill.right = 0;
             _fill.top = 0;
             _fill.bottom = 0;
-            _fill.fill = new SolidColor(COLOR_NORMAL);
+            _fill.fill = new SolidColor(NexaTheme.palette.surface);
             // Note: MXML was autoDrawBackground=true, which usually is transparent or white depending on list.
             // But if we want ThingList look:
             addElement(_fill);
@@ -78,18 +72,18 @@ package otlib.components.renders
             _border.right = 0;
             _border.top = 0;
             _border.bottom = 0;
-            _border.stroke = new SolidColorStroke(COLOR_BORDER, 0.1);
+            _border.stroke = new SolidColorStroke(NexaTheme.palette.border, 0.1);
             addElement(_border);
 
             // 3. Image Background
-            var bgGroupSpec:Rect = new Rect();
-            bgGroupSpec.width = 36;
-            bgGroupSpec.height = 36;
-            bgGroupSpec.verticalCenter = 0;
-            bgGroupSpec.left = 3;
-            bgGroupSpec.fill = new SolidColor(COLOR_IMAGE_BG);
-            bgGroupSpec.stroke = new SolidColorStroke(COLOR_BORDER);
-            addElement(bgGroupSpec);
+            _imageBackground = new Rect();
+            _imageBackground.width = 36;
+            _imageBackground.height = 36;
+            _imageBackground.verticalCenter = 0;
+            _imageBackground.left = 3;
+            _imageBackground.fill = new SolidColor(NexaTheme.palette.input);
+            _imageBackground.stroke = new SolidColorStroke(NexaTheme.palette.border);
+            addElement(_imageBackground);
 
             // 4. Image
             _imageDisplay = new BitmapImage();
@@ -127,15 +121,26 @@ package otlib.components.renders
             invalidateDisplayList();
         }
 
+        override public function styleChanged(styleProp:String):void
+        {
+            super.styleChanged(styleProp);
+            if (!styleProp)
+                invalidateDisplayList();
+        }
+
         override protected function updateDisplayList(unscaledWidth:Number, unscaledHeight:Number):void
         {
             super.updateDisplayList(unscaledWidth, unscaledHeight);
 
-            var color:uint = COLOR_NORMAL;
+            SolidColor(_imageBackground.fill).color = NexaTheme.palette.input;
+            SolidColorStroke(_border.stroke).color = NexaTheme.palette.border;
+            SolidColorStroke(_imageBackground.stroke).color = NexaTheme.palette.border;
+
+            var color:uint = NexaTheme.palette.surface;
             if (selected)
-                color = COLOR_SELECTED;
+                color = NexaTheme.palette.selected;
             else if (_hovered)
-                color = COLOR_HOVERED;
+                color = NexaTheme.palette.hover;
 
             if (_fill && _fill.fill is SolidColor)
             {

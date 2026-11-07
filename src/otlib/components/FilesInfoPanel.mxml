@@ -31,6 +31,7 @@ THE SOFTWARE.
 
     <fx:Script>
         <![CDATA[
+            import ob.ui.NexaTheme;
             import mx.core.FlexGlobals;
             import mx.events.FlexEvent;
             
@@ -177,7 +178,7 @@ THE SOFTWARE.
             <s:Label text="{resourceManager.getString('strings', 'version') + ':'}"
             textAlign="right" width="60%"/>
             <s:Label id="filesVersionLabel"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle" visible="{otbVersionLabel.includeInLayout}" includeInLayout="{otbVersionLabel.includeInLayout}">
             <s:Label id="otbVersionTitleLabel"
@@ -187,7 +188,7 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle" visible="{attributeServerValueLabel.includeInLayout}" includeInLayout="{attributeServerValueLabel.includeInLayout}">
             <s:Label id="attributeServerLabel"
@@ -197,13 +198,13 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle">
             <s:Label text="{resourceManager.getString('strings', 'spriteDimension') + ':'}"
             textAlign="right" width="60%"/>
             <s:Label id="spriteDimensionLabel"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle">
             <s:Label text="{resourceManager.getString('strings', 'dat') + ':'}"
@@ -212,7 +213,7 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle">
             <s:Label text="{resourceManager.getString('strings', 'items') + ':'}"
@@ -221,7 +222,7 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle">
             <s:Label text="{resourceManager.getString('strings', 'outfits') + ':'}"
@@ -230,7 +231,7 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle">
             <s:Label text="{resourceManager.getString('strings', 'effects') + ':'}"
@@ -239,7 +240,7 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle">
             <s:Label text="{resourceManager.getString('strings', 'missiles') + ':'}"
@@ -248,7 +249,7 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle">
             <s:Label text="{resourceManager.getString('strings', 'spr') + ':'}"
@@ -257,7 +258,7 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle">
             <s:Label text="{resourceManager.getString('strings', 'sprites') + ':'}"
@@ -266,7 +267,7 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle">
             <s:Label text="{resourceManager.getString('strings', 'extended') + ':'}"
@@ -275,7 +276,7 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle">
             <s:Label text="{resourceManager.getString('strings', 'transparency') + ':'}"
@@ -284,7 +285,7 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle">
             <s:Label text="{resourceManager.getString('strings', 'improvAnim') + ':'}"
@@ -293,7 +294,7 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle">
             <s:Label text="{resourceManager.getString('strings', 'frameGroups') + ':'}"
@@ -302,7 +303,7 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
         <s:HGroup width="100%" gap="8" verticalAlign="middle">
             <s:Label text="{resourceManager.getString('strings', 'metadataController') + ':'}"
@@ -311,7 +312,7 @@ THE SOFTWARE.
             editable="false"
             focusEnabled="false"
             height="16"
-            color="0x2BB7F5" width="40%"/>
+            color="{NexaTheme.palette.accent}" width="40%"/>
         </s:HGroup>
     </s:Group>
 </nail:GroupBox>

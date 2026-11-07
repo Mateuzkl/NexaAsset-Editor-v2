@@ -5,6 +5,7 @@
         import flash.desktop.NativeApplication;
         import flash.display.BitmapData;
         import flash.display.PNGEncoderOptions;
+        import flash.events.Event;
         import flash.events.InvokeEvent;
         import flash.events.MouseEvent;
         import flash.events.TimerEvent;
@@ -17,9 +18,16 @@
         import flash.geom.Matrix;
         import flash.system.System;
         import mx.events.FlexEvent;
+        import mx.graphics.SolidColor;
         import ob.commands.files.LoadFilesCommand;
+        import ob.settings.ObjectBuilderSettings;
+        import ob.ui.NexaTheme;
         import ob.ui.NexaUiEvent;
         import otlib.core.VersionStorage;
+        import otlib.animation.FrameDuration;
+        import otlib.animation.FrameGroup;
+        import otlib.components.CheckerBoard;
+        import otlib.sprites.SpriteData;
         import otlib.things.ThingCategory;
         import otlib.utils.ClientInfoLoader;
         import otlib.resources.Resources;
@@ -44,6 +52,9 @@
         import nail.components.controls.Alert;
         import spark.components.Button;
         import spark.components.Label;
+        import spark.components.Group;
+        import spark.components.Scroller;
+        import spark.primitives.Rect;
 
         private var testTimer:Timer = new Timer(250);
         private var testStart:int;
@@ -106,6 +117,8 @@
                 if (getTimer() - testStart > 120000) throw new Error("Layout test timed out at phase " + testPhase);
                 if (testPhase == 0 && visible && running) {
                     restore();
+                    NexaTheme.apply(NexaTheme.BLUE, styleManager);
+                    settings.theme = NexaTheme.BLUE;
                     logPanel.expanded = false;
                     if (testArgs && testArgs.length > 0) {
                         var folder:File = new File(testArgs[0]);
@@ -274,15 +287,102 @@
             }
             trace("PASS: dark surface and real window controls " + names[dialogStep]);
             dialogStep++;
-            if (dialogStep == names.length) { dialogsChecked = true; testPhase = 3; }
+            if (dialogStep == names.length) {
+                verifyPaletteSelection();
+                dialogsChecked = true;
+                testPhase = 3;
+            }
             else testPhase = 5;
         }
         private function captureTheme(name:String, target:DisplayObject, w:Number, h:Number):void {
-            var bitmap:BitmapData = new BitmapData(Math.ceil(w), Math.ceil(h), false, 0x111D2A);
+            var bitmap:BitmapData = new BitmapData(Math.ceil(w), Math.ceil(h), false, NexaTheme.palette.canvas);
             bitmap.draw(target);
             var stream:FileStream = new FileStream(); stream.open(testRoot.resolvePath(name + ".png"), FileMode.WRITE);
             try { stream.writeBytes(bitmap.encode(bitmap.rect, new PNGEncoderOptions())); }
             finally { stream.close(); bitmap.dispose(); }
+        }
+        private function verifyPaletteSelection():void {
+            var checker:CheckerBoard = new CheckerBoard();
+            checker.includeInLayout = false;
+            nexaShell.addElement(checker);
+            checker.validateNow();
+            if (checker.bitmap.getPixel(0, 0) != 0x202E3C)
+                throw new Error("The initial blue checkerboard uses the wrong colors.");
+            var original:ThingData = thingTypeEditor.thingData;
+            var filmFill:SolidColor;
+            if (original) {
+                var animated:ThingData = original.clone();
+                var frames:FrameGroup = animated.getFrameGroup(0);
+                if (frames.frames == 1) {
+                    frames.frames = 2;
+                    frames.isAnimation = true;
+                    frames.frameDurations = new <FrameDuration>[new FrameDuration(100, 100), new FrameDuration(100, 100)];
+                    frames.spriteIndex = frames.spriteIndex.concat(frames.spriteIndex);
+                    var sprites:Vector.<SpriteData> = animated.sprites[0];
+                    animated.sprites[0] = sprites.concat(sprites);
+                }
+                thingTypeEditor.thingData = animated;
+                thingTypeEditor.validateNow();
+                thingTypeEditor.filmRollCheckBox.selected = true;
+                thingTypeEditor.filmRollCheckBox.dispatchEvent(new Event(Event.CHANGE));
+                filmFill = firstFilmRollFill();
+                if (!filmFill || filmFill.color != NexaTheme.palette.preview)
+                    throw new Error("The initial Film Roll background is missing.");
+            }
+            var ids:Array = [NexaTheme.BLACK, NexaTheme.PURPLE, NexaTheme.BLUE];
+            var backgrounds:Array = [0x101010, 0x14101C, 0x0B141E];
+            for (var index:int = 0; index < ids.length; index++) {
+                openPreferencesWindow();
+                var preferences:PreferencesWindow;
+                for (var child:int = 0; child < systemManager.rawChildren.numChildren; child++) {
+                    preferences = systemManager.rawChildren.getChildAt(child) as PreferencesWindow;
+                    if (preferences) break;
+                }
+                if (!preferences) throw new Error("Preferences did not open.");
+                preferences.validateNow();
+                if (preferences.themeDropDownList.dataProvider.length != 3)
+                    throw new Error("Theme selector is missing a palette.");
+                if (index == 2)
+                    captureTheme("theme-purple-preferences", preferences, preferences.width, preferences.height);
+                preferences.themeDropDownList.selectedIndex = (index + 1) % ids.length;
+                preferences.confirmButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK, true));
+                validateNow();
+                checker.validateNow();
+                if (checker.bitmap.getPixel(0, 0) != NexaTheme.palette.checkerLight)
+                    throw new Error("The existing checkerboard kept its old colors.");
+                if (filmFill && (firstFilmRollFill() !== filmFill || filmFill.color != NexaTheme.palette.preview))
+                    throw new Error("The existing Film Roll background did not update in place.");
+
+                var saved:ObjectBuilderSettings = new ObjectBuilderSettings();
+                if (!settingsManager.loadSettings(saved) || saved.theme != ids[index])
+                    throw new Error("Selected theme was not saved.");
+                if (uint(getStyle("backgroundColor")) != backgrounds[index] ||
+                    uint(nexaNavigation.getStyle("backgroundColor")) != uint(NexaTheme.palette.navigation) ||
+                    uint(logPanel.logList.getStyle("contentBackgroundColor")) != uint(NexaTheme.palette.input))
+                    throw new Error("Selected theme did not update the visible editor.");
+                captureTheme("theme-" + saved.theme, nexaShell, nexaShell.width, nexaShell.height);
+            }
+            nexaShell.removeElement(checker);
+            if (original) {
+                thingTypeEditor.filmRollCheckBox.selected = false;
+                thingTypeEditor.filmRollCheckBox.dispatchEvent(new Event(Event.CHANGE));
+                thingTypeEditor.thingData = original;
+                thingTypeEditor.validateNow();
+            }
+            trace("PASS: dark blue, black and purple update the editor and persist from Preferences");
+        }
+        private function firstFilmRollFill():SolidColor {
+            var container:Group = thingTypeEditor.buttonsContainer;
+            if (!container.numElements) return null;
+            var scroller:Scroller = container.getElementAt(0) as Scroller;
+            if (!scroller) return null;
+            var viewport:Group = scroller.viewport as Group;
+            for (var i:int = 0; i < viewport.numElements; i++) {
+                var frame:Group = viewport.getElementAt(i) as Group;
+                if (frame && frame.name.indexOf("filmRollFrame_") == 0)
+                    return Rect(frame.getElementAt(0)).fill as SolidColor;
+            }
+            return null;
         }
         private function countInstantiatedRenderers(group:DisplayObjectContainer):int {
             var count:int = 0;

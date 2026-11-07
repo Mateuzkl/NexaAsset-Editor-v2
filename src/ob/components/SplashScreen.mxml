@@ -34,7 +34,7 @@ THE SOFTWARE.
           minimizable="false"
           maximizable="false"
           type="utility"
-          backgroundColor="0x111D2A"
+          styleName="nexaToolbarSurface"
           fontSize="11"
           alwaysInFront="true"
           creationComplete="creationCompleteHandler(event)">
@@ -47,6 +47,7 @@ THE SOFTWARE.
 
     <fx:Script>
         <![CDATA[
+            import ob.ui.NexaTheme;
             import mx.events.FlexEvent;
 
             import nail.utils.Descriptor;
@@ -117,11 +118,11 @@ THE SOFTWARE.
             <s:LinearGradient id="gradient"
                               rotation="0">
                 <s:GradientEntry color="0xFFFFFF"/>
-                <s:GradientEntry color="0x2C3C4D"/>
+                <s:GradientEntry color="{NexaTheme.palette.border}"/>
             </s:LinearGradient>
         </s:fill>
         <s:stroke>
-            <s:SolidColorStroke color="0x2C3C4D"/>
+            <s:SolidColorStroke color="{NexaTheme.palette.border}"/>
         </s:stroke>
     </s:Rect>
 
@@ -129,8 +130,8 @@ THE SOFTWARE.
     <s:Rect left="1" right="1" top="1" bottom="1" alpha="0.7">
         <s:fill>
             <s:LinearGradient rotation="90">
-                <s:GradientEntry color="0x0D1926"/>
-                <s:GradientEntry color="0x16232F"/>
+                <s:GradientEntry color="{NexaTheme.palette.navigation}"/>
+                <s:GradientEntry color="{NexaTheme.palette.panel}"/>
             </s:LinearGradient>
         </s:fill>
     </s:Rect>
@@ -142,35 +143,35 @@ THE SOFTWARE.
              top="55">
 
         <s:filters>
-            <s:DropShadowFilter color="0x0B141E"
+            <s:DropShadowFilter color="{NexaTheme.palette.canvas}"
                                 distance="2"
                                 blurX="2"
                                 blurY="2"/>
         </s:filters>
     </s:Image>
     <s:Label text="NexaAsset Editor v2" horizontalCenter="0" top="65"
-        fontSize="23" fontWeight="bold" color="0xF0F5FB"/>
+        fontSize="23" fontWeight="bold" color="{NexaTheme.palette.text}"/>
 
     <nail:ShadowLabel id="versionDisplay"
                       right="55"
                       top="115"
-                      color="0xADC0D4"
-                      shadowColor="0x0B141E"
+                      color="{NexaTheme.palette.secondary}"
+                      shadowColor="{NexaTheme.palette.canvas}"
                       fontSize="12"
                       fontWeight="bold"/>
 
     <nail:ShadowLabel id="infernoDisplay"
                       right="55"
                       top="130"
-                      color="0xADC0D4"
-                      shadowColor="0x0B141E"
+                      color="{NexaTheme.palette.secondary}"
+                      shadowColor="{NexaTheme.palette.canvas}"
                       fontSize="12"
                       text="JokeCore · NexaMap"/>
 
     <nail:ShadowLabel id="statusDisplay"
                       left="10"
                       top="170"
-                      shadowColor="0x2C3C4D"
+                      shadowColor="{NexaTheme.palette.border}"
                       text="{status}"/>
 
     <mx:ProgressBar id="progressBar"
@@ -190,14 +191,14 @@ THE SOFTWARE.
                 paddingLeft="20"
                 paddingRight="20"
                 focusEnabled="false"
-                backgroundColor="0x111D2A"
+                backgroundColor="{NexaTheme.palette.toolbar}"
                 textAlign="justify"
                 verticalAlign="middle"/>
 
     <!-- border -->
     <s:Rect left="0" right="0" top="0" bottom="0">
         <s:stroke>
-            <s:SolidColorStroke color="0x2C3C4D"/>
+            <s:SolidColorStroke color="{NexaTheme.palette.border}"/>
         </s:stroke>
     </s:Rect>
 </s:Window>

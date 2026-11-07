@@ -48,6 +48,7 @@ THE SOFTWARE.
 
     <fx:Script>
         <![CDATA[
+            import ob.ui.NexaTheme;
             import flash.display.Graphics;
             import flash.events.KeyboardEvent;
             import flash.ui.Keyboard;
@@ -124,6 +125,7 @@ THE SOFTWARE.
             [Bindable] private var _currentDirectionLabel:String = "South";
             private var _pixelsModified:Boolean = false;
             private var _filmRollBitmaps:Vector.<BitmapData> = new Vector.<BitmapData>();
+            private const _filmRollBackgrounds:Dictionary = new Dictionary(true);
             private var _suppressDrawCropSize:Boolean = false;  // guards drawCropSize() during batch button adds
             private var _multiSelectedFrames:Dictionary = new Dictionary();
             private var _rect:Rectangle;
@@ -645,7 +647,7 @@ THE SOFTWARE.
                     previewStroke.color = 0xFF4444;
                     setTimeout(function():void {
                         if (previewStroke)
-                            previewStroke.color = _editPixelsMode ? 0x2BB7F5 : 0x101B26;
+                            previewStroke.color = _editPixelsMode ? NexaTheme.palette.accent : NexaTheme.palette.preview;
                     }, 200);
                 }
             }
@@ -1495,6 +1497,24 @@ THE SOFTWARE.
                 drawCropSize();
             }
 
+            override public function styleChanged(styleProp:String):void
+            {
+                super.styleChanged(styleProp);
+                if (!styleProp && _filmRollBackgrounds)
+                {
+                    var color:uint = NexaTheme.palette.preview;
+                    for (var fill:Object in _filmRollBackgrounds)
+                        SolidColor(fill).color = color;
+                }
+            }
+
+            private function createFilmRollBackground():SolidColor
+            {
+                var fill:SolidColor = new SolidColor(NexaTheme.palette.preview);
+                _filmRollBackgrounds[fill] = true;
+                return fill;
+            }
+
             private function updateFilmRollView():void
             {
                 removeButtons();
@@ -1553,7 +1573,7 @@ THE SOFTWARE.
                     var bgRect:Rect = new Rect();
                     bgRect.width = frameW;
                     bgRect.height = frameH;
-                    bgRect.fill = new SolidColor(0x101B26);
+                    bgRect.fill = createFilmRollBackground();
                     frameGrp.addElement(bgRect);
 
                     // Compose frame bitmap
@@ -1760,7 +1780,7 @@ THE SOFTWARE.
                         var mdBgRect:Rect = new Rect();
                         mdBgRect.width = frameW;
                         mdBgRect.height = frameH;
-                        mdBgRect.fill = new SolidColor(0x101B26);
+                        mdBgRect.fill = createFilmRollBackground();
                         mdFrameGrp.addElement(mdBgRect);
 
                         var img:Image = new Image();
@@ -3174,7 +3194,7 @@ THE SOFTWARE.
                             </s:HGroup>
 
                             <s:Spacer width="100%"/>
-                            <s:Label text="{_currentDirectionLabel}" minWidth="35" fontSize="10" color="0xADC0D4"/>
+                            <s:Label text="{_currentDirectionLabel}" minWidth="35" fontSize="10" color="{NexaTheme.palette.secondary}"/>
                             <s:Spacer width="100%"/>
 
                             <s:CheckBox id="editPixelsCheckBox"
@@ -3227,11 +3247,11 @@ THE SOFTWARE.
                                     height="{bitmapView.height}"
                                     visible="{bitmapView.visible}">
                                     <s:fill>
-                                        <s:SolidColor color="0x101B26"/>
+                                        <s:SolidColor color="{NexaTheme.palette.preview}"/>
                                     </s:fill>
                                     <s:stroke>
                                         <s:SolidColorStroke id="previewStroke"
-                                            color="{_editPixelsMode ? 0x2BB7F5 : 0x101B26}"
+                                            color="{_editPixelsMode ? NexaTheme.palette.accent : NexaTheme.palette.preview}"
                                             weight="{_editPixelsMode ? 2 : 0}"/>
                                     </s:stroke>
                                 </s:Rect>

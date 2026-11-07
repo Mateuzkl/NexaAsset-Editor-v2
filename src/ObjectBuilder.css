@@ -235,6 +235,8 @@ nail|GroupBox { skinClass: ClassReference("ob.ui.skins.NexaGroupBoxSkin"); }
 nail|TabNavigator { skinClass: ClassReference("ob.ui.skins.NexaTabNavigatorSkin"); }
 nail|TabNavigatorButton { skinClass: ClassReference("ob.ui.skins.NexaTabButtonSkin"); fontSize: 12; }
 .nexaNav { skinClass: ClassReference("ob.ui.skins.NexaNavigationSkin"); }
+.nexaNavigationSurface { backgroundColor: #0D1926; borderColor: #2C3C4D; }
+.nexaToolbarSurface { backgroundColor: #111D2A; borderColor: #2C3C4D; }
 s|WindowedApplication { backgroundColor: #0B141E; }
 s|Window { backgroundColor: #0B141E; }
 s|List { contentBackgroundColor: #16232F; borderColor: #2C3C4D; }

@@ -36,7 +36,7 @@ package otlib.components
         // --------------------------------------------------------------------------
 
         private var _cellSize:uint;
-        private var _cellSizeChanged:Boolean;
+        private var _bitmapChanged:Boolean;
         private var _rect:Rectangle;
         private var _bitmap:BitmapData;
 
@@ -53,7 +53,7 @@ package otlib.components
             if (_cellSize != value)
             {
                 _cellSize = value;
-                _cellSizeChanged = true;
+                _bitmapChanged = true;
                 invalidateProperties();
                 invalidateDisplayList();
             }
@@ -81,11 +81,22 @@ package otlib.components
         // Override Protected
         // --------------------------------------
 
+        override public function styleChanged(styleProp:String):void
+        {
+            super.styleChanged(styleProp);
+            if (!styleProp || styleProp == "cellColors")
+            {
+                _bitmapChanged = true;
+                invalidateProperties();
+                invalidateDisplayList();
+            }
+        }
+
         override protected function commitProperties():void
         {
             super.commitProperties();
 
-            if (_cellSizeChanged)
+            if (_bitmapChanged)
             {
                 var double:uint = _cellSize * 2;
                 var colors:Array = getStyle("cellColors");
@@ -95,12 +106,14 @@ package otlib.components
                     colors = [0xFFFFFF, 0xCCCCCC];
                 }
 
+                if (_bitmap)
+                    _bitmap.dispose();
                 _bitmap = new BitmapData(double, double, false, uint(colors[1]));
                 _rect = new Rectangle(0, _cellSize, _cellSize, double);
                 _bitmap.fillRect(_rect, colors[0]);
                 _rect.setTo(_cellSize, 0, double, _cellSize);
                 _bitmap.fillRect(_rect, colors[0]);
-                _cellSizeChanged = false;
+                _bitmapChanged = false;
             }
         }
 

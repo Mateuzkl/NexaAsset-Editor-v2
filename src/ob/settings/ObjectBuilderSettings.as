@@ -63,6 +63,7 @@ package ob.settings
         public var showThingsPanel:Boolean = true;
         public var showSpritesPanel:Boolean = true;
         public var language:String = "en_US";
+        public var theme:String = "blue";
         public var extended:Boolean;
         public var transparency:Boolean;
         public var improvedAnimations:Boolean;

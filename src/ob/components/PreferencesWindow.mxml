@@ -52,6 +52,7 @@ THE SOFTWARE.
             
             import ob.settings.ObjectBuilderSettings;
             import ob.core.ClipboardAction;
+            import ob.ui.NexaTheme;
             
             import otlib.assets.Assets;
             
@@ -64,6 +65,7 @@ THE SOFTWARE.
             private var _detail:uint = DialogDetail.CANCEL;
             private var _languages:ArrayCollection;
             private var _clipboardActions:ArrayCollection;
+            private const THEME_IDS:Array = [NexaTheme.BLUE, NexaTheme.BLACK, NexaTheme.PURPLE];
             
             [Bindable]
             public var otbLoaded:Boolean = false;
@@ -122,6 +124,7 @@ THE SOFTWARE.
             private function setSettings(settings:ObjectBuilderSettings):void
             {
                 setLanguage(settings.language);
+                themeDropDownList.selectedIndex = THEME_IDS.indexOf(NexaTheme.normalize(settings.theme));
                 confirmButton.enabled = (settings != null);
                 autosaveChangesCheckBox.selected = settings.autosaveThingChanges;
                 extendedCheckBox.selected = settings.extended;
@@ -199,6 +202,10 @@ THE SOFTWARE.
                         ]);
             
                 languageDropDownList.dataProvider = _languages;
+                var themes:Array = [];
+                for each (var id:String in THEME_IDS)
+                    themes.push(resourceManager.getString("strings", "nexa.theme." + id));
+                themeDropDownList.dataProvider = new ArrayCollection(themes);
                 clipboardActionDropDown.dataProvider = _clipboardActions;
             
                 focusManager.setFocus(cancelButton);
@@ -211,6 +218,7 @@ THE SOFTWARE.
             {
                 _detail = DialogDetail.OK;
                 _settings.language = getLanguage();
+                _settings.theme = THEME_IDS[themeDropDownList.selectedIndex];
                 _settings.autosaveThingChanges = autosaveChangesCheckBox.selected;
                 _settings.extended = extendedCheckBox.selected;
                 _settings.transparency = transparencyCheckBox.selected;
@@ -266,6 +274,11 @@ THE SOFTWARE.
                 <mg:layout>
                     <s:VerticalLayout gap="10" padding="10"/>
                 </mg:layout>
+                <s:HGroup width="100%" verticalAlign="middle" gap="12">
+                    <s:Label text="@Resource(key='nexa.theme', bundle='strings')"/>
+                    <s:DropDownList id="themeDropDownList" width="180" requireSelection="true"
+                        accessibilityName="@Resource(key='nexa.theme', bundle='strings')"/>
+                </s:HGroup>
                 <s:CheckBox id="largerWindowsFor4KCheckBox"
                     label="{resourceManager.getString('strings', 'nexa.largerWindows')}"/>
             </mg:GroupBox>
@@ -397,7 +410,7 @@ THE SOFTWARE.
         </s:NavigatorContent>
     </mx:ViewStack>
 
-    <s:BorderContainer width="100%" backgroundColor="0x111D2A" borderColor="0x2C3C4D">
+    <s:BorderContainer width="100%" styleName="nexaToolbarSurface">
         <s:layout>
             <s:HorizontalLayout gap="10" padding="10" verticalAlign="middle" horizontalAlign="right"/>
         </s:layout>

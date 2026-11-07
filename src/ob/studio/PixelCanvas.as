@@ -6,6 +6,7 @@ package ob.studio {
     import flash.geom.Rectangle;
     import flash.utils.ByteArray;
     import flash.ui.Keyboard;
+    import ob.ui.NexaTheme;
 
     /** Editable straight RGBA layer. BitmapData is a disposable display surface only. */
     [Event(name="stroke",type="flash.events.Event")]
@@ -53,6 +54,10 @@ package ob.studio {
             selection=null;draw();
         }
         public function setZoom(value:int):void {zoom=Math.max(1,Math.min(16,value));draw();}
+        override public function styleChanged(styleProp:String):void {
+            super.styleChanged(styleProp);
+            if (!styleProp && surface) draw();
+        }
         /** Coalesce pointer events to one composition per AIR render frame. */
         public function draw():void {if(disposed||renderPending)return;renderPending=true;callLater(render);}
         public function render():void {
@@ -71,7 +76,16 @@ package ob.studio {
                 surface.setPixel32(x,y,(uint(a)<<24)|(uint(r)<<16)|(uint(g)<<8)|uint(b));
             }
             display.smoothing=false;display.scaleX=display.scaleY=zoom;
-            graphics.clear();for(y=0;y<imageHeight;y+=4)for(x=0;x<imageWidth;x+=4){graphics.beginFill(((x/4+y/4)%2)?0x263746:0x172633);graphics.drawRect(x*zoom,y*zoom,4*zoom,4*zoom);graphics.endFill();}
+            graphics.clear();
+            var dark:uint = NexaTheme.palette.checkerDark;
+            var light:uint = NexaTheme.palette.checkerLight;
+            for (y = 0; y < imageHeight; y += 4) {
+                for (x = 0; x < imageWidth; x += 4) {
+                    graphics.beginFill((x / 4 + y / 4) % 2 ? light : dark);
+                    graphics.drawRect(x * zoom, y * zoom, 4 * zoom, 4 * zoom);
+                    graphics.endFill();
+                }
+            }
             // Graphics under the bitmap provide transparency checks; grid/selection use a top overlay.
             overlay();invalidateDisplayList();
         }
