@@ -57,6 +57,8 @@ outfit adapter keeps its existing first-frame idle group behavior. Studio starts
 from complete canvases/PNG/drafts; a legacy sprite ID loads one 32×32 tile, not a
 composed multi-tile object. See [usage and compatibility](docs/BREATHING.md).
 
+**Idle Animation** also starts from **Texture → Appearance → Breathing / Idle Animation** on the selected object. It loads the complete pose and directions into Studio. Combine breathing, bobbing and sway, then review with Play/Sheet before Apply. MCP exposes the same workflow via `nexa_begin_asset_edit` and `nexa_generate_idle_animation`. [Usage and compatibility](docs/IDLE_ANIMATION.md)
+
 ### Native modern assets in the standard workspace
 
 Use **Open Asset Files** to open a modern client folder containing

@@ -38,6 +38,8 @@
         private var clientInfoLoader:ClientInfoLoader;
         private var closeCycles:int=0;
         private var cycleMemory:Number;
+        private var sourceOutfit:uint;
+        private var initialIdleCell:int;
         override protected function applicationInvokeHandler(event:InvokeEvent):void {
             testRoot=new File(event.arguments[0]);gateway=new File(event.arguments[1]);helper=new File(event.arguments[2]);clientExecutable=new File(event.arguments[3]);
         }
@@ -50,6 +52,10 @@
         private function check(value:Boolean,message:String):void {if(!value)throw new Error(message);}
         private function fail(message:String):void {record("FAIL "+message);trace("FAIL Studio AIR: "+message);clock.stop();if(external&&external.running)external.exit(true);clear();NativeApplication.nativeApplication.exit(1);}
         private function findWindow():PixelArtStudio {for(var i:int=0;i<systemManager.rawChildren.numChildren;i++)if(systemManager.rawChildren.getChildAt(i) is PixelArtStudio)return systemManager.rawChildren.getChildAt(i) as PixelArtStudio;return null;}
+        private function findMotionWindow():BreathingWindow {
+            for(var i:int=0;i<systemManager.rawChildren.numChildren;i++)if(systemManager.rawChildren.getChildAt(i) is BreathingWindow)return systemManager.rawChildren.getChildAt(i) as BreathingWindow;
+            return null;
+        }
         private function launchClient():void {
             externalOutput=externalError="";externalExit=-999;
             var info:NativeProcessStartupInfo=new NativeProcessStartupInfo();info.executable=clientExecutable;info.arguments=Vector.<String>(["--live"]);info.workingDirectory=clientExecutable.parent;
@@ -64,7 +70,7 @@
         }
         private function tick(event:TimerEvent):void {
             try {
-                check(getTimer()-started<180000,"Timeout at phase "+phase+" mode "+mode);
+                check(getTimer()-started<180000,"Timeout at phase "+phase+" mode "+mode+(window?". "+window.studioReport.text:""));
                 if(phase==0&&visible&&running&&testRoot){
                     if(mode==1){resourceManager.localeChain=["pt_BR"];Resources.locale="pt_BR";}
                     if(mode==0){LegacyStudioTests.run(testRoot);openNativeProject(testRoot.resolvePath("native-source"),helper);}
@@ -181,6 +187,43 @@
                     record("PASS: mode="+mode+" outfit32x64 directions4 frames4 sparse-stroke merge coalesced-preview category-selection revision-once Save/Compile");
                     trace("PASS: real AIR "+(mode==0?"modern":"legacy")+" + external official MCP client: read, draw, preview, remote approval request, manual canvas edit, Apply, exact stored pixels, dirty state and Save/Compile");
                     check(window.maximumSnapshotRequests==1,"Preview concurrency");
+                    sourceOutfit=newId;
+                    if(mode==0)selectThing(sourceOutfit,"outfit");else requestEditThing(sourceOutfit,"outfit");
+                    phase=39;
+                }else if(phase==39&&thingTypeEditor.thingData&&thingTypeEditor.thingData.category=="outfit"&&thingTypeEditor.thingData.id==sourceOutfit){
+                    if(locked)return;
+                    thingTypeEditor.validateNow();check(thingTypeEditor.selectedIdlePose!=null,"Inspector did not select a source pose");
+                    thingTypeEditor.idleAnimationButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=31;
+                }else if(phase==31&&window.snapshot&&window.snapshot.document.sourcePose&&findMotionWindow()){
+                    check(window.snapshot.document.sourcePose.indexOf("outfit #"+sourceOutfit+" ·")>=0,"Appearance opened the wrong object");
+                    check(window.snapshot.document.directions==4&&window.snapshot.document.frameCount==4&&window.snapshot.document.height==64,"Appearance loaded one tile instead of the full pose");
+                    breathingWindow=findMotionWindow();breathingWindow.validateNow();check(breathingWindow.idleMode,"Appearance opened legacy breathing settings");
+                    var idleCapture:BitmapData=new BitmapData(breathingWindow.width,breathingWindow.height,false,0x101C28);idleCapture.draw(breathingWindow);
+                    var idleFile:FileStream=new FileStream();try{idleFile.open(testRoot.resolvePath(mode==0?"idle-options-modern.png":"idle-options-legacy.png"),FileMode.WRITE);idleFile.writeBytes(idleCapture.encode(idleCapture.rect,new PNGEncoderOptions()));}finally{idleFile.close();idleCapture.dispose();}
+                    breathingWindow.idleBobbing.selected=true;breathingWindow.idleSway.selected=true;
+                    breathingWindow.generateButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));breathingWindow=null;phase=32;
+                }else if(phase==32&&window.snapshot.document.frameCount==16){
+                    check(clientInfo.maxOutfitId==sourceOutfit&&window.snapshot.document.documentRevision==1,"Idle preview published or split its edit");
+                    window.sheetToggle.selected=true;window.sheetToggle.dispatchEvent(new Event(Event.CHANGE));phase=33;
+                }else if(phase==33&&window.snapshot.sheet){
+                    var idleCells:Array=window.snapshot.sheet.cells;
+                    check(idleCells.length==16&&idleCells[0].rgba!=idleCells[8].rgba,"Idle preview did not show motion");
+                    capture(mode==0?"idle-sheet-modern.png":"idle-sheet-legacy.png");
+                    initialIdleCell=window.snapshot.frame;
+                    window.playButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=38;
+                }else if(phase==38&&window.snapshot.frame!=initialIdleCell){
+                    check(window.snapshot.frame%4==initialIdleCell%4,"Idle playback changed facing direction");
+                    window.playButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    window.applyButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=34;
+                }else if(phase==34&&window.snapshot.document.committed&&clientInfo.maxOutfitId==sourceOutfit+1){
+                    studioEditorRequest("get_asset",{category:"outfit",assetId:sourceOutfit},function(result:Object,error:String=null):void {
+                        if(error){fail(error);return;}
+                        check(result.assetId==sourceOutfit&&result.groups.length==2&&result.groups[1].frames==4,"Idle Apply modified source animation groups");
+                        phase=36;
+                    });phase=35;
+                }else if(phase==36){compileProject();phase=37;}
+                else if(phase==37&&!nativeSaving&&!clientChanged&&!locked){
+                    record("PASS: Appearance opens selected outfit and complete pose, idle motion preview, local Apply as new, original groups and Save/Compile mode="+mode);
                     closeCycles=0;flash.system.System.gc();cycleMemory=flash.system.System.totalMemory;window.close();window=null;phase=12;
                 }else if(phase==12&&!studio.enabled){openPixelArtStudio();window=findWindow();phase=13;}
                 else if(phase==13&&window&&window.snapshot){
@@ -189,7 +232,7 @@
                     flash.system.System.gc();
                     record("PASS: 50 Studio open/close cycles mode="+mode+" managedMemoryDelta="+(flash.system.System.totalMemory-cycleMemory));
                     clear();
-                    if(mode==0){mode=1;phase=0;}else{clock.stop();NativeApplication.nativeApplication.exit(0);}
+                    if(mode==0){mode=1;phase=0;}else{record("PASS: Studio AIR complete");clock.stop();NativeApplication.nativeApplication.exit(0);}
                 }
             }catch(error:Error){fail(error.getStackTrace()||error.message);}
         }

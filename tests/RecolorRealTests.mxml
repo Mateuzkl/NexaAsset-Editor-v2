@@ -11,7 +11,10 @@
         import mx.events.FlexEvent;
         import ob.commands.files.LoadFilesCommand;
         import ob.recolor.RecolorWindow;
+        import ob.studio.BreathingWindow;
+        import ob.studio.PixelArtStudio;
         import ob.studio.StudioController;
+        import ob.studio.StudioPixels;
         import otlib.core.VersionStorage;
         import otlib.events.ThingListEvent;
         import otlib.utils.ClientInfoLoader;
@@ -24,6 +27,7 @@
         private var external:NativeProcess;
         private var output:String="";
         private var clientExit:int=-999;
+        private var idleStudio:PixelArtStudio;
         override protected function applicationInvokeHandler(event:InvokeEvent):void {
             folder=new File(event.arguments[0]);outfitId=uint(event.arguments[1]);
         }
@@ -34,7 +38,7 @@
         private function check(value:Boolean,message:String):void {if(!value)throw new Error(message);}
         private function tick(event:TimerEvent):void {
             try {
-                check(getTimer()-started<90000,"Real asset preview timeout in phase "+phase);
+                check(getTimer()-started<90000,"Real asset preview timeout in phase "+phase+(idleStudio?". "+idleStudio.studioReport.text:". Studio not open, locked="+locked));
                 if(!running||!visible||!folder)return;
                 if(phase==0){
                     phase=1;var probe:ClientInfoLoader=new ClientInfoLoader();
@@ -85,7 +89,33 @@
                     check(clientExit==0,"Real MCP preview failed: "+output);
                     check(JSON.parse(output).passed,"Real MCP preview did not complete");
                     check(!clientChanged,"Read-only real asset test changed the project");
-                    finish(true,"PASS: real assets, 8x/10x wand/brush/eraser/rectangle, 3600 move events, MCP PNG preview; no save or project changes");
+                    dialog.close();dialog=null;
+                    requestEditThing(outfitId,"outfit");phase=6;
+                }else if(phase==6&&thingTypeEditor.thingData&&thingTypeEditor.thingData.id==outfitId&&thingTypeEditor.thingData.category=="outfit"){
+                    if(locked)return;
+                    thingTypeEditor.validateNow();check(thingTypeEditor.selectedIdlePose!=null,"Inspector did not select a source pose");
+                    thingTypeEditor.idleAnimationButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=7;
+                }else if(phase==7){
+                    var motion:BreathingWindow;
+                    for(i=0;i<systemManager.rawChildren.numChildren;i++){
+                        var child:Object=systemManager.rawChildren.getChildAt(i);
+                        if(child is PixelArtStudio)idleStudio=child as PixelArtStudio;
+                        if(child is BreathingWindow)motion=child as BreathingWindow;
+                    }
+                    if(idleStudio&&studio&&!studio.ready&&studio.status!="Studio stopped")
+                        throw new Error("Idle Studio gateway stopped: "+studio.status);
+                    if(!motion||!idleStudio||!idleStudio.snapshot)return;
+                    check(idleStudio.snapshot.document.sourcePose.indexOf("outfit #"+outfitId+" ·")>=0,"Idle did not open the selected real outfit");
+                    motion.generateButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=8;
+                }else if(phase==8&&idleStudio.snapshot.document.documentRevision==1){
+                    check(idleStudio.snapshot.document.frameCount==4*idleStudio.snapshot.document.directions,"Idle did not generate the real outfit cycle");
+                    studio.call("export_spritesheet",{editId:idleStudio.editId,columns:idleStudio.snapshot.document.directions},function(result:Object,error:String):void {
+                        if(error){finish(false,error);return;}
+                        var bytes:ByteArray=StudioPixels.decode(result.png),stream:FileStream=new FileStream();
+                        stream.open(new File(File.applicationDirectory.nativePath).resolvePath("idle-outfit-"+outfitId+".png"),FileMode.WRITE);
+                        try{stream.writeBytes(bytes);}finally{stream.close();bytes.clear();}
+                        finish(!clientChanged,"PASS: real assets, 8x/10x wand/brush/eraser/rectangle, 3600 move events, MCP PNG and Appearance idle cycle for outfit #"+outfitId+". Source unmodified: "+!clientChanged);
+                    });phase=9;
                 }
             }catch(error:Error){finish(false,error.getStackTrace());}
         }

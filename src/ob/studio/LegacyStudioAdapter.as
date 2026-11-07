@@ -48,8 +48,36 @@ package ob.studio {
                 refs=[];for(var yy:int=0;yy<g.height;yy++)for(var xx:int=0;xx<g.width;xx++)refs.push(g.spriteIndex[g.getSpriteIndex(xx,yy,p.layer,p.direction,0,0,p.frame)]);
                 return {assetId:t.id,group:p.group,frame:p.frame,direction:p.direction,layer:p.layer,references:refs};
             }
+            if(method=="get_asset_pose")return selectedPose(p,revision);
             if(method=="commit_art")return commit(p,revision);
             throw new Error("Unsupported studio command.");
+        }
+        /** Compose complete textures in bottom-right tile order; templates remain separate hidden reference layers. */
+        private function selectedPose(p:Object,revision:Number):Object {
+            category(p.category);
+            var thing:ThingType=things.getThingType(uint(p.assetId),p.category);
+            var group:FrameGroup=thing?thing.getFrameGroup(int(p.group)):null;
+            if(!group||p.frame<0||p.frame>=group.frames||p.patternY<0||p.patternY>=group.patternY||p.patternZ<0||p.patternZ>=group.patternZ)throw new Error("Invalid selected object pose.");
+            var size:int=SpriteExtent.DEFAULT_SIZE,w:int=group.width*size,h:int=group.height*size,dirs:int=group.patternX;
+            if(size!=32||(w!=32&&w!=64)||(h!=32&&h!=64)||(dirs!=1&&dirs!=4)||group.layers>16||Number(w)*h*4*dirs*group.layers>2097152)throw new Error("Selected pose supports 32/64 pixel axes, 1/4 directions, 1–16 layers and 2 MiB.");
+            var result:Object={revision:revision,assetId:thing.id,group:int(p.group),frame:int(p.frame),width:w,height:h,directions:dirs,name:thing.name,layerCount:group.layers};
+            if(p.direction===undefined&&p.layer===undefined)return result;
+            var d:int=int(p.direction),l:int=int(p.layer);
+            if(d<0||d>=dirs||l<0||l>=group.layers)throw new Error("Invalid pose direction or layer.");
+            var rgba:ByteArray=new ByteArray();rgba.length=w*h*4;
+            try{
+                for(var ty:int=0;ty<group.height;ty++)for(var tx:int=0;tx<group.width;tx++){
+                    var id:uint=group.spriteIndex[group.getSpriteIndex(tx,ty,l,d,p.patternY,p.patternZ,p.frame)];
+                    var raw:ByteArray=sprites.getPixelsStrict(id),ox:int=w-(tx+1)*size,oy:int=h-(ty+1)*size;
+                    try{for(var y:int=0;y<size;y++)for(var x:int=0;x<size;x++){
+                        var src:int=(y*size+x)*4,at:int=((oy+y)*w+ox+x)*4;
+                        rgba[at]=raw[src+1];rgba[at+1]=raw[src+2];rgba[at+2]=raw[src+3];rgba[at+3]=raw[src];
+                    }}finally{raw.clear();}
+                }
+                var template:Boolean=p.category=="outfit"&&l>0;
+                result.pixels={name:template?"Outfit template reference "+l:"Source layer "+l,visible:!template,rgba:StudioPixels.encode(rgba)};
+            }finally{rgba.clear();}
+            return result;
         }
         private function commit(p:Object,revision:Number):Object {
             var prior:Object=commits[p.editId];if(prior)return prior;

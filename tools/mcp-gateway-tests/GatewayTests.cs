@@ -135,6 +135,7 @@ internal static class GatewayTests
                     string method = m.GetProperty("method").GetString()!; object result;
                     if (method == "get_project_info") result = new { projectSessionId = session, revision, format = "test-editor" };
                     else if (method == "get_sprite") result = new { width = 32, height = 32, argb = Convert.ToBase64String(new byte[4096]) };
+                    else if (method == "get_asset_pose") result = IdleAnimationTests.PoseReply(m.GetProperty("args"), revision);
                     else if (method == "commit_art") { editorCommits++; revision++; result = new { selected = 101, sprite = 4 }; }
                     else result = new { items = new[] { new { id = 100 } } };
                     await Write(new { type = "editorResponse", id = m.GetProperty("id").GetString(), result });
@@ -164,6 +165,8 @@ internal static class GatewayTests
             Check(new[] { "nexa_generate_stable_diffusion", "nexa_get_generation_status", "nexa_cancel_generation" }.All(name => tools.Any(t => t.Name == name)), "Stable Diffusion MCP discovery");
             Check(tools.Any(t => t.Name == "nexa_generate_breathing"), "Breathing MCP discovery");
             await BreathingGateway(client, session, revision);
+            Check(tools.Any(t => t.Name == "nexa_generate_idle_animation")&&tools.Any(t => t.Name == "nexa_begin_asset_edit"),"Idle/asset pose MCP discovery");
+            await IdleGateway(client, session, revision);
             Check(editorCommits == 0, "Breathing published an asset without local approval");
             var project = await Call(client, "nexa_get_project_info", new { }); Check(project.GetProperty("revision").GetInt64() == 9, "Editor bridge read");
             var spriteResponse = await client.CallToolAsync("nexa_get_sprite", new Dictionary<string, object?> { ["spriteId"] = 1 });
@@ -240,6 +243,31 @@ internal static class GatewayTests
         Check(approval.GetProperty("status").GetString()=="awaiting-human-approval","MCP breathing bypassed approval");
         await Call(client,"nexa_cancel_edit",new{editId=id});
         Console.WriteLine("PASS: official MCP breathing discovery, 16 exact cells, preview PNG, concurrent revision checks, one-step undo and approval isolation");
+    }
+
+    /// <summary>Use the official client to verify selected-pose draft creation, idle bytes, revision isolation and approval.</summary>
+    private static async Task IdleGateway(McpClient client,string session,long revision)
+    {
+        var draft=await Call(client,"nexa_begin_asset_edit",new{projectSessionId=session,expectedRevision=revision,category="outfit",assetId=7});
+        string id=draft.GetProperty("editId").GetString()!;
+        var parameters=new{breathing=true,bobbing=true,sway=true,direction=2,frameCount=6,durationsMs=new[]{140,110,130,150,120,160}};
+        await Call(client,"nexa_generate_idle_animation",new{editId=id,expectedDocumentRevision=0,parameters});
+        var stale=await client.CallToolAsync("nexa_generate_idle_animation",new Dictionary<string,object?>{["editId"]=id,["expectedDocumentRevision"]=0,["parameters"]=parameters});
+        Check(stale.IsError==true&&stale.Content.OfType<TextContentBlock>().Any(t=>t.Text.Contains("DOCUMENT_CONFLICT")),"Idle allowed stale revision");
+        var sheet=await Call(client,"nexa_get_edit_sheet",new{editId=id});
+        var expected=BreathingTests.Fixture(64,64,4);IdleAnimationGenerator.Generate(expected,J(parameters));
+        Check(sheet.GetProperty("cells").GetArrayLength()==24,"Idle MCP lost phases/directions");
+        for(int i=0;i<24;i++)
+        {
+            var cell=sheet.GetProperty("cells")[i];
+            Check(cell.GetProperty("duration").GetInt32()==expected.Frames[i].Duration&&Convert.FromBase64String(cell.GetProperty("rgba").GetString()!).AsSpan().SequenceEqual(expected.Frames[i].Layers[0].Rgba),"MCP idle changed engine output or duration");
+        }
+        var approval=await Call(client,"nexa_commit_edit",new{editId=id,expectedDocumentRevision=1,parameters=new{}});
+        Check(approval.GetProperty("status").GetString()=="awaiting-human-approval","Idle MCP bypassed approval");
+        await Call(client,"nexa_undo_edit",new{editId=id,expectedDocumentRevision=1,parameters=new{}});
+        Check((await Call(client,"nexa_get_edit_sheet",new{editId=id})).GetProperty("cells").GetArrayLength()==4,"Idle MCP undo did not restore selected pose");
+        await Call(client,"nexa_cancel_edit",new{editId=id});
+        Console.WriteLine("PASS: official MCP selected outfit pose, 24 exact idle cells, stale revision, one-step undo and approval isolation");
     }
 
     private static async Task StableDiffusionGateway(McpClient client, Func<object, Task> write, Func<string, string?, Task<JsonElement>> next, string session, long revision)

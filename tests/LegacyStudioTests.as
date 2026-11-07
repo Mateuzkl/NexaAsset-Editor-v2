@@ -12,7 +12,8 @@ package {
     import otlib.animation.FrameGroup;
     public class LegacyStudioTests {
         public static function run(folder:File):void {
-            breathingLegacy(folder);
+            generatedLegacy(folder,"breathing");
+            generatedLegacy(folder,"idle");
             var version:Version=VersionStorage.getInstance().getByValueString("10.98");
             var features:ClientFeatures=new ClientFeatures(true,true,true,true);
             var things:ThingTypeStorage=new ThingTypeStorage(new ObjectBuilderSettings()),sprites:SpriteStorage=new SpriteStorage();
@@ -49,11 +50,11 @@ package {
         }
         private static function check(value:Boolean,message:String):void {if(!value)throw new Error(message);}
         /** Read actual C# generator output through the legacy adapter, compressor and DAT/SPR reader. */
-        private static function breathingLegacy(folder:File):void {
+        private static function generatedLegacy(folder:File,kind:String):void {
             var input:FileStream=new FileStream();
-            input.open(folder.resolvePath("breathing-legacy-variable.json"),FileMode.READ);
+            input.open(folder.resolvePath(kind+"-legacy-variable.json"),FileMode.READ);
             var variable:Object=JSON.parse(input.readUTFBytes(input.bytesAvailable));input.close();
-            input.open(folder.resolvePath("breathing-legacy-100.json"),FileMode.READ);
+            input.open(folder.resolvePath(kind+"-legacy-100.json"),FileMode.READ);
             var compatible:Object=JSON.parse(input.readUTFBytes(input.bytesAvailable));input.close();
             var version:Version=VersionStorage.getInstance().getByValueString("8.60 v1");
             var features:ClientFeatures=new ClientFeatures();
@@ -65,12 +66,23 @@ package {
             catch(error:Error){check(error.message.indexOf("cannot store phase timings")>=0,"Wrong legacy breathing error: "+error.message);}
             check(sprites.spritesCount==before,"Rejected breathing inserted partial legacy sprites");
             var result:Object=adapter.execute("commit_art",compatible,8);
-            var dat:File=folder.resolvePath("breathing-860.dat"),spr:File=folder.resolvePath("breathing-860.spr");
+            var dat:File=folder.resolvePath(kind+"-860.dat"),spr:File=folder.resolvePath(kind+"-860.spr");
             check(things.compile(dat,version,features)&&sprites.compile(spr,version,features),"Breathing legacy compile failed");
             var reopened:ThingTypeStorage=new ThingTypeStorage(new ObjectBuilderSettings()),pixels:SpriteStorage=new SpriteStorage();
             reopened.load(dat,version,features);pixels.load(spr,version,features);
             var group:FrameGroup=reopened.getThingType(result.selected,"outfit").getFrameGroup(0);
             check(group.frames==4&&group.patternX==4&&group.width==2&&group.height==2,"Breathing 8.60 geometry/direction order changed");
+            var poseReader:LegacyStudioAdapter=new LegacyStudioAdapter(reopened,pixels,features);
+            for(var d:int=0;d<4;d++){
+                var pose:Object=poseReader.execute("get_asset_pose",{category:"outfit",assetId:result.selected,group:0,frame:2,patternY:0,patternZ:0,direction:d,layer:0},9);
+                check(pose.width==64&&pose.height==64&&pose.directions==4&&pose.layerCount==1&&pose.revision==9,"Selected legacy pose lost geometry");
+                var actual:ByteArray=StudioPixels.decode(pose.pixels.rgba);
+                var expected:ByteArray=StudioPixels.decode(compatible.frames[8+d].rgba);
+                for(var at:int=0;at<expected.length;at+=4){
+                    check(actual[at+3]==(expected[at+3]?255:0),"Selected legacy pose alpha differs");
+                    if(expected[at+3])check(actual[at]==expected[at]&&actual[at+1]==expected[at+1]&&actual[at+2]==expected[at+2],"Selected legacy pose pixel/direction differs");
+                }actual.clear();expected.clear();
+            }
             for(var c:int=0;c<16;c++){
                 var rgba:ByteArray=StudioPixels.decode(compatible.frames[c].rgba);
                 for(var tileIndex:int=0;tileIndex<4;tileIndex++){
@@ -84,7 +96,7 @@ package {
                 }rgba.clear();
             }
             reopened.unload();pixels.unload();things.unload();sprites.unload();
-            trace("PASS: C# breathing -> 8.60 adapter, variable timing rejection, explicit 100 ms, 64x64/4 directions/4 phases, bottom-right tiles and Compile/reopen (no client runtime claim)");
+            trace("PASS: C# "+kind+" -> 8.60, variable timing rejection, explicit 100 ms, all 64x64 tiles/directions/phases, Compile/reopen and complete selected pose");
         }
     }
 }

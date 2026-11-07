@@ -6,7 +6,7 @@ A ferramenta gera um ciclo geométrico de quatro poses: neutro, inspiração, ex
 
 1. Abra/crie um draft com um único instante e canvas completo (32×32, 32×64, 64×32 ou 64×64).
 2. Para controle manual, escolha `select`, arraste o retângulo e clique **Marcar região**. Em quatro direções, repita em N/E/S/W. As regiões são independentes e copiadas antes de qualquer atualização do canvas.
-3. Clique **Respiração**. Escolha amplitude de 1 ou 2 px, região automática ou manual e quatro durações. **Gerar no draft** atualiza o mesmo documento do Studio.
+3. Clique **Animação de Repouso** e mantenha o preset **Respiração**. Escolha amplitude de 1 ou 2 px, região automática ou manual e quatro durações. **Gerar no draft** atualiza o mesmo documento do Studio. Para carregar uma pose completa pelo painel Appearance ou combinar outros movimentos, veja [Animação de Repouso](IDLE_ANIMATION.md).
 4. Confira Sheet/Play e ajuste o resultado. Undo/Redo desfaz/refaz o ciclo inteiro. PNG/spritesheet e `.nexaart` continuam disponíveis.
 5. **Apply as NEW asset** insere um objeto novo após a revisão local. Save/Compile persiste os arquivos separadamente.
 

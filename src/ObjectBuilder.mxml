@@ -1125,12 +1125,21 @@ THE SOFTWARE.
             private var _studioProjectId:String=mx.utils.UIDUtil.createUID();
             private var _studioRequests:Object={};
             private var _studioSequence:uint=0;
-            public function openPixelArtStudio():void {
+            public function openPixelArtStudio(asset:Object=null):void {
                 if(!clientLoaded)return;
-                if(_studioWindow){_studioWindow.setFocus();return;}
+                if(_studioWindow){if(asset)_studioWindow.loadAsset(asset);_studioWindow.setFocus();return;}
                 if(!studio){studio=new ob.studio.StudioController();studio.editor=this;}
-                var window:ob.studio.PixelArtStudio=new ob.studio.PixelArtStudio();_studioWindow=window;window.controller=studio;window.referenceSpriteId=activeSpriteList.selectedId;
+                var window:ob.studio.PixelArtStudio=new ob.studio.PixelArtStudio();_studioWindow=window;window.controller=studio;window.referenceSpriteId=activeSpriteList.selectedId;window.initialAsset=asset;
                 window.addEventListener(Event.CLOSE,function(event:Event):void {window.shutdown();if(_studioWindow==window)_studioWindow=null;});window.open(this);
+            }
+            public function openSelectedIdle():void {
+                if(!clientLoaded||locked)return;
+                if(thingTypeEditor.changed){Alert.show(resourceManager.getString('strings','recolor.unsaved'));return;}
+                var pose:Object=thingTypeEditor.selectedIdlePose;
+                if(!pose)return;
+                var nativeData:ModernThingData=thingTypeEditor.thingData as ModernThingData;
+                if(nativeData)pose.group=nativeData.groupIndices[pose.group];
+                openPixelArtStudio(pose);
             }
             /** Only the private child-process pipe reaches this adapter. Remote tools cannot approve or save. */
             public function studioEditorRequest(method:String,args:Object,callback:Function):void {
@@ -5538,6 +5547,7 @@ THE SOFTWARE.
                 <s:BorderContainer width="100%"
                     height="100%">
                     <otlib:ThingTypeEditor id="thingTypeEditor"
+                        idleAnimation="openSelectedIdle()"
                         width="100%"
                         height="100%"
                         visible="false"

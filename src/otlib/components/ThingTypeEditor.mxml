@@ -43,6 +43,7 @@ THE SOFTWARE.
         [Event(name="thingPropertyChange", type="otlib.events.ThingEditorEvent")]
         [Event(name="spriteDoubleClick", type="otlib.events.ThingEditorEvent")]
         [Event(name="replaceFromPng", type="otlib.events.ThingEditorEvent")]
+        [Event(name="idleAnimation", type="flash.events.Event")]
         [ResourceBundle("strings")]
     </fx:Metadata>
 
@@ -226,6 +227,13 @@ THE SOFTWARE.
                 if (_thingData)
                     return animationSlider.value;
                 return -1;
+            }
+            /** The inspector's explicit pose, including the currently selected group/addon/mount. */
+            public function get selectedIdlePose():Object
+            {
+                if(!_thingData||!_frameGroup)return null;
+                return {category:_thingData.category,assetId:_thingData.id,group:int(frameGroupSlider.value),frame:int(animationSlider.value),
+                    patternY:int((_patternY+addonsSlider.value)%_frameGroup.patternY),patternZ:int(mountSlider.value),direction:int(_patternX%_frameGroup.patternX)};
             }
             
             public function get hasTransferData():Boolean
@@ -3421,6 +3429,9 @@ THE SOFTWARE.
                                 minWidth="40"/>
                         </s:HGroup>
 
+                        <s:Button id="idleAnimationButton" label="{resourceManager.getString('strings','studio.idleSelected')}"
+                            enabled="{_thingData!=null}" toolTip="{resourceManager.getString('strings','studio.idleSelectedHint')}"
+                            click="dispatchEvent(new Event('idleAnimation'))"/>
                         <s:CheckBox id="showCropSizeCheckBox"
                             label="{resourceManager.getString('strings', 'showCropSize')}"
                             change="drawCropSize()"/>

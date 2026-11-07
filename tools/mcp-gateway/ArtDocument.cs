@@ -42,6 +42,7 @@ public sealed class ArtDocument
     public long StructureRevision { get; private set; }
     public bool TargetTransparency { get; set; } = true;
     public bool TargetTiming { get; set; } = true;
+    public string? SourcePose { get; private set; }
     public bool ApprovalRequested { get; set; }
     public bool Committed { get; set; }
     public long ExportedRevision { get; private set; }
@@ -50,6 +51,7 @@ public sealed class ArtDocument
     public void MarkExported(long revision, bool approval) { if (Revision == revision && ApprovalRequested == approval) { ExportedRevision = revision; exportedApproval = approval; } }
     public ArtState State { get; private set; } = new();
     public byte[]? Reference { get; set; }
+    private byte[][]? poseReferences;
     private readonly List<ArtState> undo = [], redo = [];
     public static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     /// <summary>Create an isolated draft from optional straight RGBA; the active project is untouched.</summary>
@@ -67,6 +69,18 @@ public sealed class ArtDocument
     public static void CheckShape(int w, int h)
     {
         if (w is not (32 or 64) || h is not (32 or 64)) throw new InvalidDataException("Sprite axes must be 32 or 64 pixels.");
+    }
+    /// <summary>Open a complete selected object pose, retaining directions and reference layers without changing source assets.</summary>
+    public static ArtDocument FromPose(string session,long revision,string category,JsonElement pose,List<ArtFrame> frames)
+    {
+        int w=pose.GetProperty("width").GetInt32(),h=pose.GetProperty("height").GetInt32(),dirs=pose.GetProperty("directions").GetInt32();CheckShape(w,h);
+        if(frames.Count!=dirs)throw new InvalidDataException("Invalid selected pose directions.");
+        var state=new ArtState{Category=category,Width=w,Height=h,Directions=dirs,Frames=frames,Name=pose.TryGetProperty("name",out var name)&&name.ValueKind==JsonValueKind.String?(name.GetString()??""):""};
+        if(state.Name.Length>80)state.Name=state.Name[..80];
+        Validate(state);
+        var doc=new ArtDocument{ProjectSessionId=session,BaseRevision=revision,State=state,SourcePose=$"{category} #{pose.GetProperty("assetId")} · group {pose.GetProperty("group")} · pose {pose.GetProperty("frame")}"};
+        doc.poseReferences=Enumerable.Range(0,dirs).Select(d=>Composite(state,d)).ToArray();
+        doc.Reference=doc.poseReferences[0];return doc;
     }
     /// <summary>Validate geometry, timing, layers and decoded pixel budget as one transaction.</summary>
     public static void Validate(ArtState state)
@@ -153,15 +167,16 @@ public sealed class ArtDocument
         return output;
     }
     /// <summary>Return shared draft identity, destination, geometry and revision metadata.</summary>
-    public object Info() => new { editId = Id, projectSessionId = ProjectSessionId, baseRevision = BaseRevision, documentRevision = Revision, structureRevision = StructureRevision, State.Category, State.Name, State.Width, State.Height, State.Directions, frameCount = State.Frames.Count, approvalRequested = ApprovalRequested, committed = Committed, dirty = Dirty, exportedRevision = ExportedRevision, canUndo = undo.Count > 0, canRedo = redo.Count > 0 };
+    public object Info() => new { editId = Id, projectSessionId = ProjectSessionId, baseRevision = BaseRevision, documentRevision = Revision, structureRevision = StructureRevision, State.Category, State.Name, State.Width, State.Height, State.Directions, sourcePose=SourcePose, frameCount = State.Frames.Count, approvalRequested = ApprovalRequested, committed = Committed, dirty = Dirty, exportedRevision = ExportedRevision, canUndo = undo.Count > 0, canRedo = redo.Count > 0 };
     /// <summary>Return a bounded preview; raw painting layers are restricted to the private AIR caller.</summary>
     public object Preview(int frame, bool includeLayers = false, bool includeSheet = false)
     {
         var rgba = Composite(State, frame);
         int changed = 0;
-        if (Reference?.Length == rgba.Length) for (int p = 0; p < rgba.Length; p += 4) { if (!rgba.AsSpan(p, 4).SequenceEqual(Reference.AsSpan(p, 4))) changed++; }
+        byte[]? reference = poseReferences?.Length == State.Directions ? poseReferences[frame % State.Directions] : Reference;
+        if (reference?.Length == rgba.Length) for (int p = 0; p < rgba.Length; p += 4) { if (!rgba.AsSpan(p, 4).SequenceEqual(reference.AsSpan(p, 4))) changed++; }
         else changed = State.Width * State.Height;
-        return new { document = Info(), sheet = includeSheet ? Sheet() : null, frame, duration = State.Frames[frame].Duration, timingCompatible = TargetTiming || State.Frames.All(f => f.Duration == 100), rgba = Convert.ToBase64String(rgba), reference = Reference == null || Reference.Length != rgba.Length ? null : Convert.ToBase64String(Reference), sha256 = Convert.ToHexString(SHA256.HashData(rgba)), changedPixels = changed,
+        return new { document = Info(), sheet = includeSheet ? Sheet() : null, frame, duration = State.Frames[frame].Duration, timingCompatible = TargetTiming || State.Frames.All(f => f.Duration == 100), rgba = Convert.ToBase64String(rgba), reference = reference?.Length == rgba.Length ? Convert.ToBase64String(reference) : null, sha256 = Convert.ToHexString(SHA256.HashData(rgba)), changedPixels = changed,
             layers = State.Frames[frame].Layers.Select((l, i) => new { index = i, l.Name, l.Visible, l.Locked, l.Opacity, rgba = includeLayers ? Convert.ToBase64String(l.Rgba) : null }).ToArray(),
             timeline = State.Frames.Select((f, i) => new { cell = i, time = i / State.Directions, direction = i % State.Directions, f.Duration }).ToArray(),
             warnings = new[] { "Apply creates a NEW asset with one native raster layer. Originals and outfit masks are not replaced. Save/Compile remains a separate editor action.", TargetTransparency ? "Target supports RGBA. Editable layer bytes remain in .nexaart." : "RGB SPR target: nonzero alpha becomes opaque; alpha-zero RGB is not retained by SPR. Preserve .nexaart for exact editable pixels.",

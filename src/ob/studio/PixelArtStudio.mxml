@@ -13,6 +13,8 @@
         import nail.components.controls.Alert;
         public var controller:StudioController;
         public var referenceSpriteId:uint=0;
+        public var initialAsset:Object;
+        private var openIdleForDraft:String="";
         [Bindable] public var editId:String="";
         [Bindable] public var snapshot:Object;
         [Bindable] private var busy:Boolean=false;
@@ -57,7 +59,7 @@
             canvas.addEventListener("undo",function(e:Event):void{mutate("undo_edit");});canvas.addEventListener("redo",function(e:Event):void{mutate("ui_redo");});
             try{controller.start();if(controller.ready)ready(null);}catch(error:Error){report=error.message;}
         }
-        private function ready(event:Event):void {statusChanged(null);controller.call("ui_provider_consent",{consent:false},function(value:Object,error:String):void {if(!dead&&!error)providerConfigured=value.providerConfigured;});reloadDrafts();report=tr("emptyStudio");}
+        private function ready(event:Event):void {statusChanged(null);controller.call("ui_provider_consent",{consent:false},function(value:Object,error:String):void {if(!dead&&!error)providerConfigured=value.providerConfigured;});report=tr("emptyStudio");if(initialAsset){var source:Object=initialAsset;initialAsset=null;loadAsset(source);}else reloadDrafts();}
         private function statusChanged(event:Event):void {connection.text=controller.status;mcpToggle.selected=controller.enabled;}
         /** One UI operation and one coalesced preview at a time; callbacks never release another request's busy state. */
         private function invoke(method:String,args:Object,callback:Function=null,onError:Function=null):void {
@@ -89,6 +91,20 @@
                 if(listPending){listPending=false;reloadDrafts();}
             });
         }
+        /** Load the full selected object pose through the same operation exposed to MCP. */
+        public function loadAsset(asset:Object):void {
+            if(!controller.ready){initialAsset=asset;return;}
+            if(dead||busy||canvas.drawing||pendingStroke||preparingClose){report=tr("closeStudioWait");return;}
+            playback.stop();
+            invoke("get_project_info",{},function(info:Object):void {
+                var args:Object={projectSessionId:info.projectSessionId,expectedRevision:info.revision,category:asset.category,assetId:asset.assetId,group:asset.group,frame:asset.frame,patternY:asset.patternY,patternZ:asset.patternZ};
+                invoke("begin_asset_edit",args,function(result:Object):void {
+                    if(pendingApproval==result.editId)pendingApproval="";
+                    selectDraft(result.editId);frame=Math.min(result.directions-1,int(asset.direction));sheetToggle.selected=false;
+                    openIdleForDraft=result.editId;reloadDrafts();refresh();
+                });
+            });
+        }
         private function selectDraft(id:String):void {if(editId==id)return;playback.stop();editId=id;frame=layer=0;generation++;requestedRevision=0;}
         private function changed(event:StudioEvent):void {
             reloadDrafts();
@@ -111,6 +127,7 @@
                 if(ownId!=editId||ownFrame!=frame||ownLayer!=layer||ownGeneration!=generation||ownSheet!=sheetToggle.selected||canvas.drawing||pendingStroke){refreshPending=true;return;}
                 if(Number(value.document.documentRevision)<requestedRevision){refreshPending=true;return;}
                 refreshPending=false;snapshot=value;canApply=!value.document.committed;timingCompatible=value.timingCompatible!==false;updating=true;
+                if(playback.running)playback.delay=value.duration/speed.value;
                 layer=Math.min(layer,value.layers.length-1);canvas.load(value,layer);
                 category.selectedItem=value.document.category;
                 frames.maximum=value.document.frameCount-1;frames.value=frame;durations.value=value.duration;
@@ -123,7 +140,7 @@
                 layerList.dataProvider=new ArrayCollection(value.layers);layerList.selectedIndex=layer;
                 visibleLayer.selected=value.layers[layer].visible;lockedLayer.selected=value.layers[layer].locked;opacity.value=value.layers[layer].opacity;layerName.text=value.layers[layer].name;
                 cellInfo.text=value.document.category+" · "+value.document.width+"×"+value.document.height+" · cell "+frame+" · time "+int(frame/value.document.directions)+" / direction "+(frame%value.document.directions)+" · revision "+value.document.documentRevision;
-                report=(!timingCompatible?tr("breathingTimingWarning")+"\n":"")+value.changedPixels+" changed pixels · "+(value.document.approvalRequested?tr("approvalRequested"):tr("draftOnly"))+"\n"+tr("newAssetNotice")+(value.warnings && value.warnings.length>1?"\n"+value.warnings[1]:"");
+                report=(!timingCompatible?tr("breathingTimingWarning")+"\n":"")+(value.document.sourcePose?value.document.sourcePose+"\n":"")+value.changedPixels+" changed pixels · "+(value.document.approvalRequested?tr("approvalRequested"):tr("draftOnly"))+"\n"+tr("newAssetNotice")+(value.warnings && value.warnings.length>1?"\n"+value.warnings[1]:"");
                 updating=false;
                 if(canvas.previous){canvas.previous.clear();canvas.previous=null;}
                 if(onion.selected&&frame>=value.document.directions)controller.call("get_edit_preview",{editId:ownId,frame:ownFrame-value.document.directions},function(prev:Object,error:String):void {
@@ -131,6 +148,7 @@
                     if(canvas.previous)canvas.previous.clear();canvas.previous=StudioPixels.decode(prev.rgba);canvas.draw();
                 });
                 original.load({document:value.document,layers:[{name:"Reference",visible:true,locked:true,opacity:255,rgba:value.reference||value.rgba}]},0);original.setZoom(3);
+                if(openIdleForDraft==editId){openIdleForDraft="";openIdleAnimation();}
             },function(error:String):void {snapshotFlight=false;snapshotRequests--;if(frame>0&&error=="Invalid frame index."){frame=0;generation++;refreshPending=true;}});
         }
         private function draftChanged():void {if(updating||busy||canvas.drawing||pendingStroke||!drafts.selectedItem)return;selectDraft(drafts.selectedItem.editId);refresh();}
@@ -178,12 +196,19 @@
             report=tr("breathingRegions")+": "+d+" ("+area.x+", "+area.y+", "+area.width+", "+area.height+")";
         }
         public function openBreathing():BreathingWindow {
+            return openMotion(false);
+        }
+        public function openIdleAnimation():BreathingWindow {return openMotion(true);}
+        private function openMotion(idle:Boolean):BreathingWindow {
             if(dead||busy||!snapshot||!canApply||canvas.drawing||pendingStroke)return null;
             if(breathingWindow)breathingWindow.close();
             if(canvas.selection)captureBreathingRegion();
             if(breathingLayout!=breathingKey()){breathingRegions={};breathingLayout=breathingKey();}
             playback.stop();breathingWindow=new BreathingWindow();
+            breathingWindow.idleMode=idle;
             breathingWindow.directionCount=snapshot.document.directions;
+            breathingWindow.currentDirection=frame%snapshot.document.directions;
+            breathingWindow.currentRegion=breathingRegions[breathingWindow.currentDirection]!=null;
             for(var d:int=0;d<snapshot.document.directions;d++)if(breathingRegions[d]){
                 var r:Object=breathingRegions[d];breathingWindow.regions.push({direction:d,x:r.x,y:r.y,width:r.width,height:r.height});
             }
@@ -191,7 +216,7 @@
             var id:String=editId;var revision:Number=snapshot.document.documentRevision;
             breathingWindow.generateHandler=function(parameters:Object):void {
                 if(dead||editId!=id||!snapshot||snapshot.document.documentRevision!=revision){report=tr("breathingStale");return;}
-                mutate("generate_breathing",parameters);
+                mutate(idle?"generate_idle_animation":"generate_breathing",parameters);
             };
             breathingWindow.addEventListener(Event.REMOVED_FROM_STAGE,breathingClosed);
             breathingWindow.open(this);return breathingWindow;
@@ -203,8 +228,12 @@
         private function sheetModeChanged():void {if(canvas.drawing||pendingStroke){sheetToggle.selected=false;return;}generation++;refresh();}
         private function sheetCellSelected():void {if(busy||canvas.drawing||pendingStroke)return;playback.stop();frame=sheet.selectedCell;layer=0;generation++;sheetToggle.selected=false;refresh();}
         private function positionChanged():void {if(updating||busy||canvas.drawing||pendingStroke||!snapshot)return;playback.stop();frame=int(timePosition.value)*snapshot.document.directions+(snapshot.document.directions==4?directionPosition.selectedIndex:0);layer=0;generation++;refresh();}
-        private function tick(event:TimerEvent):void {if(!snapshot||busy||canvas.drawing||pendingStroke)return;var count:int=snapshot.document.frameCount,dirs:int=snapshot.document.directions;frame=(frame+dirs)%count;playback.delay=snapshot.duration/speed.value;refresh();}
-        private function togglePlay():void {if(playback.running)playback.stop();else playback.start();}
+        private function tick(event:TimerEvent):void {if(!snapshot||busy||canvas.drawing||pendingStroke)return;var count:int=snapshot.document.frameCount,dirs:int=snapshot.document.directions;frame=(frame+dirs)%count;refresh();}
+        private function togglePlay():void {
+            if(playback.running){playback.stop();return;}
+            if(!snapshot||busy||snapshot.document.frameCount<=snapshot.document.directions)return;
+            playback.delay=snapshot.duration/speed.value;playback.start();
+        }
         private function apply():void {if(!snapshot||busy||snapshot.document.committed)return;if(!timingCompatible){report=tr("breathingTimingWarning");return;}mutate("ui_apply");}
         private function discard():void {if(!editId.length||busy)return;invoke("cancel_edit",{editId:editId},function(result:Object):void {editId="";snapshot=null;reloadDrafts();});}
         private function browse(mode:String):void {
@@ -312,7 +341,7 @@
                     <s:Button label="Flip X" click="mutate('transform_sprite',{operation:'flipX'})"/>
                     <s:Button label="Flip Y" click="mutate('transform_sprite',{operation:'flipY'})"/>
                     <s:Button label="90°" click="mutate('transform_sprite',{operation:'rotate90'})"/>
-                    <s:Button id="breathingButton" label="{tr('breathing')}" enabled="{!busy &amp;&amp; canApply &amp;&amp; !pendingStroke}" click="openBreathing()"/>
+                    <s:Button id="breathingButton" label="{tr('idleAnimation')}" enabled="{!busy &amp;&amp; canApply &amp;&amp; !pendingStroke}" click="openIdleAnimation()"/>
                     <s:Button label="{tr('breathingCapture')}" enabled="{!busy &amp;&amp; !pendingStroke}" toolTip="{tr('breathingRegionHint')}" click="captureBreathingRegion()"/>
                     <s:Button label="{tr('copy')}" click="canvas.copySelection()"/>
                     <s:Button label="{tr('paste')}" click="canvas.pasteSelection()"/>
@@ -341,7 +370,7 @@
                 </s:HGroup>
                 <s:HGroup verticalAlign="middle">
                     <s:Label text="Cell"/><s:NumericStepper id="frames" enabled="{!busy &amp;&amp; !canvas.drawing &amp;&amp; !pendingStroke}" minimum="0" maximum="0" width="64" change="frameChanged()"/>
-                    <s:Button label="▶ / Ⅱ" click="togglePlay()"/>
+                    <s:Button id="playButton" label="▶ / Ⅱ" click="togglePlay()"/>
                     <s:NumericStepper id="speed" minimum="0.25" maximum="4" stepSize="0.25" value="1" width="62"/>
                 </s:HGroup>
                 <s:HGroup verticalAlign="middle">
@@ -366,7 +395,7 @@
             <s:Button label="Keep my stroke" enabled="{!strokeLayoutConflict}" click="resolveStroke(true)"/>
             <s:Button label="Use remote pixels" click="resolveStroke(false)"/>
         </s:HGroup>
-        <s:TextArea width="100%" height="48" editable="false" text="{report}"/>
+        <s:TextArea id="studioReport" width="100%" height="48" editable="false" text="{report}"/>
         <s:HGroup width="100%" verticalAlign="middle">
             <s:Button label="{tr('importPng')}" enabled="{!busy}" click="browse('import')"/>
             <s:Button label="{tr('exportPng')}" enabled="{!busy}" click="browse('png')"/>

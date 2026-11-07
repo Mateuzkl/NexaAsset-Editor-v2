@@ -38,6 +38,7 @@ try {
         $start.ArgumentList.Add($RealAssets)
         $start.ArgumentList.Add([string]$RealOutfitId)
     }
+    $startedUtc = [DateTime]::UtcNow
     $air = [Diagnostics.Process]::Start($start)
     try {
         $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -50,6 +51,12 @@ try {
         if ($air.ExitCode -ne 0) { throw 'Recolor tests failed.' }
     }
     finally { $air.Dispose() }
+    if ($application -eq 'RecolorRealTests') {
+        $result = Get-Item -LiteralPath 'bin-tests/recolor-real-result.txt' -ErrorAction SilentlyContinue
+        if (-not $result -or $result.LastWriteTimeUtc -lt $startedUtc -or -not (Select-String -LiteralPath $result.FullName -SimpleMatch 'Source unmodified: true')) {
+            throw 'The real-assets test exited without confirming its preview and source integrity.'
+        }
+    }
     }
 }
 finally { Pop-Location }

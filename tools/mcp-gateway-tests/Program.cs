@@ -37,6 +37,7 @@ Check(!JsonSerializer.SerializeToElement(ArtDocument.Create("close-regression", 
 await DraftLifecycleTests.Run();
 await RecolorGatewayTests.Run();
 await BreathingTests.Run(root);
+await IdleAnimationTests.Run(root);
 await ProviderTests.Run();
 await StableDiffusionTests.Run();
 await StudioRegressionTests.Run();

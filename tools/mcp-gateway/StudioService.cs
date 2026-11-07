@@ -113,6 +113,48 @@ public sealed partial class StudioService(IEditorBridge bridge)
         // Validate project identity even on document reads: reopening a project invalidates all old drafts.
         var info = await Project(ct);
         if (method == "list_art_documents") return new { documents = documents.Values.Select(d => d.Info()).ToArray() };
+        if(method=="begin_asset_edit")
+        {
+            if(documents.Count>=4)throw new InvalidOperationException("Close a draft first (four open drafts maximum).");
+            string session=projectSession!;
+            if(S(args,"projectSessionId")!=session||args.GetProperty("expectedRevision").GetInt64()!=info.GetProperty("revision").GetInt64())throw new InvalidOperationException("PROJECT_CONFLICT: refresh project information.");
+            string category=S(args,"category");
+            if(category is not("item" or "outfit" or "effect" or "missile"))throw new InvalidDataException("Invalid pose category.");
+            uint assetId=args.GetProperty("assetId").GetUInt32();
+            int group=I(args,"group"),frame=I(args,"frame"),patternY=I(args,"patternY"),patternZ=I(args,"patternZ");
+            if(assetId==0||group<0||frame<0||patternY<0||patternZ<0)throw new InvalidDataException("Invalid selected pose coordinates.");
+            var pose=await bridge.RequestAsync("get_asset_pose",new{category,assetId,group,frame,patternY,patternZ},ct);
+            long sourceRevision=info.GetProperty("revision").GetInt64();
+            int width=pose.GetProperty("width").GetInt32(),height=pose.GetProperty("height").GetInt32();
+            int directions=pose.GetProperty("directions").GetInt32(),layerCount=pose.GetProperty("layerCount").GetInt32();
+            ArtDocument.CheckShape(width,height);
+            if(directions is not(1 or 4)||layerCount is <1 or >16||(long)width*height*4*directions*layerCount>ArtDocument.PixelBudget)
+                throw new InvalidDataException("Invalid selected pose geometry or layer budget.");
+            if(pose.GetProperty("assetId").GetUInt32()!=assetId||pose.GetProperty("group").GetInt32()!=group||pose.GetProperty("frame").GetInt32()!=frame)
+                throw new InvalidDataException("The editor returned a different source pose.");
+            if(pose.GetProperty("revision").GetInt64()!=sourceRevision)throw new InvalidOperationException("PROJECT_CONFLICT: source changed while loading.");
+            // Keep each AIR pipe message bounded to a single 32/64-pixel RGBA layer.
+            var frames=new List<ArtFrame>(directions);
+            for(int direction=0;direction<directions;direction++)
+            {
+                var cell=new ArtFrame();
+                for(int layer=0;layer<layerCount;layer++)
+                {
+                    var part=await bridge.RequestAsync("get_asset_pose",new{category,assetId,group,frame,patternY,patternZ,direction,layer},ct);
+                    if(part.GetProperty("revision").GetInt64()!=sourceRevision)throw new InvalidOperationException("PROJECT_CONFLICT: source changed while loading.");
+                    var pixels=part.GetProperty("pixels");
+                    byte[] rgba=Convert.FromBase64String(pixels.GetProperty("rgba").GetString()!);
+                    if(rgba.Length!=width*height*4)throw new InvalidDataException("Selected pose layer size differs from its canvas.");
+                    cell.Layers.Add(new(){Name=pixels.GetProperty("name").GetString()!,Visible=pixels.GetProperty("visible").GetBoolean(),Rgba=rgba});
+                }
+                frames.Add(cell);
+            }
+            var current=await Project(ct);
+            if(projectSession!=session||current.GetProperty("revision").GetInt64()!=sourceRevision)throw new InvalidOperationException("PROJECT_CONFLICT: selected pose changed while loading.");
+            var created=ArtDocument.FromPose(session,sourceRevision,category,pose,frames);
+            created.TargetTiming=SupportsTiming(info);created.TargetTransparency=!info.TryGetProperty("transparency",out var alpha)||alpha.GetBoolean();
+            documents.Add(created.Id,created);await Changed(created,true);return created.Info();
+        }
         if (method == "begin_edit" || method == "duplicate_sprite")
         {
             if (documents.Count >= 4) throw new InvalidOperationException("Close a draft first (four open drafts maximum).");
@@ -236,6 +278,9 @@ public sealed partial class StudioService(IEditorBridge bridge)
                     break;
                 case "generate_breathing":
                     BreathingGenerator.Generate(state, args, ct);
+                    break;
+                case "generate_idle_animation":
+                    IdleAnimationGenerator.Generate(state,args,ct);
                     break;
                 case "import_spritesheet":
                     var sheet = NativePng.ReadArtSheet(Convert.FromBase64String(S(args, "png")));
