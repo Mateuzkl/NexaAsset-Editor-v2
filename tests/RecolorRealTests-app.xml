@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<application xmlns="http://ns.adobe.com/air/application/51.2">
+    <id>tests.RecolorRealTests</id><versionNumber>1.0.0</versionNumber><filename>RecolorRealTests</filename>
+    <supportedProfiles>extendedDesktop</supportedProfiles>
+    <initialWindow><content>RecolorRealTests.swf</content><visible>false</visible><width>1366</width><height>768</height></initialWindow>
+</application>

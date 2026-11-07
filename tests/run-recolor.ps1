@@ -1,9 +1,11 @@
+#Requires -Version 7.0
 [CmdletBinding()]
-param([string]$ToolsRoot)
+param([string]$ToolsRoot, [string]$RealAssets, [uint32]$RealOutfitId = 1460)
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
 if (-not $ToolsRoot) { $ToolsRoot = Join-Path (Split-Path -Parent $project) 'ObjectBuilder-tools' }
 $ToolsRoot = (Resolve-Path -LiteralPath $ToolsRoot).Path
+if ($RealAssets) { $RealAssets = (Resolve-Path -LiteralPath $RealAssets).Path }
 $sdk = Join-Path $ToolsRoot 'flex-air'
 $jdk = @(Get-ChildItem -LiteralPath (Join-Path $ToolsRoot 'java') -Directory)
 if ($jdk.Count -ne 1) { throw 'Expected one portable JDK.' }
@@ -17,17 +19,25 @@ try {
         '-source-path=src' '-library-path+=libs' '-locale=en_US,es_ES,pt_BR' '-source-path+=locale/{locale}' `
         '-debug=true' '-warnings=false' '-output=workerswfs/ObjectBuilderWorker.swf' 'src/ObjectBuilderWorker.as'
     if ($LASTEXITCODE -ne 0) { throw 'Recolor worker compilation failed.' }
+    $applications = @('RecolorMainTests')
+    if ($RealAssets) { $applications += 'RecolorRealTests' }
+    Copy-Item src/config bin-tests/ -Recurse -Force
+    foreach ($application in $applications) {
     & (Join-Path $jdk[0].FullName 'bin/java.exe') -Xmx2g ('-Dapplication.home=' + $sdk) -jar (Join-Path $sdk 'lib/mxmlc.jar') '+configname=air' `
         '-source-path=src' '-source-path+=tests' '-library-path+=libs' '-locale=en_US,es_ES,pt_BR' '-source-path+=locale/{locale}' `
-        '-debug=true' '-warnings=false' '-output=bin-tests/RecolorMainTests.swf' 'tests/RecolorMainTests.mxml'
+        '-debug=true' '-warnings=false' ("-output=bin-tests/$application.swf") ("tests/$application.mxml")
     if ($LASTEXITCODE -ne 0) { throw 'Recolor test compilation failed.' }
-    Copy-Item tests/RecolorMainTests-app.xml bin-tests/
-    Copy-Item src/config bin-tests/ -Recurse -Force
+    Copy-Item ("tests/$application-app.xml") bin-tests/
     $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $sdk 'bin/adl.exe'))
     $start.UseShellExecute = $false
     $start.CreateNoWindow = $true
     $start.ArgumentList.Add('-nodebug')
-    $start.ArgumentList.Add((Join-Path $project 'bin-tests/RecolorMainTests-app.xml'))
+    $start.ArgumentList.Add((Join-Path $project "bin-tests/$application-app.xml"))
+    if ($application -eq 'RecolorRealTests') {
+        $start.ArgumentList.Add('--')
+        $start.ArgumentList.Add($RealAssets)
+        $start.ArgumentList.Add([string]$RealOutfitId)
+    }
     $air = [Diagnostics.Process]::Start($start)
     try {
         $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -40,5 +50,6 @@ try {
         if ($air.ExitCode -ne 0) { throw 'Recolor tests failed.' }
     }
     finally { $air.Dispose() }
+    }
 }
 finally { Pop-Location }

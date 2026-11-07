@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<local:ObjectBuilder xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:local="*">
+    <fx:Style source="../src/ObjectBuilder.css"/>
+    <fx:Script><![CDATA[
+        import flash.desktop.*;
+        import flash.display.BitmapData;
+        import flash.events.*;
+        import flash.filesystem.*;
+        import flash.geom.Point;
+        import flash.utils.*;
+        import mx.events.FlexEvent;
+        import ob.commands.files.LoadFilesCommand;
+        import ob.recolor.RecolorWindow;
+        import ob.studio.StudioController;
+        import otlib.core.VersionStorage;
+        import otlib.events.ThingListEvent;
+        import otlib.utils.ClientInfoLoader;
+        private var timer:Timer=new Timer(200);
+        private var folder:File;
+        private var outfitId:uint;
+        private var phase:int;
+        private var started:int;
+        private var dialog:RecolorWindow;
+        private var external:NativeProcess;
+        private var output:String="";
+        private var clientExit:int=-999;
+        override protected function applicationInvokeHandler(event:InvokeEvent):void {
+            folder=new File(event.arguments[0]);outfitId=uint(event.arguments[1]);
+        }
+        override protected function applicationCompleteHandler(event:FlexEvent):void {
+            super.applicationCompleteHandler(event);started=getTimer();timer.addEventListener(TimerEvent.TIMER,tick);timer.start();
+            systemManager.loaderInfo.uncaughtErrorEvents.addEventListener(UncaughtErrorEvent.UNCAUGHT_ERROR,function(e:UncaughtErrorEvent):void {e.preventDefault();finish(false,String(e.error));});
+        }
+        private function check(value:Boolean,message:String):void {if(!value)throw new Error(message);}
+        private function tick(event:TimerEvent):void {
+            try {
+                check(getTimer()-started<90000,"Real asset preview timeout in phase "+phase);
+                if(!running||!visible||!folder)return;
+                if(phase==0){
+                    phase=1;var probe:ClientInfoLoader=new ClientInfoLoader();
+                    var spr:File=folder.resolvePath("Tibia.spr");if(!spr.exists)spr=folder.resolvePath("FileParts/part_1.spr");
+                    probe.addEventListener(ErrorEvent.ERROR,function(e:ErrorEvent):void {finish(false,e.text);});
+                    probe.addEventListener(Event.COMPLETE,function(e:Event):void {
+                        var info:otlib.utils.ClientInfo=probe.clientInfo;
+                        sendCommand(new LoadFilesCommand(folder.resolvePath("Tibia.dat"),spr,VersionStorage.getInstance().getFromClientInfo(info),null,info.features));
+                    });probe.load(folder.resolvePath("Tibia.dat"),spr,true);
+                }else if(phase==1&&clientLoaded&&thingData){
+                    thingList.dispatchEvent(new ThingListEvent(ThingListEvent.RECOLOR,outfitId,"outfit"));phase=2;
+                }else if(phase==2){
+                    for(var i:int=0;i<systemManager.rawChildren.numChildren;i++)if(systemManager.rawChildren.getChildAt(i) is RecolorWindow)dialog=systemManager.rawChildren.getChildAt(i) as RecolorWindow;
+                    if(!dialog)return;
+                    dialog.validateNow();var bitmap:BitmapData=dialog.previewImage.source as BitmapData;
+                    var px:int=-1,py:int;
+                    for(var y:int=0;y<bitmap.height&&px<0;y++)for(var x:int=0;x<bitmap.width;x++)if(bitmap.getPixel32(x,y)>>>24){px=x;py=y;break;}
+                    check(px>=0,"Real outfit has no visible pixels");
+                    for each(var zoom:int in [8,10]){
+                        dialog.setZoom(zoom);dialog.validateNow();
+                        dialog.hue.value=75;dialog.hue.dispatchEvent(new Event(Event.CHANGE));
+                        var start:int=getTimer();
+                        dialog.wandButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                        dialog.imageArea.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_DOWN,true,false,px*zoom,py*zoom,null,false,false,false,true));
+                        for each(var button:Object in [dialog.brushButton,dialog.eraserButton,dialog.rectangleButton]){
+                            button.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                            dialog.imageArea.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_DOWN,true,false,px*zoom,py*zoom,null,false,false,false,true));
+                            var p:Point=dialog.imageArea.localToGlobal(new Point(Math.min(bitmap.width-1,px+4)*zoom,Math.min(bitmap.height-1,py+4)*zoom));
+                            for(i=0;i<600;i++)stage.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_MOVE,true,false,p.x,p.y,null,false,false,false,true));
+                            stage.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_UP,true,false,p.x,p.y));
+                        }
+                        check(getTimer()-start<5000,"Real high-zoom pointer processing exceeded 5 seconds");
+                    }
+                    studio=new StudioController();studio.editor=this;
+                    studio.start(new File(File.applicationDirectory.nativePath).parent.resolvePath("bin-debug/mcp-gateway/nexa-mcp-gateway.exe"));
+                    dialog.openMcpButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));phase=3;
+                }else if(phase==3&&studio.ready){dialog.mcpToggle.selected=true;dialog.mcpToggle.dispatchEvent(new Event(Event.CHANGE));phase=4;}
+                else if(phase==4&&studio.enabled){
+                    var info:NativeProcessStartupInfo=new NativeProcessStartupInfo();
+                    info.executable=new File(File.applicationDirectory.nativePath).parent.resolvePath("tools/mcp-gateway-tests/bin/Debug/net10.0/NexaAsset.Mcp.Tests.exe");
+                    info.arguments=new <String>["--live-recolor-preview"];
+                    external=new NativeProcess();
+                    external.addEventListener(ProgressEvent.STANDARD_OUTPUT_DATA,function(e:ProgressEvent):void {output+=external.standardOutput.readUTFBytes(external.standardOutput.bytesAvailable);});
+                    external.addEventListener(ProgressEvent.STANDARD_ERROR_DATA,function(e:ProgressEvent):void {output+=external.standardError.readUTFBytes(external.standardError.bytesAvailable);});
+                    external.addEventListener(NativeProcessExitEvent.EXIT,function(e:NativeProcessExitEvent):void {clientExit=e.exitCode;});
+                    external.start(info);studio.writeClientConnection(external.standardInput);phase=5;
+                }else if(phase==5&&clientExit!=-999){
+                    check(clientExit==0,"Real MCP preview failed: "+output);
+                    check(JSON.parse(output).passed,"Real MCP preview did not complete");
+                    check(!clientChanged,"Read-only real asset test changed the project");
+                    finish(true,"PASS: real assets, 8x/10x wand/brush/eraser/rectangle, 3600 move events, MCP PNG preview; no save or project changes");
+                }
+            }catch(error:Error){finish(false,error.getStackTrace());}
+        }
+        private function finish(ok:Boolean,message:String):void {
+            timer.stop();trace(message);
+            var stream:FileStream=new FileStream();stream.open(new File(File.applicationDirectory.nativePath).resolvePath("recolor-real-result.txt"),FileMode.WRITE);
+            try{stream.writeUTFBytes(message);}finally{stream.close();}
+            if(external&&external.running)external.exit(true);if(dialog)dialog.close();clear();NativeApplication.nativeApplication.exit(ok?0:1);
+        }
+    ]]></fx:Script>
+</local:ObjectBuilder>

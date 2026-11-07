@@ -46,3 +46,5 @@ Consulte `nexa_get_edit_preview` (inclui PNG), `nexa_get_edit_sheet` e `nexa_exp
 `tests/run-mcp.ps1` executa o motor C#, cliente MCP HTTP real e testes AIR do Studio. Inclui oito combinações de geometria/direções, RGBA, regiões, âncora, fases, duração, determinismo, limites, locks, erros atômicos, histórico, sidecar, atlas e igualdade entre chamadas locais/remotas. A UI AIR cobre captura da seleção antes do reload e Undo/Redo pelo fluxo manual. `tests/run-recolor.ps1` verifica a convivência com recoloração.
 
 As imagens `breathing-biped.png` e `breathing-unusual.png`, geradas na pasta de resultados, servem para revisão de silhuetas sintéticas. Testes de pixels não certificam qualidade anatômica de qualquer monstro, nem reprodução dentro do cliente de jogo.
+
+O teste AIR também recebe JSON gerado pelo motor C#, verifica a recusa dos tempos variáveis no formato 8.60 e grava/reabre a variante explícita de 100 ms, conferindo os 64 tiles de um ciclo 64×64 com quatro direções e quatro fases. A conversão de alpha para SPR RGB segue o formato original; preserve `.nexaart` para RGBA exato.
