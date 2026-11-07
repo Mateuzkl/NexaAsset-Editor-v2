@@ -76,6 +76,8 @@ public sealed partial class StudioService(IEditorBridge bridge)
     }
     private static int I(JsonElement e, string key, int fallback = 0) => e.TryGetProperty(key, out var v) ? v.GetInt32() : fallback;
     private static string S(JsonElement e, string key, string fallback = "") => e.TryGetProperty(key, out var v) ? v.GetString() ?? fallback : fallback;
+    /// <summary>Dispatch a serialized operation, enforcing local-only approval, MCP consent and current project identity.</summary>
+    /// <remarks>Draft writes run through Edit/history; only local ui_apply may request an editor commit.</remarks>
     private async Task<object> Execute(string method, JsonElement args, bool local, CancellationToken ct)
     {
         if (method == "ui_begin_close" && local) { closePending = true; bool interrupted = generation != null || stableJob?.Running == true; Enabled = false; RevokeProvider(); return new { interrupted, documents = documents.Values.Select(d => d.Info()).ToArray() }; }
@@ -266,6 +268,7 @@ public sealed partial class StudioService(IEditorBridge bridge)
         await Changed(doc); return doc.Info();
     }
     private Task Changed(ArtDocument doc, bool created = false) => bridge.EmitAsync(new { type = "changed", created, editId = doc.Id, documentRevision = doc.Revision, category = doc.State.Category, name = doc.State.Name, approvalRequested = doc.ApprovalRequested, committed = doc.Committed, dirty = doc.Dirty, exportedRevision = doc.ExportedRevision });
+    /// <summary>Honor an explicit target timing restriction while retaining compatibility with older capability responses.</summary>
     private static bool SupportsTiming(JsonElement info) => !info.TryGetProperty("capabilities", out var capabilities)
         || !capabilities.TryGetProperty("timing", out var timing) || timing.GetBoolean();
 }

@@ -21,6 +21,7 @@ public sealed class StudioTools(StudioService studio)
     public Task<object> Project(CancellationToken ct) => Read("get_project_info", new { }, ct);
     [McpServerTool(Name = "nexa_get_capabilities", ReadOnly = true), Description("Read real supported operations and limits for the active project.")]
     public Task<object> Capabilities(CancellationToken ct) => Read("get_capabilities", new { }, ct);
+    /// <summary>Read the opted-in recolor session as metadata and PNG; this operation never publishes its preview to the project.</summary>
     [McpServerTool(Name = "nexa_get_recolor_preview", ReadOnly = true), Description("Inspect the open Recolor window after the user enables MCP there. Returns sessionId, revision, texture coordinates, HSL/replacement settings, selection mask, original and adjusted pixels, plus a PNG preview. Coordinates are unscaled image pixels. Changes remain a preview until the user clicks Create New or Replace Current.")]
     public async Task<CallToolResult> RecolorPreview(CancellationToken ct)
         => await RecolorCall("get_recolor_preview", new { }, true, ct);
@@ -117,6 +118,7 @@ public sealed class StudioTools(StudioService studio)
     public Task<object> Variation(string editId, long expectedDocumentRevision, JsonElement parameters, CancellationToken ct) => Edit("generate_variation", editId, expectedDocumentRevision, parameters, ct);
     [McpServerTool(Name = "nexa_generate_animation"), Description("Derive deterministic offset animation. parameters: offsets:[[dx,dy],...]. Copies all first-time directions. Does not claim to invent a walk cycle.")]
     public Task<object> Motion(string editId, long expectedDocumentRevision, JsonElement parameters, CancellationToken ct) => Edit("generate_animation", editId, expectedDocumentRevision, parameters, ct);
+    /// <summary>Validate the parameter object before forwarding breathing through the same revision-checked draft edit used by the UI.</summary>
     [McpServerTool(Name = "nexa_generate_breathing"), Description("Generate four deterministic localized breathing poses from one source time step, without changing the project. Same engine/history as the manual Breathing action. parameters: amplitude (1 or 2 pixels), durationsMs (exactly four 10..10000 ms values; default 500,300,500,300), regionMode (auto or rectangle), regions (rectangle mode: one {direction,x,y,width,height} per native direction, N/E/S/W). Supports 32/64 pixel axes, 1/4 directions, unlocked layers and a 2 MiB draft budget. Auto uses visible bounds, not anatomical AI. Outside each region and lower auto anchor stay exact. Undo is one step. Legacy formats without phase timings require an explicit [100,100,100,100] profile for Apply. Does not guarantee in-game idle playback; human approval and Save/Compile remain separate.")]
     public Task<object> Breathing(string editId, long expectedDocumentRevision, JsonElement parameters, CancellationToken ct)
         => parameters.ValueKind == JsonValueKind.Object ? Edit("generate_breathing", editId, expectedDocumentRevision, parameters, ct)

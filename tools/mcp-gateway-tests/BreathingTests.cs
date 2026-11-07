@@ -6,9 +6,11 @@ using NexaModern;
 internal static class BreathingTests
 {
     private static JsonElement J(object value) => JsonSerializer.SerializeToElement(value, ArtDocument.Json);
+    /// <summary>Fail the suite immediately when a pixel, history or protocol invariant is violated.</summary>
     private static void Check(bool value, string message) { if (!value) throw new Exception(message); }
     private static string Hash(ArtState state) => Convert.ToHexString(SHA256.HashData(state.Frames.SelectMany(f => f.Layers.SelectMany(l => l.Rgba)).ToArray()));
 
+    /// <summary>Create deterministic asymmetric silhouettes with partial alpha and hidden RGB to expose direction, palette and sampling errors.</summary>
     public static ArtState Fixture(int w, int h, int directions = 1, bool unusual = false)
     {
         var state = new ArtState { Width = w, Height = h, Directions = directions, Category = directions == 4 ? "outfit" : "item" };
@@ -30,6 +32,7 @@ internal static class BreathingTests
         return state;
     }
 
+    /// <summary>Exercise supported shapes, exact RGBA, local regions, histories, rejected inputs and UI/MCP parity; write legacy and visual fixtures.</summary>
     public static async Task Run(string root)
     {
         foreach (int w in new[] { 32, 64 }) foreach (int h in new[] { 32, 64 }) foreach (int dirs in new[] { 1, 4 })
@@ -115,6 +118,7 @@ internal static class BreathingTests
         Console.WriteLine("PASS: breathing four geometries, 1/4 directions, phases/timing, RGBA/palette/anchors, rectangles, deterministic pixels, history, sidecar, locks, budgets, strict errors and manual/MCP parity");
     }
 
+    /// <summary>Assert an invalid generation leaves both document revision and serialized pixels/metadata unchanged.</summary>
     private static void Reject(ArtState state, JsonElement parameters)
     {
         var doc=ArtDocument.Create("reject",0,state.Width,state.Height);doc.Load(0,JsonSerializer.SerializeToUtf8Bytes(state,ArtDocument.Json));
@@ -129,6 +133,7 @@ internal static class BreathingTests
         public string Session="breathing";
         public int Commits;
         public Task EmitAsync(object value)=>Task.CompletedTask;
+        /// <summary>Simulate a legacy editor that forbids variable timings and count only actual asset publication requests.</summary>
         public Task<JsonElement> RequestAsync(string method,object args,CancellationToken cancellation)
         {
             if(method=="get_project_info")return Task.FromResult(J(new {projectSessionId=Session,revision=0,capabilities=new{timing=false}}));
@@ -136,6 +141,7 @@ internal static class BreathingTests
             throw new InvalidOperationException(method);
         }
     }
+    /// <summary>Compare local and MCP generation, then verify timing warnings, approval, atlas import and expired-session rejection.</summary>
     private static async Task ServiceParity()
     {
         var bridge=new Bridge();var studio=new StudioService(bridge);

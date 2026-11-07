@@ -28,3 +28,9 @@ New production paths are `BreathingGenerator.cs`, `BreathingWindow.mxml`, the ex
 Reproducible final full-suite output: `bin-tests/studio-3fafebb3dea8485baf95f38ed156c625/` (ignored; result, memory samples, manual UI captures and closing reports). Core tests also generate asymmetric/biped PNG fixtures for visual review. The source creature supplied with the Python prototype was not available as a standalone PNG, so no visual claim is made for that specific prototype.
 
 Review sources: [Sourcery and CodeRabbit on PR #9](https://github.com/Mateuzkl/NexaAsset-Editor-v2/pull/9). Qodo posted a billing pause, not an actionable code review. Findings were checked against the current code, rather than accepted automatically.
+
+## Version and documentation follow-up
+
+The 0.6.1 startup label in the closing-test screenshot came from `tests/StudioClosingTests-app.xml`; the previously delivered portable application descriptor was 1.0.0. Production is now 1.0.1, and all six full-editor test descriptors identify themselves as `1.0.1 (test)`.
+
+The earlier CodeRabbit docstring warning analyzed two complex C# functions on the older diff. XML summaries now document the affected gateway dispatch and live recolor test, as well as the new breathing validation and integration methods. Building the C# projects with `GenerateDocumentationFile=true` completed with zero warnings/errors. This verifies documentation compilation, not an independent rerun of CodeRabbit's coverage service.

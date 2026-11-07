@@ -110,6 +110,7 @@ public static class BreathingGenerator
         }
     }
 
+    /// <summary>Reject non-object, unknown and duplicate properties before any candidate pixels are changed.</summary>
     private static void Keys(JsonElement value, params string[] keys)
     {
         if (value.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Breathing parameters/regions must be objects.");
@@ -117,11 +118,14 @@ public static class BreathingGenerator
         foreach (var property in value.EnumerateObject())
             if (!keys.Contains(property.Name) || !seen.Add(property.Name)) throw new InvalidDataException("Unknown or duplicate breathing parameter: " + property.Name);
     }
+    /// <summary>Read an integer within the domain bounds and report the offending parameter by name.</summary>
     private static int Number(JsonElement value, int min, int max, string key)
         => value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int n) && n >= min && n <= max ? n
             : throw new InvalidDataException($"{key} must be an integer between {min} and {max}.");
+    /// <summary>Use a default only when an optional integer is absent; malformed values are rejected.</summary>
     private static int Integer(JsonElement value, string key, int fallback, int min, int max)
         => value.TryGetProperty(key, out var n) ? Number(n, min, max, key) : fallback;
+    /// <summary>Require and validate one rectangle coordinate or size without silently supplying missing fields.</summary>
     private static int Required(JsonElement value, string key, int min, int max)
         => value.TryGetProperty(key, out var n) ? Number(n, min, max, key) : throw new InvalidDataException("Missing breathing region " + key + ".");
 }

@@ -10,7 +10,7 @@ The codebase was imported from [punkice3407/ObjectBuilder](https://github.com/pu
 
 ### Pixel Art Studio and MCP (feature branch)
 
-NexaAsset version **1.0.0** includes **Pixel Art / MCP** in the **Sprites** panel. Draw real pixels, edit paint
+NexaAsset version **1.0.1** includes **Pixel Art / MCP** in the **Sprites** panel. Draw real pixels, edit paint
 layers and animation cells, save editable `.nexaart` documents, and import/export
 PNG/spritesheets. An authenticated local MCP client shares those drafts with the
 manual canvas. Remote commit requests require the user's **Apply as NEW asset**

@@ -11,6 +11,7 @@ internal static class RecolorGatewayTests
             => Task.FromCanceled<JsonElement>(new CancellationToken(true));
     }
 
+    /// <summary>Ensure an unresponsive editor returns a useful MCP timeout rather than an opaque successful invocation.</summary>
     public static async Task Run()
     {
         var studio = new StudioService(new TimedOutEditor());

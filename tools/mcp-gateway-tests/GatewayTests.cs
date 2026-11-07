@@ -42,6 +42,8 @@ internal static class GatewayTests
         Console.WriteLine(JsonSerializer.Serialize(new { passed = true, editId, format = info.GetProperty("format").GetString() }));
     }
 
+    /// <summary>Drive the isolated AIR recolor preview through the official MCP client and verify mask, HSL and stale-revision protection.</summary>
+    /// <remarks>Credentials arrive on a private pipe; the AIR harness acknowledges the visible result before the final conflict check.</remarks>
     public static async Task LiveRecolor()
     {
         using var credentials = JsonDocument.Parse((await Console.In.ReadLineAsync())!);
@@ -94,6 +96,7 @@ internal static class GatewayTests
         Console.WriteLine(JsonSerializer.Serialize(new { passed = true, state = "complete" }));
     }
 
+    /// <summary>Read a PNG and exact-sized preview payload from the real-assets test editor without applying or saving it.</summary>
     public static async Task LiveRecolorPreview()
     {
         using var credentials=JsonDocument.Parse((await Console.In.ReadLineAsync())!);
@@ -107,6 +110,8 @@ internal static class GatewayTests
         Console.WriteLine(JsonSerializer.Serialize(new{passed=true,width,height}));
     }
 
+    /// <summary>Launch an owned gateway and test HTTP authentication, tool discovery, draft transactions and approval isolation.</summary>
+    /// <remarks>The editor bridge is simulated; the gateway must exit when its owning input pipe closes.</remarks>
     public static async Task Run()
     {
         string gateway = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../bin-debug/mcp-gateway/nexa-mcp-gateway.exe"));
@@ -208,6 +213,7 @@ internal static class GatewayTests
             await reader;
         }
     }
+    /// <summary>Verify breathing over HTTP against the shared engine, including concurrent revisions, four directions, undo and local approval.</summary>
     private static async Task BreathingGateway(McpClient client, string session, long revision)
     {
         var source=BreathingTests.Fixture(32,64,4);
