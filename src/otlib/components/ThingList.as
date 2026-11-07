@@ -47,6 +47,7 @@ package otlib.components
     [Event(name="replace", type="otlib.events.ThingListEvent")]
     [Event(name="export", type="otlib.events.ThingListEvent")]
     [Event(name="edit", type="otlib.events.ThingListEvent")]
+    [Event(name="recolor", type="otlib.events.ThingListEvent")]
     [Event(name="duplicate", type="otlib.events.ThingListEvent")]
     [Event(name="bulkEdit", type="otlib.events.ThingListEvent")]
     [Event(name="copyObject", type="otlib.events.ThingListEvent")]
@@ -63,6 +64,7 @@ package otlib.components
 
     public class ThingList extends ListBase
     {
+        public var recolorEnabled:Boolean;
         // --------------------------------------------------------------------------
         // PROPERTIES
         // --------------------------------------------------------------------------
@@ -237,6 +239,9 @@ package otlib.components
                         case ThingListEvent.EDIT:
                             event = new ThingListEvent(ThingListEvent.EDIT);
                             break;
+                        case ThingListEvent.RECOLOR:
+                            event = new ThingListEvent(ThingListEvent.RECOLOR, listItem.thing.id, listItem.thing.category);
+                            break;
                         case ThingListEvent.DUPLICATE:
                             event = new ThingListEvent(ThingListEvent.DUPLICATE);
                             break;
@@ -302,7 +307,8 @@ package otlib.components
 
             // Menu indices: 0=replace 1=export 2=edit 3=duplicate 4=bulkEdit
             // 5=copyObj 6=pasteObj 7=copyPat 8=pastePat 9=copyProp 10=pasteProp
-            // 11=copyAttr 12=pasteAttr 13=remove 14=compare 15=copyId 16=serverId
+            // 11=copyAttr 12=pasteAttr 13=remove 14=compare 15=recolor 16=copyId 17=serverId
+            menu.items[15].enabled = recolorEnabled;
 
             // Check if current item is an item category (for attributes)
             var isItem:Boolean = false;

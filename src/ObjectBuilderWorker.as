@@ -57,6 +57,10 @@ package
     import nail.utils.FileQueueHelper;
 
     import ob.studio.LegacyStudioAdapter;
+    import ob.commands.things.GetRecolorSourceCommand;
+    import ob.commands.things.RecolorResultCommand;
+    import ob.commands.things.SaveRecolorCommand;
+    import ob.recolor.RecolorSave;
     import ob.commands.StudioCommand;
     import ob.commands.StudioResultCommand;
     import ob.commands.FindResultCommand;
@@ -390,6 +394,8 @@ package
             // Thing commands
             _communicator.registerCallback(NewThingCommand, newThingCallback);
             _communicator.registerCallback(UpdateThingCommand, updateThingCallback);
+            _communicator.registerCallback(GetRecolorSourceCommand, getRecolorSource);
+            _communicator.registerCallback(SaveRecolorCommand, saveRecolor);
             _communicator.registerCallback(ImportThingsCommand, importThingsCallback);
             _communicator.registerCallback(ImportThingsFromFilesCommand, importThingsFromFilesCallback);
             _communicator.registerCallback(ExportThingCommand, exportThingCallback);
@@ -3595,7 +3601,50 @@ package
             return _renderBuffer.getPixels(renderRect);
         }
 
-        private function getThingData(id:uint, category:String, obdVersion:uint, clientVersion:uint):ThingData
+        private function getRecolorSource(request:uint, id:uint, category:String):void
+        {
+            try
+            {
+                if (!clientLoaded) throw new Error("Open a DAT/SPR project first.");
+                var data:ThingData = getThingData(id, category, OBDVersions.OBD_VERSION_3, _version.value, true);
+                sendCommand(new RecolorResultCommand(request, data, _studioRevision));
+            }
+            catch (error:Error)
+            {
+                sendCommand(new RecolorResultCommand(request, null, 0, error.message));
+            }
+        }
+
+        private function saveRecolor(request:uint, id:uint, category:String, revision:Number,
+                                     options:Object, masks:Object, createNew:Boolean):void
+        {
+            var saved:uint;
+            try
+            {
+                if (!clientLoaded || revision != _studioRevision)
+                    throw new Error(Resources.getString("recolor.conflict"));
+                _studioCommitting = true;
+                _studioStorageChanged = false;
+                try { saved = RecolorSave.apply(_things, _sprites, _features, id, category, options, masks, createNew); }
+                finally { _studioCommitting = false; }
+                if (!saved) throw new Error(Resources.getString("recolor.noChanges"));
+            }
+            catch (error:Error)
+            {
+                sendCommand(new RecolorResultCommand(request, null, 0, error.message));
+                return;
+            }
+
+            if (createNew) syncItemsHelper(new <uint>[saved], category);
+            sendClientInfo();
+            sendThingList(new <uint>[saved], category, true);
+            sendSpriteList(new <uint>[_sprites.spritesCount], true);
+            getThingCallback(saved, category);
+            sendCommand(new RecolorResultCommand(request));
+        }
+
+        private function getThingData(id:uint, category:String, obdVersion:uint, clientVersion:uint,
+                                      strict:Boolean = false):ThingData
         {
             if (!ThingCategory.getCategory(category))
             {
@@ -3626,7 +3675,7 @@ package
                 for (var i:uint = 0; i < length; i++)
                 {
                     var spriteId:uint = spriteIndex[i];
-                    var pixels:ByteArray = _sprites.getPixels(spriteId);
+                    var pixels:ByteArray = strict ? _sprites.getPixelsStrict(spriteId) : _sprites.getPixels(spriteId);
                     if (!pixels)
                     {
                         Log.error(Resources.getString("spriteNotFound", spriteId));

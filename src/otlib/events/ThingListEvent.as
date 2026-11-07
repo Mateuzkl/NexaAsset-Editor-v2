@@ -30,9 +30,14 @@ package otlib.events
         // CONSTRUCTOR
         // --------------------------------------------------------------------------
 
-        public function ThingListEvent(type:String)
+        public var thingId:uint;
+        public var category:String;
+
+        public function ThingListEvent(type:String, thingId:uint = 0, category:String = null)
         {
             super(type);
+            this.thingId = thingId;
+            this.category = category;
         }
 
         // --------------------------------------------------------------------------
@@ -45,7 +50,7 @@ package otlib.events
 
         override public function clone():Event
         {
-            return new ThingListEvent(this.type);
+            return new ThingListEvent(this.type, thingId, category);
         }
 
         // --------------------------------------------------------------------------
@@ -55,6 +60,7 @@ package otlib.events
         public static const REPLACE:String = "replace";
         public static const EXPORT:String = "export";
         public static const EDIT:String = "edit";
+        public static const RECOLOR:String = "recolor";
         public static const DUPLICATE:String = "duplicate";
         public static const BULK_EDIT:String = "bulkEdit";
         public static const REMOVE:String = "remove";

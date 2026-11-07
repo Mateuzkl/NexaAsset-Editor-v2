@@ -1,0 +1,5 @@
+<application xmlns="http://ns.adobe.com/air/application/51.2">
+    <id>local.NexaRecolorTests</id><filename>RecolorMainTests</filename><name>NexaAsset Recolor Tests</name><versionNumber>1.0.0</versionNumber>
+    <initialWindow><content>RecolorMainTests.swf</content><visible>false</visible><width>1366</width><height>768</height></initialWindow>
+    <supportedProfiles>extendedDesktop</supportedProfiles>
+</application>

@@ -51,6 +51,10 @@ THE SOFTWARE.
     <fx:Script>
         <![CDATA[
             import ob.ui.NexaTheme;
+            import ob.commands.things.GetRecolorSourceCommand;
+            import ob.commands.things.RecolorResultCommand;
+            import ob.commands.things.SaveRecolorCommand;
+            import ob.recolor.RecolorWindow;
             import com.mignari.animator.AnimationEditor;
             import ob.components.ReadableProgressWidget;
             import ob.ui.NexaUiEvent;
@@ -245,6 +249,9 @@ THE SOFTWARE.
             // --------------------------------------------------------------------------
             
             private var _locked:Boolean;
+            [Bindable] private var _canRecolor:Boolean;
+            private var _recolorRequest:uint;
+            private var _recolorWindow:RecolorWindow;
             private var _pendingEditThing:Boolean;
             private var _creationComplete:Boolean;
             private var _invokeArgs:Array;
@@ -1760,6 +1767,8 @@ THE SOFTWARE.
             }
             public function clear():void
             {
+                if (_recolorWindow) _recolorWindow.close();
+                _recolorRequest++;
                 invalidateStudioSession();
 
                 cancelPendingThingRequest();
@@ -1795,6 +1804,7 @@ THE SOFTWARE.
                 nexaActions.readOnly = false;
                 nativeSearch.visible = nativeSearch.includeInLayout = false;
                 _clientLoaded = false;
+                _canRecolor = false;
                 _clientChanged = false;
                 if (_clientInfo) { _clientInfo.loaded = false; _clientInfo.changed = false; }
                 nexaActions.loaded = nexaNavigation.loaded = false;
@@ -1868,6 +1878,7 @@ THE SOFTWARE.
                 _communicator.registerCallback(SetClientInfoCommand, function(info:ClientInfo):void { setClientInfoCallback(info); });
             
                 _communicator.registerCallback(SetThingDataCommand, function(data:ThingData):void { setThingDataCallback(data); });
+                _communicator.registerCallback(RecolorResultCommand, recolorResult);
                 _communicator.registerCallback(SetThingListCommand, function(ids:Vector.<uint>, items:Vector.<ThingListItem>, force:Boolean, previous:int, next:int):void { setThingListCallback(ids, items, force, previous, next); });
                 _communicator.registerCallback(UpdateThingPropertiesCommand, updateThingPropertiesCallback);
                 _communicator.registerCallback(SetSpriteListCommand, function(ids:Vector.<uint>, sprites:Vector.<SpriteData>, force:Boolean):void { setSpriteListCallback(ids, sprites, force); });
@@ -2144,6 +2155,7 @@ THE SOFTWARE.
                 _clientChanged = info.changed;
                 _clientIsTemporary = info.isTemporary;
                 _clientLoaded = info.loaded;
+                _canRecolor = info.loaded && !native;
                 _otbLoaded = info.otbLoaded;
                 nexaNavigation.loaded = info.loaded;
                 nexaActions.loaded = info.loaded;
@@ -3591,6 +3603,56 @@ THE SOFTWARE.
                                 _settings.jpegQuality);
                     }
                 }
+            }
+
+            protected function recolorThingHandler(event:Event):void
+            {
+                if (!_canRecolor || _locked) return;
+                var selection:ThingListEvent = event as ThingListEvent;
+                var id:uint = selection ? selection.thingId : getActiveThingList().selectedId;
+                if (!id) return;
+                if (thingTypeEditor.changed)
+                {
+                    Alert.show(resourceManager.getString("strings", "recolor.unsaved"),
+                        resourceManager.getString("strings", "recolor.title"), Alert.OK, this);
+                    return;
+                }
+
+                cancelPendingThingRequest();
+                _locked = true;
+                sendCommand(new GetRecolorSourceCommand(++_recolorRequest, id,
+                    selection ? selection.category : currentCategory));
+            }
+
+            private function recolorResult(request:uint, data:ThingData, revision:Number, error:String):void
+            {
+                if (request != _recolorRequest) return;
+                if (_recolorWindow)
+                {
+                    _recolorWindow.saveFinished(error);
+                    return;
+                }
+                if (error || !data)
+                {
+                    _locked = false;
+                    Alert.show(error, resourceManager.getString("strings", "recolor.title"), Alert.OK, this);
+                    return;
+                }
+
+                var window:RecolorWindow = new RecolorWindow();
+                window.sourceData = data;
+                window.saveHandler = function(options:Object, masks:Object, createNew:Boolean):void
+                {
+                    sendCommand(new SaveRecolorCommand(request, data.id, data.category, revision, options, masks, createNew));
+                };
+                window.addEventListener(Event.CLOSE, function(event:Event):void
+                {
+                    _recolorWindow = null;
+                    _recolorRequest++;
+                    _locked = false;
+                });
+                _recolorWindow = window;
+                window.open(this);
             }
 
             protected function duplicateThingHandler(event:Event):void
@@ -5278,6 +5340,7 @@ THE SOFTWARE.
                                 replace="replaceThingHandler(event)"
                                 export="exportThingHandler(event)"
                                 duplicate="duplicateThingHandler(event)"
+                                recolorEnabled="{_canRecolor}" recolor="recolorThingHandler(event)"
                                 bulkEdit="bulkEditHandler(event)"
                                 edit="editThingHandler(event)"
                                 compare="compareThingHandler(event)"
@@ -5324,6 +5387,7 @@ THE SOFTWARE.
                                     replace="replaceThingHandler(event)"
                                     export="exportThingHandler(event)"
                                     duplicate="duplicateThingHandler(event)"
+                                    recolorEnabled="{_canRecolor}" recolor="recolorThingHandler(event)"
                                     bulkEdit="bulkEditHandler(event)"
                                     edit="editThingHandler(event)"
                                     compare="compareThingHandler(event)"
@@ -5357,6 +5421,7 @@ THE SOFTWARE.
                                 replace="replaceThingHandler(event)"
                                 export="exportThingHandler(event)"
                                 duplicate="duplicateThingHandler(event)"
+                                recolorEnabled="{_canRecolor}" recolor="recolorThingHandler(event)"
                                 bulkEdit="bulkEditHandler(event)"
                                 edit="editThingHandler(event)"
                                 compare="compareThingHandler(event)"
@@ -5419,6 +5484,10 @@ THE SOFTWARE.
                             height="22"
                             icon="{Assets.DUPLICATE}"
                             click="duplicateThingHandler(event)"/>
+                        <s:Button id="recolorThingButton" width="22" height="22"
+                            icon="{NexaIcons.RECOLOR}" enabled="{_canRecolor}"
+                            toolTip="@Resource(key='recolor.title', bundle='strings')"
+                            click="recolorThingHandler(event)"/>
                         <s:Button id="newThingButton"
                             toolTip="{resourceManager.getString('strings', 'new')}"
                             width="22"
