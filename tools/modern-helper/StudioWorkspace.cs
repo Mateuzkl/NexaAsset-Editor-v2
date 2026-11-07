@@ -27,6 +27,28 @@ public sealed partial class NativeWorkspace
             return new { items = rows.Skip(checked(page * 100)).Take(100).Select(a => new { id = a.Id, name = a.Name.Length > 256 ? a.Name[..256] : a.Name, category = a.Category }), page };
         }
         var appearance = assets.Find(category, request.GetProperty("assetId").GetUInt32()); var groups = AssetSet.Groups(appearance);
+        if(action=="get_asset_pose")
+        {
+            int Read(string key)=>request.TryGetProperty(key,out var v)?v.GetInt32():0;
+            int gi=Read("group"),time=Read("frame"),py=Read("patternY"),pz=Read("patternZ");
+            if(gi<0||gi>=groups.Length)throw new InvalidDataException("Invalid selected group.");var g=groups[gi];
+            if(time<0||time>=g.Frames||py<0||py>=g.PatternY||pz<0||pz>=g.PatternZ||g.PatternX is not(1 or 4)||g.Layers is <1 or >16)throw new InvalidDataException("Invalid selected pose.");
+            int poseOffset=checked((((time*(int)g.PatternZ+pz)*(int)g.PatternY+py)*(int)g.PatternX)*(int)g.Layers);
+            var reference=cache.Sprite(g.Sprites[poseOffset]);
+            int w=reference.Width,h=reference.Height;
+            if(w is not(32 or 64)||h is not(32 or 64))throw new InvalidDataException("Selected pose requires 32/64 pixel axes.");
+            object? pixels=null;
+            if(request.TryGetProperty("direction",out var direction)&&request.TryGetProperty("layer",out var layer))
+            {
+                int d=direction.GetInt32(),l=layer.GetInt32();
+                if(d<0||d>=g.PatternX||l<0||l>=g.Layers)throw new InvalidDataException("Invalid pose direction or layer.");
+                var image=cache.Sprite(g.Sprites[checked(poseOffset+d*(int)g.Layers+l)]);
+                if(image.Width!=w||image.Height!=h)throw new InvalidDataException("Selected pose contains inconsistent sprite dimensions.");
+                bool template=category=="outfit"&&l>0;
+                pixels=new{name=template?"Outfit template reference "+l:"Source layer "+l,visible=!template,rgba=Convert.ToBase64String(image.Rgba)};
+            }
+            return new{revision=Revision,assetId=appearance.Id,group=gi,frame=time,width=w,height=h,directions=g.PatternX,name=appearance.Name,layerCount=g.Layers,pixels};
+        }
         if (action == "get_asset")
         {
             int remaining = 4096;

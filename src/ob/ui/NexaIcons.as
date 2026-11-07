@@ -35,5 +35,6 @@ package ob.ui
         [Embed(source="/../assets/nexa/icons/default/plus.svg")] public static const PLUS:Class;
         [Embed(source="/../assets/nexa/icons/default/minus.svg")] public static const MINUS:Class;
         [Embed(source="/../assets/nexa/icons/default/expand.svg")] public static const EXPAND:Class;
+        [Embed(source="/../assets/nexa/icons/default/recolor.svg")] public static const RECOLOR:Class;
     }
 }

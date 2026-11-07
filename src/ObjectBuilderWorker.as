@@ -57,6 +57,10 @@ package
     import nail.utils.FileQueueHelper;
 
     import ob.studio.LegacyStudioAdapter;
+    import ob.commands.things.GetRecolorSourceCommand;
+    import ob.commands.things.RecolorResultCommand;
+    import ob.commands.things.SaveRecolorCommand;
+    import ob.recolor.RecolorSave;
     import ob.commands.StudioCommand;
     import ob.commands.StudioResultCommand;
     import ob.commands.FindResultCommand;
@@ -390,6 +394,8 @@ package
             // Thing commands
             _communicator.registerCallback(NewThingCommand, newThingCallback);
             _communicator.registerCallback(UpdateThingCommand, updateThingCallback);
+            _communicator.registerCallback(GetRecolorSourceCommand, getRecolorSource);
+            _communicator.registerCallback(SaveRecolorCommand, saveRecolor);
             _communicator.registerCallback(ImportThingsCommand, importThingsCallback);
             _communicator.registerCallback(ImportThingsFromFilesCommand, importThingsFromFilesCallback);
             _communicator.registerCallback(ExportThingCommand, exportThingCallback);
@@ -516,12 +522,14 @@ package
             _things = new ThingTypeStorage(_settings);
             _things.addEventListener(StorageEvent.LOAD, storageLoadHandler);
             _things.addEventListener(StorageEvent.CHANGE, storageChangeHandler);
+            _things.addEventListener(StorageEvent.MUTATION, storageMutationHandler);
             _things.addEventListener(ProgressEvent.PROGRESS, thingsProgressHandler);
             _things.addEventListener(ErrorEvent.ERROR, thingsErrorHandler);
 
             _sprites = new SpriteStorage();
             _sprites.addEventListener(StorageEvent.LOAD, storageLoadHandler);
             _sprites.addEventListener(StorageEvent.CHANGE, storageChangeHandler);
+            _sprites.addEventListener(StorageEvent.MUTATION, storageMutationHandler);
             _sprites.addEventListener(ProgressEvent.PROGRESS, spritesProgressHandler);
             _sprites.addEventListener(ErrorEvent.ERROR, spritesErrorHandler);
         }
@@ -832,6 +840,7 @@ package
                 _things.unload();
                 _things.removeEventListener(StorageEvent.LOAD, storageLoadHandler);
                 _things.removeEventListener(StorageEvent.CHANGE, storageChangeHandler);
+                _things.removeEventListener(StorageEvent.MUTATION, storageMutationHandler);
                 _things.removeEventListener(ProgressEvent.PROGRESS, thingsProgressHandler);
                 _things.removeEventListener(ErrorEvent.ERROR, thingsErrorHandler);
                 _things = null;
@@ -842,6 +851,7 @@ package
                 _sprites.unload();
                 _sprites.removeEventListener(StorageEvent.LOAD, storageLoadHandler);
                 _sprites.removeEventListener(StorageEvent.CHANGE, storageChangeHandler);
+                _sprites.removeEventListener(StorageEvent.MUTATION, storageMutationHandler);
                 _sprites.removeEventListener(ProgressEvent.PROGRESS, spritesProgressHandler);
                 _sprites.removeEventListener(ErrorEvent.ERROR, spritesErrorHandler);
                 _sprites = null;
@@ -3595,7 +3605,62 @@ package
             return _renderBuffer.getPixels(renderRect);
         }
 
-        private function getThingData(id:uint, category:String, obdVersion:uint, clientVersion:uint):ThingData
+        private function getRecolorSource(request:uint, id:uint, category:String):void
+        {
+            try
+            {
+                if (!clientLoaded) throw new Error("Open a DAT/SPR project first.");
+                var data:ThingData = getThingData(id, category, OBDVersions.OBD_VERSION_3, _version.value, true);
+                sendCommand(new RecolorResultCommand(request, data, _studioRevision));
+            }
+            catch (error:Error)
+            {
+                sendCommand(new RecolorResultCommand(request, null, 0, error.message));
+            }
+        }
+
+        private function saveRecolor(request:uint, id:uint, category:String, revision:Number,
+                                     options:Object, masks:Object, createNew:Boolean):void
+        {
+            var saved:uint;
+            try
+            {
+                if (!clientLoaded || revision != _studioRevision)
+                    throw new Error(Resources.getString("recolor.conflict"));
+                _studioCommitting = true;
+                _studioStorageChanged = false;
+                try { saved = RecolorSave.apply(_things, _sprites, _features, id, category, options, masks, createNew); }
+                finally { _studioCommitting = false; }
+                if (!saved) throw new Error(Resources.getString("recolor.noChanges"));
+            }
+            catch (error:Error)
+            {
+                sendCommand(new RecolorResultCommand(request, null, 0, error.message));
+                return;
+            }
+
+            // A committed save must always be acknowledged, even if a refresh fails.
+            try
+            {
+                sendClientInfo();
+                if (createNew) syncItemsHelper(new <uint>[saved], category);
+                else if (otbLoaded && category == ThingCategory.ITEM)
+                {
+                    var mapped:Array = _items.getItemsByClientId(saved);
+                    for each (var item:ServerItem in mapped)
+                        item.spriteHash = _sprites.getSpriteHash(_things.getThingType(saved, category));
+                    if (mapped && mapped.length) _items.invalidate();
+                }
+                sendThingList(new <uint>[saved], category, true);
+                sendSpriteList(new <uint>[_sprites.spritesCount], true);
+                getThingCallback(saved, category);
+            }
+            catch (refreshError:Error) { Log.error("Recolor saved; refresh failed: " + refreshError.message); }
+            sendCommand(new RecolorResultCommand(request));
+        }
+
+        private function getThingData(id:uint, category:String, obdVersion:uint, clientVersion:uint,
+                                      strict:Boolean = false):ThingData
         {
             if (!ThingCategory.getCategory(category))
             {
@@ -3626,7 +3691,7 @@ package
                 for (var i:uint = 0; i < length; i++)
                 {
                     var spriteId:uint = spriteIndex[i];
-                    var pixels:ByteArray = _sprites.getPixels(spriteId);
+                    var pixels:ByteArray = strict ? _sprites.getPixelsStrict(spriteId) : _sprites.getPixels(spriteId);
                     if (!pixels)
                     {
                         Log.error(Resources.getString("spriteNotFound", spriteId));
@@ -3714,6 +3779,12 @@ package
         {
             if(_studioCommitting){_studioStorageChanged=true;return;}
             sendClientInfo();
+        }
+
+        private function storageMutationHandler(event:StorageEvent):void
+        {
+            if (_studioCommitting) _studioStorageChanged = true;
+            else _studioRevision++;
         }
 
         protected function thingsProgressHandler(event:ProgressEvent):void

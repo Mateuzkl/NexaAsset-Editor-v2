@@ -21,6 +21,35 @@ public sealed class StudioTools(StudioService studio)
     public Task<object> Project(CancellationToken ct) => Read("get_project_info", new { }, ct);
     [McpServerTool(Name = "nexa_get_capabilities", ReadOnly = true), Description("Read real supported operations and limits for the active project.")]
     public Task<object> Capabilities(CancellationToken ct) => Read("get_capabilities", new { }, ct);
+    /// <summary>Read the opted-in recolor session as metadata and PNG; this operation never publishes its preview to the project.</summary>
+    [McpServerTool(Name = "nexa_get_recolor_preview", ReadOnly = true), Description("Inspect the open Recolor window after the user enables MCP there. Returns sessionId, revision, texture coordinates, HSL/replacement settings, selection mask, original and adjusted pixels, plus a PNG preview. Coordinates are unscaled image pixels. Changes remain a preview until the user clicks Create New or Replace Current.")]
+    public async Task<CallToolResult> RecolorPreview(CancellationToken ct)
+        => await RecolorCall("get_recolor_preview", new { }, true, ct);
+
+    /// <summary>Return editor failures explicitly instead of an opaque MCP invocation error.</summary>
+    private async Task<CallToolResult> RecolorCall(string method, object args, bool pixels, CancellationToken ct)
+    {
+        try
+        {
+            var metadata = JsonSerializer.SerializeToElement(await Read(method, args, ct), ArtDocument.Json);
+            return pixels ? ImageResult(metadata, ArtDocument.FromArgb(Convert.FromBase64String(metadata.GetProperty("argb").GetString()!)),
+                metadata.GetProperty("width").GetInt32(), metadata.GetProperty("height").GetInt32())
+                : new() { StructuredContent = metadata, Content = [new TextContentBlock { Text = metadata.GetRawText() }] };
+        }
+        catch (Exception error) when (error is InvalidOperationException or InvalidDataException or OperationCanceledException or TimeoutException)
+        {
+            string message = error is OperationCanceledException or TimeoutException
+                ? "EDITOR_TIMEOUT: the editor did not return the Recolor preview within 25 seconds. Check whether the editor is responding; no preview was applied."
+                : error.Message;
+            return new() { IsError = true, Content = [new TextContentBlock { Text = message }] };
+        }
+    }
+    [McpServerTool(Name = "nexa_adjust_recolor"), Description("Adjust the visible Recolor preview using its exact sessionId and expectedRevision. parameters may contain hue (-180..180), saturation/lightness (-100..100), hsl/colorize/replace/shading/maskOnly/applyAllFrames/showOverlay (boolean), source/target (six hex digits), tolerance (0..100 percent), zoom (1..10), group/frame/direction/patternY/patternZ/layer (zero based). Outfit dye template layers are protected. Read nexa_get_recolor_preview again to inspect changes. The human applies the result in Recolor.")]
+    public Task<CallToolResult> AdjustRecolor(string sessionId, long expectedRevision, JsonElement parameters, CancellationToken ct)
+        => RecolorCall("adjust_recolor", new { sessionId, expectedRevision, parameters }, false, ct);
+    [McpServerTool(Name = "nexa_select_recolor_area"), Description("Edit the current Recolor selection with exact sessionId and expectedRevision. parameters: action (all/clear/invert/wand/brush/erase/rectangle). Wand uses x,y,tolerance (0..100 percent),add (boolean). Brush/erase use x,y,endX,endY,size (1..4). Rectangle uses x,y,endX,endY. All coordinates are unscaled image pixels. Only changes the live preview selection; the user applies the result.")]
+    public Task<CallToolResult> RecolorSelection(string sessionId, long expectedRevision, JsonElement parameters, CancellationToken ct)
+        => RecolorCall("select_recolor_area", new { sessionId, expectedRevision, parameters }, false, ct);
     [McpServerTool(Name = "nexa_list_assets", ReadOnly = true), Description("List up to 100 active assets. Category: item, outfit, effect, missile, sprite. Page is zero based.")]
     public Task<object> List(string category, CancellationToken ct, int page = 0, string query = "") => Read("list_assets", new { category, page, query }, ct);
     [McpServerTool(Name = "nexa_get_asset", ReadOnly = true), Description("Read geometry, animation timings and actual sprite references.")]
@@ -37,6 +66,10 @@ public sealed class StudioTools(StudioService studio)
     public Task<object> Documents(CancellationToken ct) => Read("list_art_documents", new { }, ct);
     [McpServerTool(Name = "nexa_begin_edit"), Description("Create an isolated art draft against an exact project identity/revision; category: item, outfit, effect, missile. Set outfit for characters (four directions initialized automatically), use width=32,height=64 for tall outfits; optional name and real spriteId reference. Category is preserved through approval and insertion into its matching editor section.")]
     public Task<object> Begin(string projectSessionId, long expectedRevision, string category, CancellationToken ct, int width = 32, int height = 32, uint spriteId = 0, string name = "") => Read("begin_edit", new { projectSessionId, expectedRevision, width, height, spriteId, category, name }, ct);
+    /// <summary>Compose all tiles and directions of an explicit selected pose into an isolated editable draft.</summary>
+    [McpServerTool(Name="nexa_begin_asset_edit"),Description("Open a complete object pose as a NEW draft with exact projectSessionId/expectedRevision, category and assetId. Optional group/frame/patternY/patternZ are zero based. Composes 32/64 pixel canvases and all native directions/layers; outfit template layers are hidden references. Does not replace the original or discard its animations. Apply creates a new raster asset, not a dye-preserving clone.")]
+    public Task<object> BeginAsset(string projectSessionId,long expectedRevision,string category,uint assetId,CancellationToken ct,int group=0,int frame=0,int patternY=0,int patternZ=0)
+        =>Read("begin_asset_edit",new{projectSessionId,expectedRevision,category,assetId,group,frame,patternY,patternZ},ct);
     [McpServerTool(Name = "nexa_duplicate_sprite"), Description("Copy exact reference pixels into a new draft without changing the original.")]
     public Task<object> Duplicate(string projectSessionId, long expectedRevision, uint spriteId, CancellationToken ct) => Read("duplicate_sprite", new { projectSessionId, expectedRevision, spriteId }, ct);
     [McpServerTool(Name = "nexa_get_edit_preview", ReadOnly = true), Description("Read straight RGBA preview, hash, pixel diff, timeline and compatibility warnings.")]
@@ -89,6 +122,15 @@ public sealed class StudioTools(StudioService studio)
     public Task<object> Variation(string editId, long expectedDocumentRevision, JsonElement parameters, CancellationToken ct) => Edit("generate_variation", editId, expectedDocumentRevision, parameters, ct);
     [McpServerTool(Name = "nexa_generate_animation"), Description("Derive deterministic offset animation. parameters: offsets:[[dx,dy],...]. Copies all first-time directions. Does not claim to invent a walk cycle.")]
     public Task<object> Motion(string editId, long expectedDocumentRevision, JsonElement parameters, CancellationToken ct) => Edit("generate_animation", editId, expectedDocumentRevision, parameters, ct);
+    /// <summary>Validate the parameter object before forwarding breathing through the same revision-checked draft edit used by the UI.</summary>
+    [McpServerTool(Name = "nexa_generate_breathing"), Description("Generate four deterministic localized breathing poses from one source time step, without changing the project. Same engine/history as the manual Breathing action. parameters: amplitude (1 or 2 pixels), durationsMs (exactly four 10..10000 ms values; default 500,300,500,300), regionMode (auto or rectangle), regions (rectangle mode: one {direction,x,y,width,height} per native direction, N/E/S/W). Supports 32/64 pixel axes, 1/4 directions, unlocked layers and a 2 MiB draft budget. Auto uses visible bounds, not anatomical AI. Outside each region and lower auto anchor stay exact. Undo is one step. Legacy formats without phase timings require an explicit [100,100,100,100] profile for Apply. Does not guarantee in-game idle playback; human approval and Save/Compile remain separate.")]
+    public Task<object> Breathing(string editId, long expectedDocumentRevision, JsonElement parameters, CancellationToken ct)
+        => parameters.ValueKind == JsonValueKind.Object ? Edit("generate_breathing", editId, expectedDocumentRevision, parameters, ct)
+            : throw new ModelContextProtocol.McpException("Breathing parameters must be an object.");
+    /// <summary>Expose the shared idle engine with revision checks and draft-only publication.</summary>
+    [McpServerTool(Name="nexa_generate_idle_animation"),Description("Generate deterministic idle poses through the same engine as the UI. parameters: breathing/bobbing/sway (booleans), breathingAmplitude/bobbingAmplitude/swayAmplitude (1..2 px), frameCount (3..16, total cells max 64), durationsMs (one 10..10000 ms integer per phase), anchorBase (boolean), direction (optional zero-based face, omit for all), regionMode (auto/rectangle), regions (one {direction,x,y,width,height} per enabled direction). Defaults: breathing, 4 phases, 500/300/500/300 ms, anchored. Existing animations are rejected; each pose samples the original and preserves outside-ROI bytes. Undo is one step. Human Apply and Save remain separate; in-game idle playback is not guaranteed.")]
+    public Task<object> Idle(string editId,long expectedDocumentRevision,JsonElement parameters,CancellationToken ct)
+        =>parameters.ValueKind==JsonValueKind.Object?Edit("generate_idle_animation",editId,expectedDocumentRevision,parameters,ct):throw new ModelContextProtocol.McpException("Idle parameters must be an object.");
     [McpServerTool(Name = "nexa_import_spritesheet"), Description("Import a bounded PNG atlas into the draft. parameters: png (base64),cellWidth,cellHeight,directions,duration,cells (optional exported mapping). Cells are row-major, time then native direction.")]
     public Task<object> ImportSheet(string editId, long expectedDocumentRevision, JsonElement parameters, CancellationToken ct) => Edit("import_spritesheet", editId, expectedDocumentRevision, parameters, ct);
 }

@@ -828,6 +828,7 @@ package otlib.things
 
         public function invalidate():void
         {
+            dispatchEvent(new StorageEvent(StorageEvent.MUTATION));
             if (!_changed)
             {
                 _changed = true;

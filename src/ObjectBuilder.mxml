@@ -51,6 +51,10 @@ THE SOFTWARE.
     <fx:Script>
         <![CDATA[
             import ob.ui.NexaTheme;
+            import ob.commands.things.GetRecolorSourceCommand;
+            import ob.commands.things.RecolorResultCommand;
+            import ob.commands.things.SaveRecolorCommand;
+            import ob.recolor.RecolorWindow;
             import com.mignari.animator.AnimationEditor;
             import ob.components.ReadableProgressWidget;
             import ob.ui.NexaUiEvent;
@@ -245,6 +249,9 @@ THE SOFTWARE.
             // --------------------------------------------------------------------------
             
             private var _locked:Boolean;
+            [Bindable] private var _canRecolor:Boolean;
+            private var _recolorRequest:uint;
+            private var _recolorWindow:RecolorWindow;
             private var _pendingEditThing:Boolean;
             private var _creationComplete:Boolean;
             private var _invokeArgs:Array;
@@ -1118,16 +1125,35 @@ THE SOFTWARE.
             private var _studioProjectId:String=mx.utils.UIDUtil.createUID();
             private var _studioRequests:Object={};
             private var _studioSequence:uint=0;
-            public function openPixelArtStudio():void {
+            public function openPixelArtStudio(asset:Object=null):void {
                 if(!clientLoaded)return;
-                if(_studioWindow){_studioWindow.setFocus();return;}
+                if(_studioWindow){if(asset)_studioWindow.loadAsset(asset);_studioWindow.setFocus();return;}
                 if(!studio){studio=new ob.studio.StudioController();studio.editor=this;}
-                var window:ob.studio.PixelArtStudio=new ob.studio.PixelArtStudio();_studioWindow=window;window.controller=studio;window.referenceSpriteId=activeSpriteList.selectedId;
+                var window:ob.studio.PixelArtStudio=new ob.studio.PixelArtStudio();_studioWindow=window;window.controller=studio;window.referenceSpriteId=activeSpriteList.selectedId;window.initialAsset=asset;
                 window.addEventListener(Event.CLOSE,function(event:Event):void {window.shutdown();if(_studioWindow==window)_studioWindow=null;});window.open(this);
+            }
+            public function openSelectedIdle():void {
+                if(!clientLoaded||locked)return;
+                if(thingTypeEditor.changed){Alert.show(resourceManager.getString('strings','recolor.unsaved'));return;}
+                var pose:Object=thingTypeEditor.selectedIdlePose;
+                if(!pose)return;
+                var nativeData:ModernThingData=thingTypeEditor.thingData as ModernThingData;
+                if(nativeData)pose.group=nativeData.groupIndices[pose.group];
+                openPixelArtStudio(pose);
             }
             /** Only the private child-process pipe reaches this adapter. Remote tools cannot approve or save. */
             public function studioEditorRequest(method:String,args:Object,callback:Function):void {
                 if(!clientLoaded){callback(null,"Open a project first.");return;}
+                if (method == "get_recolor_preview" || method == "adjust_recolor" || method == "select_recolor_area")
+                {
+                    try
+                    {
+                        if (!_recolorWindow) throw new Error("Open Recolor and enable MCP in that window first.");
+                        callback(_recolorWindow.mcpRequest(method, args));
+                    }
+                    catch (recolorError:Error) { callback(null, recolorError.message); }
+                    return;
+                }
                 var sessionId:String=_studioProjectId;
                 if(method=="commit_art"){
                     if(locked||thingTypeEditor.changed||_nativeSaving){callback(null,"Finish the active editor operation and save inspector changes before applying art.");return;}
@@ -1760,6 +1786,8 @@ THE SOFTWARE.
             }
             public function clear():void
             {
+                if (_recolorWindow) _recolorWindow.close();
+                _recolorRequest++;
                 invalidateStudioSession();
 
                 cancelPendingThingRequest();
@@ -1795,6 +1823,7 @@ THE SOFTWARE.
                 nexaActions.readOnly = false;
                 nativeSearch.visible = nativeSearch.includeInLayout = false;
                 _clientLoaded = false;
+                _canRecolor = false;
                 _clientChanged = false;
                 if (_clientInfo) { _clientInfo.loaded = false; _clientInfo.changed = false; }
                 nexaActions.loaded = nexaNavigation.loaded = false;
@@ -1868,6 +1897,7 @@ THE SOFTWARE.
                 _communicator.registerCallback(SetClientInfoCommand, function(info:ClientInfo):void { setClientInfoCallback(info); });
             
                 _communicator.registerCallback(SetThingDataCommand, function(data:ThingData):void { setThingDataCallback(data); });
+                _communicator.registerCallback(RecolorResultCommand, recolorResult);
                 _communicator.registerCallback(SetThingListCommand, function(ids:Vector.<uint>, items:Vector.<ThingListItem>, force:Boolean, previous:int, next:int):void { setThingListCallback(ids, items, force, previous, next); });
                 _communicator.registerCallback(UpdateThingPropertiesCommand, updateThingPropertiesCallback);
                 _communicator.registerCallback(SetSpriteListCommand, function(ids:Vector.<uint>, sprites:Vector.<SpriteData>, force:Boolean):void { setSpriteListCallback(ids, sprites, force); });
@@ -2144,6 +2174,7 @@ THE SOFTWARE.
                 _clientChanged = info.changed;
                 _clientIsTemporary = info.isTemporary;
                 _clientLoaded = info.loaded;
+                _canRecolor = info.loaded && !native;
                 _otbLoaded = info.otbLoaded;
                 nexaNavigation.loaded = info.loaded;
                 nexaActions.loaded = info.loaded;
@@ -3591,6 +3622,63 @@ THE SOFTWARE.
                                 _settings.jpegQuality);
                     }
                 }
+            }
+
+            protected function recolorThingHandler(event:Event):void
+            {
+                if (!_canRecolor || _locked) return;
+                var selection:ThingListEvent = event as ThingListEvent;
+                var id:uint = selection ? selection.thingId : getActiveThingList().selectedId;
+                if (!id) return;
+                if (thingTypeEditor.changed)
+                {
+                    Alert.show(resourceManager.getString("strings", "recolor.unsaved"),
+                        resourceManager.getString("strings", "recolor.title"), Alert.OK, this);
+                    return;
+                }
+
+                cancelPendingThingRequest();
+                _locked = true;
+                sendCommand(new GetRecolorSourceCommand(++_recolorRequest, id,
+                    selection ? selection.category : currentCategory));
+            }
+
+            private function recolorResult(request:uint, data:ThingData, revision:Number, error:String):void
+            {
+                if (request != _recolorRequest) return;
+                if (_recolorWindow)
+                {
+                    _recolorWindow.saveFinished(error);
+                    return;
+                }
+                if (error || !data)
+                {
+                    _locked = false;
+                    Alert.show(error, resourceManager.getString("strings", "recolor.title"), Alert.OK, this);
+                    return;
+                }
+
+                var window:RecolorWindow = new RecolorWindow();
+                window.sourceData = data;
+                var editor:ObjectBuilder = this;
+                window.startMcpHandler = function():StudioController
+                {
+                    if (!studio) { studio = new StudioController(); studio.editor = editor; }
+                    studio.start();
+                    return studio;
+                };
+                window.saveHandler = function(options:Object, masks:Object, createNew:Boolean):void
+                {
+                    sendCommand(new SaveRecolorCommand(request, data.id, data.category, revision, options, masks, createNew));
+                };
+                window.addEventListener(Event.CLOSE, function(event:Event):void
+                {
+                    _recolorWindow = null;
+                    _recolorRequest++;
+                    _locked = false;
+                });
+                _recolorWindow = window;
+                window.open(this);
             }
 
             protected function duplicateThingHandler(event:Event):void
@@ -5278,6 +5366,7 @@ THE SOFTWARE.
                                 replace="replaceThingHandler(event)"
                                 export="exportThingHandler(event)"
                                 duplicate="duplicateThingHandler(event)"
+                                recolorEnabled="{_canRecolor}" recolor="recolorThingHandler(event)"
                                 bulkEdit="bulkEditHandler(event)"
                                 edit="editThingHandler(event)"
                                 compare="compareThingHandler(event)"
@@ -5324,6 +5413,7 @@ THE SOFTWARE.
                                     replace="replaceThingHandler(event)"
                                     export="exportThingHandler(event)"
                                     duplicate="duplicateThingHandler(event)"
+                                    recolorEnabled="{_canRecolor}" recolor="recolorThingHandler(event)"
                                     bulkEdit="bulkEditHandler(event)"
                                     edit="editThingHandler(event)"
                                     compare="compareThingHandler(event)"
@@ -5357,6 +5447,7 @@ THE SOFTWARE.
                                 replace="replaceThingHandler(event)"
                                 export="exportThingHandler(event)"
                                 duplicate="duplicateThingHandler(event)"
+                                recolorEnabled="{_canRecolor}" recolor="recolorThingHandler(event)"
                                 bulkEdit="bulkEditHandler(event)"
                                 edit="editThingHandler(event)"
                                 compare="compareThingHandler(event)"
@@ -5419,6 +5510,10 @@ THE SOFTWARE.
                             height="22"
                             icon="{Assets.DUPLICATE}"
                             click="duplicateThingHandler(event)"/>
+                        <s:Button id="recolorThingButton" width="22" height="22"
+                            icon="{NexaIcons.RECOLOR}" enabled="{_canRecolor}"
+                            toolTip="@Resource(key='recolor.title', bundle='strings')"
+                            click="recolorThingHandler(event)"/>
                         <s:Button id="newThingButton"
                             toolTip="{resourceManager.getString('strings', 'new')}"
                             width="22"
@@ -5452,6 +5547,7 @@ THE SOFTWARE.
                 <s:BorderContainer width="100%"
                     height="100%">
                     <otlib:ThingTypeEditor id="thingTypeEditor"
+                        idleAnimation="openSelectedIdle()"
                         width="100%"
                         height="100%"
                         visible="false"

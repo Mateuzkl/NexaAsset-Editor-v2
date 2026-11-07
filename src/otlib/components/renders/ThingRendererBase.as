@@ -96,6 +96,9 @@ package otlib.components.renders
             var compareMenu:ContextMenuItem = new ContextMenuItem("Compare...", true);
             compareMenu.data = ThingListEvent.COMPARE;
 
+            var recolorMenu:ContextMenuItem = new ContextMenuItem(resource.getString("strings", "recolor.title"));
+            recolorMenu.data = ThingListEvent.RECOLOR;
+
             var copyIdMenu:ContextMenuItem = new ContextMenuItem("Copy Client ID", true);
             copyIdMenu.data = ThingListEvent.COPY_CLIENT_ID;
 
@@ -109,7 +112,7 @@ package otlib.components.renders
                     copyPatternsMenu, pastePatternsMenu,
                     copyPropertiesMenu, pastePropertiesMenu,
                     copyAttributesMenu, pasteAttributesMenu,
-                    removeMenu, compareMenu, copyIdMenu, copyServerIdMenu
+                    removeMenu, compareMenu, recolorMenu, copyIdMenu, copyServerIdMenu
                 ];
 
             return menu;

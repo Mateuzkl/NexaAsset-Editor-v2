@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="utf-8"?>
+<local:ObjectBuilder xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:local="*">
+    <fx:Style source="../src/ObjectBuilder.css"/>
+    <fx:Script><![CDATA[
+        import flash.desktop.NativeApplication;
+        import flash.display.BitmapData;
+        import flash.display.PNGEncoderOptions;
+        import flash.events.*;
+        import flash.filesystem.*;
+        import flash.geom.Point;
+        import flash.utils.*;
+        import mx.events.FlexEvent;
+        import ob.commands.files.LoadFilesCommand;
+        import ob.recolor.RecolorWindow;
+        import ob.studio.StudioController;
+        import ob.ui.NexaTheme;
+        import otlib.core.*;
+        import otlib.animation.FrameGroup;
+        import otlib.events.ThingListEvent;
+        import otlib.resources.Resources;
+
+        private var timer:Timer = new Timer(200);
+        private var testRoot:File;
+        private var phase:int;
+        private var started:int;
+        private var dialog:RecolorWindow;
+        private var previousMax:uint;
+        private var sourceId:uint = 101;
+        private var external:NativeProcess;
+        private var externalOutput:String = "";
+        private var externalError:String = "";
+        private var externalExit:int = -999;
+        private var otherConsumer:Object = {};
+
+        override protected function applicationInvokeHandler(event:InvokeEvent):void {}
+        override protected function applicationCompleteHandler(event:FlexEvent):void
+        {
+            super.applicationCompleteHandler(event);
+            testRoot = new File(File.applicationDirectory.nativePath).resolvePath("recolor-" + new Date().time);
+            testRoot.createDirectory();
+            started = getTimer();
+            timer.addEventListener(TimerEvent.TIMER, tick);
+            timer.start();
+        }
+
+        private function tick(event:TimerEvent):void
+        {
+            try
+            {
+                if (getTimer() - started > 90000) throw new Error("Timeout in phase " + phase);
+                if (!running || !visible) return;
+                if (phase == 0)
+                {
+                    RecolorTests.run(testRoot);
+                    var version:Version = VersionStorage.getInstance().getByValueString("10.98");
+                    var features:ClientFeatures = new ClientFeatures(true, true, true, true);
+                    var folder:File = testRoot.resolvePath("client");
+                    sendCommand(new LoadFilesCommand(folder.resolvePath("Tibia.dat"), folder.resolvePath("Tibia.spr"), version, null, features));
+                    phase = 1;
+                }
+                else if (phase == 1 && clientLoaded && thingData)
+                {
+                    resourceManager.localeChain = ["pt_BR"]; Resources.locale = "pt_BR";
+                    previousMax = clientInfo.maxItemId;
+                    thingList.dispatchEvent(new ThingListEvent(ThingListEvent.RECOLOR, sourceId, "item"));
+                    phase = 2;
+                }
+                else if (phase == 2 && findDialog())
+                {
+                    dialog.validateNow();
+                    for (var zoomStep:int = 0; zoomStep < 7; zoomStep++)
+                        dialog.zoomInButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    dialog.validateNow();
+                    check(dialog.zoomLabel.text == "10×" && dialog.imageArea.width == 640 && !dialog.zoomInButton.enabled,
+                        "Zoom did not reach its 10x limit.");
+                    capture("recolor-zoom-10x.png");
+                    // Exercise real selection targets while the viewport has scrollbars.
+                    dialog.setZoom(8);
+                    dialog.validateNow();
+                    record("Starting 8x wand click");
+                    dialog.imageArea.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_DOWN, true, false, 40 * 8, 40 * 8, null, false, false, false, true));
+                    record("Finished 8x wand click");
+                    dialog.brushButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    drag(20, 20, 30, 30, 8);
+                    record("Finished 8x brush drag");
+                    dialog.wandButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    dialog.clearMaskButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    dialog.setZoom(3);
+                    dialog.brushSize.validateNow();
+                    var stepper:Object = dialog.brushSize.skin;
+                    check(stepper.incrementButton.y + stepper.incrementButton.height <= stepper.decrementButton.y + 1,
+                        "Numeric stepper plus and minus buttons overlap.");
+                    stepper.incrementButton.dispatchEvent(new FlexEvent(FlexEvent.BUTTON_DOWN));
+                    check(dialog.brushSize.value == 2, "The plus button did not increment brush size.");
+                    dialog.brushSize.value = 1;
+                    dialog.validateNow();
+                    check(dialog.sourceData.id == sourceId, "Context menu loaded the wrong object.");
+                    dialog.hue.value = 120;
+                    dialog.hue.dispatchEvent(new Event(Event.CHANGE));
+                    var preview:BitmapData = dialog.previewImage.source as BitmapData;
+                    var before:uint = preview.getPixel32(40, 40);
+                    dialog.imageArea.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_DOWN, true, false, 40 * 3, 40 * 3));
+                    check(preview.getPixel32(40, 40) != before, "Magic wand did not update the preview.");
+                    var overlay:BitmapData = dialog.maskImage.source as BitmapData;
+                    check((overlay.getPixel32(40, 40) >>> 24) > 0, "Selected pixels lack cyan overlay.");
+                    check(overlay.getPixel32(0, 0) == 0, "Wand selected a different colored area.");
+                    dialog.clearMaskButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    dialog.rectangleButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    drag(20, 20, 24, 24);
+                    check((overlay.getPixel32(24, 24) >>> 24) > 0 && overlay.getPixel32(25, 25) == 0,
+                        "Rectangle did not stop at its pixel bounds.");
+                    dialog.eraserButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    drag(20, 20, 24, 24);
+                    check(overlay.getPixel32(20, 20) == 0 && overlay.getPixel32(24, 24) == 0,
+                        "Eraser did not remove the dragged selection.");
+                    dialog.brushButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    dialog.brushSize.value = 4;
+                    drag(20, 20, 22, 20);
+                    check((overlay.getPixel32(19, 19) >>> 24) > 0, "Brush size was not applied.");
+                    capture("recolor-mask.png");
+                    dialog.createNewButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    phase = 3;
+                }
+                else if (phase == 3 && !findDialog() && clientInfo.maxItemId == previousMax + 1)
+                {
+                    check(clientChanged, "Recolor did not mark the project modified.");
+                    thingList.dispatchEvent(new ThingListEvent(ThingListEvent.RECOLOR, sourceId, "item"));
+                    phase = 4;
+                }
+                else if (phase == 4 && findDialog())
+                {
+                    dialog.validateNow();
+                    var frame:FrameGroup = dialog.sourceData.getFrameGroup(0);
+                    var source:ByteArray = dialog.sourceData.sprites[0][frame.getSpriteIndex(0, 0, 0, 0, 0, 0, 0)].pixels;
+                    check(source[1] == 255 && source[2] == 0, "Create New overwrote original pixels.");
+                    dialog.selectAllButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    dialog.hue.value = -120;
+                    dialog.hue.dispatchEvent(new Event(Event.CHANGE));
+                    dialog.allVariants.selected = true;
+                    dialog.allVariants.dispatchEvent(new Event(Event.CHANGE));
+                    dialog.frameControl.value = 1;
+                    dialog.frameControl.dispatchEvent(new Event(Event.CHANGE));
+                    check((BitmapData(dialog.maskImage.source).getPixel32(40, 40) >>> 24) > 0,
+                        "Shared selection disappeared after changing frames.");
+                    dialog.replaceCurrentButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    phase = 5;
+                }
+                else if (phase == 5 && !findDialog())
+                {
+                    check(clientInfo.maxItemId == previousMax + 1, "Replace Current added another object.");
+                    thingList.dispatchEvent(new ThingListEvent(ThingListEvent.RECOLOR, sourceId, "item"));
+                    phase = 6;
+                }
+                else if (phase == 6 && findDialog())
+                {
+                    dialog.validateNow();
+                    frame = dialog.sourceData.getFrameGroup(0);
+                    source = dialog.sourceData.sprites[0][frame.getSpriteIndex(0, 0, 0, 0, 0, 0, 1)].pixels;
+                    check(source[1] == 0 && source[2] == 0 && source[3] == 255, "Reused mask did not reach the other frame.");
+                    var controlsBottom:Point = dialog.replaceCurrentButton.localToGlobal(new Point(0, dialog.replaceCurrentButton.height));
+                    var dialogBottom:Point = dialog.localToGlobal(new Point(0, dialog.height));
+                    check(controlsBottom.y <= dialogBottom.y, "Save controls overflow the dialog.");
+                    studio = new StudioController(); studio.editor = this;
+                    studio.start(new File(File.applicationDirectory.nativePath).parent.resolvePath("bin-debug/mcp-gateway/nexa-mcp-gateway.exe"));
+                    dialog.openMcpButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    phase = 7;
+                }
+                else if (phase == 7 && studio.ready)
+                {
+                    dialog.mcpToggle.selected = true;
+                    dialog.mcpToggle.dispatchEvent(new Event(Event.CHANGE));
+                    phase = 8;
+                }
+                else if (phase == 8 && studio.enabled)
+                {
+                    var info:NativeProcessStartupInfo = new NativeProcessStartupInfo();
+                    info.executable = new File(File.applicationDirectory.nativePath).parent.resolvePath(
+                        "tools/mcp-gateway-tests/bin/Debug/net10.0/NexaAsset.Mcp.Tests.exe");
+                    info.arguments = new <String>["--live-recolor"];
+                    external = new NativeProcess();
+                    external.addEventListener(ProgressEvent.STANDARD_OUTPUT_DATA, function(e:ProgressEvent):void {
+                        externalOutput += external.standardOutput.readUTFBytes(external.standardOutput.bytesAvailable);
+                    });
+                    external.addEventListener(ProgressEvent.STANDARD_ERROR_DATA, function(e:ProgressEvent):void {
+                        externalError += external.standardError.readUTFBytes(external.standardError.bytesAvailable);
+                    });
+                    external.addEventListener(NativeProcessExitEvent.EXIT, function(e:NativeProcessExitEvent):void { externalExit = e.exitCode; });
+                    external.start(info);
+                    studio.writeClientConnection(external.standardInput);
+                    phase = 9;
+                }
+                else if (phase == 9 && externalOutput.indexOf("\n") >= 0)
+                {
+                    var message:Object = JSON.parse(externalOutput);
+                    check(message.state == "preview" && dialog.hue.value == 120, "MCP did not update the visible Recolor controls.");
+                    dialog.validateNow();
+                    check(dialog.zoomLabel.text == "10×", "MCP did not set the visible zoom.");
+                    check(clientInfo.maxItemId == previousMax + 1, "MCP applied the preview to the project.");
+                    capture("recolor-mcp-preview.png");
+                    dialog.hue.value = 60;
+                    dialog.hue.dispatchEvent(new Event(Event.CHANGE));
+                    externalOutput = "";
+                    external.standardInput.writeUTFBytes("continue\n");
+                    phase = 10;
+                }
+                else if (phase == 10 && externalExit != -999)
+                {
+                    check(externalExit == 0, "MCP client failed: " + externalError + externalOutput);
+                    check(JSON.parse(externalOutput).passed, "MCP validation did not complete.");
+                    studio.retainConsumer(otherConsumer);
+                    dialog.close();
+                    phase = 11;
+                }
+                else if (phase == 11)
+                {
+                    check(studio.enabled,"Closing Recolor suspended another MCP consumer.");
+                    studio.releaseConsumer(otherConsumer);
+                    phase = 12;
+                }
+                else if (phase == 12 && !studio.enabled)
+                {
+                    record("PASS: 10x zoom, visible steppers, selections/save, live MCP discovery/PNG/mask/HSL and manual conflict protection");
+                    timer.stop(); clear(); NativeApplication.nativeApplication.exit(0);
+                }
+            }
+            catch (error:Error)
+            {
+                record("FAIL: " + error.getStackTrace());
+                if (external && external.running) external.exit(true);
+                timer.stop(); clear(); NativeApplication.nativeApplication.exit(1);
+            }
+        }
+        private function findDialog():Boolean
+        {
+            dialog = null;
+            for (var i:int = 0; i < systemManager.rawChildren.numChildren; i++)
+            {
+                dialog = systemManager.rawChildren.getChildAt(i) as RecolorWindow;
+                if (dialog) return true;
+            }
+            return false;
+        }
+        private function drag(x:int, y:int, endX:int, endY:int, zoom:int = 3):void
+        {
+            dialog.imageArea.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_DOWN, true, false, x * zoom, y * zoom, null, false, false, false, true));
+            var point:Point = dialog.imageArea.localToGlobal(new Point(endX * zoom, endY * zoom));
+            for (var i:int = 0; i < 200; i++)
+                stage.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_MOVE, true, false, point.x, point.y, null, false, false, false, true));
+            stage.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_UP, true, false, point.x, point.y));
+        }
+        private function capture(name:String):void
+        {
+            dialog.validateNow();
+            var bitmap:BitmapData = new BitmapData(dialog.width, dialog.height, false, 0);
+            bitmap.draw(dialog);
+            var stream:FileStream = new FileStream();
+            stream.open(testRoot.resolvePath(name), FileMode.WRITE);
+            try { stream.writeBytes(bitmap.encode(bitmap.rect, new PNGEncoderOptions())); }
+            finally { stream.close(); bitmap.dispose(); }
+        }
+        private function check(value:Boolean, message:String):void { if (!value) throw new Error(message); }
+        private function record(message:String):void
+        {
+            trace(message);
+            var stream:FileStream = new FileStream();
+            stream.open(testRoot.resolvePath("result.txt"), FileMode.APPEND);
+            try { stream.writeUTFBytes(message + "\n"); } finally { stream.close(); }
+        }
+    ]]></fx:Script>
+</local:ObjectBuilder>

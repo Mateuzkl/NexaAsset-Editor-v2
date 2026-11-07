@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Skin xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark"
+    minWidth="16" minHeight="9" mouseEnabled="false" mouseChildren="false" alpha.disabled="0.5">
+    <fx:Metadata>[HostComponent("spark.components.Button")]</fx:Metadata>
+    <fx:Script><![CDATA[import ob.ui.NexaTheme;]]></fx:Script>
+    <s:states>
+        <s:State name="up"/>
+        <s:State name="over"/>
+        <s:State name="down"/>
+        <s:State name="disabled"/>
+    </s:states>
+    <s:Rect left="0" right="0" top="0" bottom="0" radiusX="2">
+        <s:fill><s:SolidColor color="{NexaTheme.palette.surface}" color.over="{NexaTheme.palette.hover}" color.down="{NexaTheme.palette.selected}"/></s:fill>
+        <s:stroke><s:SolidColorStroke color="{NexaTheme.palette.border}"/></s:stroke>
+    </s:Rect>
+    <s:Label id="labelDisplay" horizontalCenter="0" verticalCenter="0" fontSize="10"
+        color="{NexaTheme.palette.text}" textAlign="center" maxDisplayedLines="1"/>
+</s:Skin>

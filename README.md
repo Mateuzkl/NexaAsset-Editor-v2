@@ -10,7 +10,7 @@ The codebase was imported from [punkice3407/ObjectBuilder](https://github.com/pu
 
 ### Pixel Art Studio and MCP (feature branch)
 
-NexaAsset version **1.0.0** includes **Pixel Art / MCP** in the **Sprites** panel. Draw real pixels, edit paint
+NexaAsset version **1.0.1** includes **Pixel Art / MCP** in the **Sprites** panel. Draw real pixels, edit paint
 layers and animation cells, save editable `.nexaart` documents, and import/export
 PNG/spritesheets. An authenticated local MCP client shares those drafts with the
 manual canvas. Remote commit requests require the user's **Apply as NEW asset**
@@ -24,6 +24,40 @@ the integration tests use a local stub and do not certify GPU inference quality.
 Build with `./build.ps1`. Run the new end-to-end suite with `./tests/run-mcp.ps1`;
 it launches the real AIR editor plus an independent official MCP SDK client and
 checks drawing, human approval, stored pixels and Save/Compile in both formats.
+
+The **Recolor** window also supports MCP. Open an object with **Recolor**, click
+**MCP**, enable **Allow MCP adjustments**, and use **Copy config** and **Copy token**
+to connect the local client. The token is supplied through `NEXA_MCP_TOKEN` in the
+client environment. `nexa_get_recolor_preview` returns the current image, mask,
+settings, session ID and revision. `nexa_adjust_recolor` updates HSL, replacement
+colors, texture coordinates or zoom up to 10×. `nexa_select_recolor_area` edits
+the selection with a wand, brush, eraser or rectangle. Each adjustment uses the
+latest session ID and revision so it can detect intervening manual edits. Review
+the visible result and use **Create New** or **Replace Current** to apply it.
+Run `./tests/run-recolor.ps1` to exercise this flow with an independent MCP client.
+
+**Breathing / Respiração** in Pixel Art Studio creates four localized poses from a
+single source time step. Choose amplitude 1–2 px, automatic visible bounds or
+manual rectangles, and four phase durations (default 500/300/500/300 ms). For
+manual regions, use the canvas `select` tool and **Mark region / Marcar região**
+for each direction before generating. Review with Sheet/Play; Undo removes the
+whole cycle in one step. The new **`nexa_generate_breathing`** MCP tool uses the
+same engine and history, with `editId`, `expectedDocumentRevision` and parameters
+`{amplitude:1, regionMode:"auto", durationsMs:[500,300,500,300], regions:[]}`.
+It works locally without an image provider, Python, GPU or network service.
+
+Supported canvas axes are 32 or 64 pixels (including 32×64/64×32), with 1 or 4
+directions, unlocked layers and the existing 2 MiB draft budget. Existing
+animations are rejected rather than replaced. Automatic bounds are a geometric
+heuristic, not anatomy recognition; review weapons/wings with manual regions.
+An explicit **four 100 ms phases** option permits Apply to legacy formats without
+phase timings; variable timings remain available for draft preview/export.
+This does **not** guarantee idle playback in Tibia 8.6 or other clients. The legacy
+outfit adapter keeps its existing first-frame idle group behavior. Studio starts
+from complete canvases/PNG/drafts; a legacy sprite ID loads one 32×32 tile, not a
+composed multi-tile object. See [usage and compatibility](docs/BREATHING.md).
+
+**Idle Animation** also starts from **Texture → Appearance → Breathing / Idle Animation** on the selected object. It loads the complete pose and directions into Studio. Combine breathing, bobbing and sway, then review with Play/Sheet before Apply. MCP exposes the same workflow via `nexa_begin_asset_edit` and `nexa_generate_idle_animation`. [Usage and compatibility](docs/IDLE_ANIMATION.md)
 
 ### Native modern assets in the standard workspace
 

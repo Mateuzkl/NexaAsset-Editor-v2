@@ -76,6 +76,8 @@ public sealed partial class StudioService(IEditorBridge bridge)
     }
     private static int I(JsonElement e, string key, int fallback = 0) => e.TryGetProperty(key, out var v) ? v.GetInt32() : fallback;
     private static string S(JsonElement e, string key, string fallback = "") => e.TryGetProperty(key, out var v) ? v.GetString() ?? fallback : fallback;
+    /// <summary>Dispatch a serialized operation, enforcing local-only approval, MCP consent and current project identity.</summary>
+    /// <remarks>Draft writes run through Edit/history; only local ui_apply may request an editor commit.</remarks>
     private async Task<object> Execute(string method, JsonElement args, bool local, CancellationToken ct)
     {
         if (method == "ui_begin_close" && local) { closePending = true; bool interrupted = generation != null || stableJob?.Running == true; Enabled = false; RevokeProvider(); return new { interrupted, documents = documents.Values.Select(d => d.Info()).ToArray() }; }
@@ -101,6 +103,8 @@ public sealed partial class StudioService(IEditorBridge bridge)
         if (method == "ui_audit" && local) return new { events = audit.ToArray() };
         if (method == "ui_reset" && local) { documents.Clear(); projectSession = null; RevokeProvider(); return new { reset = true }; }
         if (!local && !Enabled) throw new InvalidOperationException("MCP is disabled in the editor.");
+        if (method is "get_recolor_preview" or "adjust_recolor" or "select_recolor_area")
+            return await bridge.RequestAsync(method, args, ct);
         if (method is "get_project_info" or "get_capabilities") return await Project(ct);
         if (method is "list_assets" or "get_asset" or "get_sprite" or "get_frame")
         {
@@ -109,6 +113,48 @@ public sealed partial class StudioService(IEditorBridge bridge)
         // Validate project identity even on document reads: reopening a project invalidates all old drafts.
         var info = await Project(ct);
         if (method == "list_art_documents") return new { documents = documents.Values.Select(d => d.Info()).ToArray() };
+        if(method=="begin_asset_edit")
+        {
+            if(documents.Count>=4)throw new InvalidOperationException("Close a draft first (four open drafts maximum).");
+            string session=projectSession!;
+            if(S(args,"projectSessionId")!=session||args.GetProperty("expectedRevision").GetInt64()!=info.GetProperty("revision").GetInt64())throw new InvalidOperationException("PROJECT_CONFLICT: refresh project information.");
+            string category=S(args,"category");
+            if(category is not("item" or "outfit" or "effect" or "missile"))throw new InvalidDataException("Invalid pose category.");
+            uint assetId=args.GetProperty("assetId").GetUInt32();
+            int group=I(args,"group"),frame=I(args,"frame"),patternY=I(args,"patternY"),patternZ=I(args,"patternZ");
+            if(assetId==0||group<0||frame<0||patternY<0||patternZ<0)throw new InvalidDataException("Invalid selected pose coordinates.");
+            var pose=await bridge.RequestAsync("get_asset_pose",new{category,assetId,group,frame,patternY,patternZ},ct);
+            long sourceRevision=info.GetProperty("revision").GetInt64();
+            int width=pose.GetProperty("width").GetInt32(),height=pose.GetProperty("height").GetInt32();
+            int directions=pose.GetProperty("directions").GetInt32(),layerCount=pose.GetProperty("layerCount").GetInt32();
+            ArtDocument.CheckShape(width,height);
+            if(directions is not(1 or 4)||layerCount is <1 or >16||(long)width*height*4*directions*layerCount>ArtDocument.PixelBudget)
+                throw new InvalidDataException("Invalid selected pose geometry or layer budget.");
+            if(pose.GetProperty("assetId").GetUInt32()!=assetId||pose.GetProperty("group").GetInt32()!=group||pose.GetProperty("frame").GetInt32()!=frame)
+                throw new InvalidDataException("The editor returned a different source pose.");
+            if(pose.GetProperty("revision").GetInt64()!=sourceRevision)throw new InvalidOperationException("PROJECT_CONFLICT: source changed while loading.");
+            // Keep each AIR pipe message bounded to a single 32/64-pixel RGBA layer.
+            var frames=new List<ArtFrame>(directions);
+            for(int direction=0;direction<directions;direction++)
+            {
+                var cell=new ArtFrame();
+                for(int layer=0;layer<layerCount;layer++)
+                {
+                    var part=await bridge.RequestAsync("get_asset_pose",new{category,assetId,group,frame,patternY,patternZ,direction,layer},ct);
+                    if(part.GetProperty("revision").GetInt64()!=sourceRevision)throw new InvalidOperationException("PROJECT_CONFLICT: source changed while loading.");
+                    var pixels=part.GetProperty("pixels");
+                    byte[] rgba=Convert.FromBase64String(pixels.GetProperty("rgba").GetString()!);
+                    if(rgba.Length!=width*height*4)throw new InvalidDataException("Selected pose layer size differs from its canvas.");
+                    cell.Layers.Add(new(){Name=pixels.GetProperty("name").GetString()!,Visible=pixels.GetProperty("visible").GetBoolean(),Rgba=rgba});
+                }
+                frames.Add(cell);
+            }
+            var current=await Project(ct);
+            if(projectSession!=session||current.GetProperty("revision").GetInt64()!=sourceRevision)throw new InvalidOperationException("PROJECT_CONFLICT: selected pose changed while loading.");
+            var created=ArtDocument.FromPose(session,sourceRevision,category,pose,frames);
+            created.TargetTiming=SupportsTiming(info);created.TargetTransparency=!info.TryGetProperty("transparency",out var alpha)||alpha.GetBoolean();
+            documents.Add(created.Id,created);await Changed(created,true);return created.Info();
+        }
         if (method == "begin_edit" || method == "duplicate_sprite")
         {
             if (documents.Count >= 4) throw new InvalidOperationException("Close a draft first (four open drafts maximum).");
@@ -121,6 +167,7 @@ public sealed partial class StudioService(IEditorBridge bridge)
                 pixels = ArtDocument.FromArgb(Convert.FromBase64String(sprite.GetProperty("argb").GetString()!));
             }
             var created = ArtDocument.Create(projectSession!, info.GetProperty("revision").GetInt64(), w, h, pixels, S(args, "category", "item"), S(args, "name")); if (created.State.Category == "outfit") ArtDocument.SetAnimation(created.State, 1, 4, null); created.TargetTransparency = !info.TryGetProperty("transparency", out var alpha) || alpha.GetBoolean(); documents.Add(created.Id, created);
+            created.TargetTiming = SupportsTiming(info);
             await Changed(created, true); return created.Info();
         }
         var doc = Document(S(args, "editId"));
@@ -160,6 +207,8 @@ public sealed partial class StudioService(IEditorBridge bridge)
         }
         if (method == "ui_apply" && local)
         {
+            if (!SupportsTiming(info) && doc.State.Frames.Any(f => f.Duration != 100))
+                throw new InvalidOperationException("This target cannot store phase timings. Use an explicit 100 ms profile or export the draft; no asset was inserted.");
             if (info.GetProperty("revision").GetInt64() != doc.BaseRevision) throw new InvalidOperationException("PROJECT_CONFLICT: the editor changed since this draft began. Keep/export this draft and begin again from the current project.");
             if (args.TryGetProperty("category", out var target) && target.GetString() != doc.State.Category) throw new InvalidDataException("CATEGORY_CONFLICT: update the draft category and review it before applying.");
             var packet = JsonSerializer.SerializeToUtf8Bytes(doc.CommitPacket(), ArtDocument.Json);
@@ -227,6 +276,12 @@ public sealed partial class StudioService(IEditorBridge bridge)
                     foreach (var offset in offsets) foreach (var original in originals) state.Frames.Add(ArtDocument.CopyFrame(original));
                     for (int index = 0; index < state.Frames.Count; index++) for (int l = 0; l < state.Frames[index].Layers.Count; l++) ArtDocument.Transform(state, index, l, "offset", offsets[index / state.Directions][0], offsets[index / state.Directions][1]);
                     break;
+                case "generate_breathing":
+                    BreathingGenerator.Generate(state, args, ct);
+                    break;
+                case "generate_idle_animation":
+                    IdleAnimationGenerator.Generate(state,args,ct);
+                    break;
                 case "import_spritesheet":
                     var sheet = NativePng.ReadArtSheet(Convert.FromBase64String(S(args, "png")));
                     int cw = I(args, "cellWidth", state.Width), ch = I(args, "cellHeight", state.Height), dirs = I(args, "directions", 1), ms = I(args, "duration", 100);
@@ -258,4 +313,7 @@ public sealed partial class StudioService(IEditorBridge bridge)
         await Changed(doc); return doc.Info();
     }
     private Task Changed(ArtDocument doc, bool created = false) => bridge.EmitAsync(new { type = "changed", created, editId = doc.Id, documentRevision = doc.Revision, category = doc.State.Category, name = doc.State.Name, approvalRequested = doc.ApprovalRequested, committed = doc.Committed, dirty = doc.Dirty, exportedRevision = doc.ExportedRevision });
+    /// <summary>Honor an explicit target timing restriction while retaining compatibility with older capability responses.</summary>
+    private static bool SupportsTiming(JsonElement info) => !info.TryGetProperty("capabilities", out var capabilities)
+        || !capabilities.TryGetProperty("timing", out var timing) || timing.GetBoolean();
 }

@@ -16,6 +16,11 @@ try {
     $jdk=@(Get-ChildItem -LiteralPath (Join-Path $tools 'java') -Directory)
     if($jdk.Count -ne 1){throw 'Expected one portable JDK for AIR integration tests.'}
     & (Join-Path $project 'tools/modern-helper/build.ps1')
+    New-Item -ItemType Directory -Path workerswfs -Force | Out-Null
+    & (Join-Path $jdk[0].FullName 'bin/java.exe') -Xmx2g ('-Dapplication.home='+$sdk) -jar (Join-Path $sdk 'lib/mxmlc.jar') '+configname=air' `
+        '-source-path=src' '-library-path+=libs' '-locale=en_US,es_ES,pt_BR' '-source-path+=locale/{locale}' '-debug=true' '-warnings=false' `
+        '-output=workerswfs/ObjectBuilderWorker.swf' 'src/ObjectBuilderWorker.as'
+    if($LASTEXITCODE -ne 0){throw 'Studio worker compilation failed.'}
     & (Join-Path $jdk[0].FullName 'bin/java.exe') -Xmx2g ('-Dapplication.home='+$sdk) -jar (Join-Path $sdk 'lib/mxmlc.jar') '+configname=air' `
         '-source-path=src' '-source-path+=tests' '-library-path+=libs' '-locale=en_US,es_ES,pt_BR' '-source-path+=locale/{locale}' '-debug=true' '-warnings=false' `
         ('-output='+ (Join-Path $project 'bin-tests/StudioMainTests.swf')) 'tests/StudioMainTests.mxml'
@@ -44,6 +49,8 @@ try {
         @{samples=$samples;peakAirWorkingSet=$peakAir;peakChildWorkingSetSum=$peakChildren;elapsedSeconds=$watch.Elapsed.TotalSeconds}|ConvertTo-Json|Set-Content (Join-Path $output 'memory.json') -Encoding utf8
         if($air.ExitCode -ne 0){throw "Studio live AIR/MCP tests failed. See $output"}
     }finally{$air.Dispose()}
+    $studioResult=Join-Path $output 'result.txt'
+    if(-not (Test-Path -LiteralPath $studioResult) -or -not (Select-String -LiteralPath $studioResult -SimpleMatch 'PASS: Studio AIR complete')){throw "Studio AIR exited before finishing its scenarios. See $output"}
     & (Join-Path $jdk[0].FullName 'bin/java.exe') -Xmx2g ('-Dapplication.home='+$sdk) -jar (Join-Path $sdk 'lib/mxmlc.jar') '+configname=air' `
         '-source-path=src' '-source-path+=tests' '-library-path+=libs' '-locale=en_US,es_ES,pt_BR' '-source-path+=locale/{locale}' '-debug=true' '-warnings=false' `
         ('-output='+ (Join-Path $project 'bin-tests/StudioClosingTests.swf')) 'tests/StudioClosingTests.mxml'
