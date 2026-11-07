@@ -47,6 +47,7 @@
 
         public function tr(key:String):String {return resourceManager.getString("strings","studio."+key)||key;}
         private function start():void {
+            controller.retainConsumer(this);
             controller.addEventListener("ready",ready);controller.addEventListener("status",statusChanged);controller.addEventListener("studioChanged",changed);
             playback.addEventListener(TimerEvent.TIMER,tick);
             canvas.addEventListener("undo",function(e:Event):void{mutate("undo_edit");});canvas.addEventListener("redo",function(e:Event):void{mutate("ui_redo");});
@@ -225,7 +226,7 @@
             if(!dead&&(pendingStroke||busy||preparingClose)){report=tr("closeStudioWait");Alert.show(report,tr("closeDraftsTitle"),Alert.OK,this);return;}
             super.close();
         }
-        public function shutdown():void {if(dead)return;dead=true;generation++;resumeAfterClose();if(sdWindow)sdWindow.close();controller.suspend();playback.stop();playback.removeEventListener(TimerEvent.TIMER,tick);releasePicker();controller.removeEventListener("ready",ready);controller.removeEventListener("status",statusChanged);controller.removeEventListener("studioChanged",changed);canvas.dispose();sheet.dispose();original.dispose();}
+        public function shutdown():void {if(dead)return;dead=true;generation++;resumeAfterClose();if(sdWindow)sdWindow.close();controller.releaseConsumer(this);playback.stop();playback.removeEventListener(TimerEvent.TIMER,tick);releasePicker();controller.removeEventListener("ready",ready);controller.removeEventListener("status",statusChanged);controller.removeEventListener("studioChanged",changed);canvas.dispose();sheet.dispose();original.dispose();}
     ]]></fx:Script>
     <s:VGroup left="12" right="12" top="12" bottom="12" gap="8" enabled="{!preparingClose}">
         <s:HGroup width="100%" verticalAlign="middle">

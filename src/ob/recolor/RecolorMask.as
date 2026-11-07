@@ -57,11 +57,12 @@ package ob.recolor
 
         public function wand(source:BitmapData, x:int, y:int, tolerance:int, add:Boolean):void
         {
+            if (!add) fill(false);
+            if (x < 0 || x >= width || y < 0 || y >= height || source.width != width || source.height != height)
+                throw new ArgumentError("Wand coordinates or bitmap dimensions do not match the mask.");
             var seed:uint = source.getPixel32(x, y);
             if (!(seed >>> 24))
                 return;
-            if (!add)
-                fill(false);
 
             var visited:ByteArray = new ByteArray();
             visited.length = pixels.length;

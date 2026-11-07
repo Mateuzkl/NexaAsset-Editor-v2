@@ -68,6 +68,8 @@ package otlib.storages.events
 
         public static const LOAD:String = "load";
         public static const CHANGE:String = "change";
+        /** Every successful invalidation, including edits to an already dirty storage. */
+        public static const MUTATION:String = "mutation";
         public static const COMPILE:String = "compile";
         public static const UNLOADING:String = "unloading";
         public static const UNLOAD:String = "unload";

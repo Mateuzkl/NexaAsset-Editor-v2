@@ -56,9 +56,9 @@ package ob.recolor
                             && (!masks || mask != null);
                         if (!editable && !createNew) continue;
 
-                        var reusable:Boolean = !editable || !masks;
                         var key:String = spriteId + (editable ? ":recolor" : ":original");
-                        var next:uint = reusable ? uint(reused[key]) : 0;
+                        if (editable && mask) key += ":" + maskSignature(mask, group, slot % tiles);
+                        var next:uint = uint(reused[key]);
                         if (!next)
                         {
                             var pixels:ByteArray = sprites.getPixelsStrict(spriteId);
@@ -73,15 +73,14 @@ package ob.recolor
                             {
                                 key = spriteId + ":original";
                                 next = uint(reused[key]);
-                                reusable = true;
                             }
                             if (!next)
                             {
-                                if (Number(initialCount) + pending.length >= limit)
+                                if (Number(initialCount) + pending.length + 1 > limit)
                                     throw new Error("The SPR has reached its sprite ID limit.");
                                 pending.push(edited || pixels);
                                 next = initialCount + pending.length;
-                                if (reusable) reused[key] = next;
+                                reused[key] = next;
                                 if (edited) pixels.clear();
                             }
                             else
@@ -123,8 +122,30 @@ package ob.recolor
             finally
             {
                 for each (var bytes:ByteArray in pending) bytes.clear();
+                if (pixels) pixels.clear();
+                if (edited) edited.clear();
             }
             return 0;
+        }
+
+        /** Exact bit signature of the effective tile mask; equivalent animation cells share one SPR record. */
+        private static function maskSignature(mask:ByteArray, group:FrameGroup, tile:uint):String
+        {
+            var size:int = SpriteExtent.DEFAULT_SIZE;
+            var width:int = group.width * size;
+            var left:int = (group.width - 1 - tile % group.width) * size;
+            var top:int = (group.height - 1 - int(tile / group.width)) * size;
+            var key:String = "";
+            var bits:int;
+            var count:int;
+            for (var y:int = 0; y < size; y++)
+                for (var x:int = 0; x < size; x++)
+                {
+                    bits = (bits << 1) | (mask[(top + y) * width + left + x] ? 1 : 0);
+                    if (++count == 16) { key += String.fromCharCode(bits); bits = count = 0; }
+                }
+            if (count) key += String.fromCharCode(bits);
+            return key;
         }
     }
 }

@@ -34,6 +34,7 @@ Console.WriteLine("PASS: RGBA/ARGB, hidden RGB/partial alpha PNG, four geometrie
 NativeArtTests.Run(root);
 Check(!JsonSerializer.SerializeToElement(ArtDocument.Create("close-regression", 0, 32, 32).Info(), ArtDocument.Json).GetProperty("dirty").GetBoolean(), "Untouched revision-zero draft blocks closing the editor");
 await DraftLifecycleTests.Run();
+await RecolorGatewayTests.Run();
 await ProviderTests.Run();
 await StableDiffusionTests.Run();
 await StudioRegressionTests.Run();

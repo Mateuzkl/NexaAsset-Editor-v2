@@ -55,6 +55,7 @@
         private var start:Point;
         private var last:Point;
         private var area:Rectangle;
+        private var renderPending:Boolean;
 
         private function tr(key:String):String
         {
@@ -210,6 +211,9 @@
         private function previewDown(event:MouseEvent):void
         {
             if (!original || busy || (tool != "pick" && !maskToggle.selected)) return;
+            // Drawing owns the gesture; the Scroller must not start a competing pan/auto-scroll.
+            event.stopPropagation();
+            finishDrag();
             var point:Point = previewPoint(event);
             if (tool == "pick")
             {
@@ -232,11 +236,14 @@
             dragStage.addEventListener(MouseEvent.MOUSE_MOVE, previewMove);
             dragStage.addEventListener(MouseEvent.MOUSE_UP, previewUp);
             dragStage.addEventListener(Event.DEACTIVATE, deactivateDrag);
+            addEventListener(Event.ENTER_FRAME, renderSelection);
             previewMove(event);
+            renderSelection(null);
         }
 
         private function previewMove(event:MouseEvent):void
         {
+            if (!dragStage) return;
             var point:Point = previewPoint(event);
             var mask:RecolorMask = selection(true);
             if (tool == "rectangle")
@@ -248,10 +255,17 @@
             else
             {
                 mask.stroke(last.x, last.y, point.x, point.y, brushSize.value, tool != "erase");
-                updatePreview();
+                renderPending = true;
             }
             last = point;
-            event.updateAfterEvent();
+        }
+
+        /** Bound bitmap work to one render per frame while keeping every stroke segment. */
+        private function renderSelection(event:Event):void
+        {
+            if (!renderPending || released) return;
+            renderPending = false;
+            updatePreview();
         }
 
         private function previewUp(event:MouseEvent):void
@@ -265,6 +279,9 @@
 
         private function finishDrag():void
         {
+            removeEventListener(Event.ENTER_FRAME, renderSelection);
+            renderSelection(null);
+            renderPending = false;
             if (dragStage)
             {
                 dragStage.removeEventListener(MouseEvent.MOUSE_MOVE, previewMove);
@@ -291,6 +308,7 @@
 
         private function disposeBitmaps():void
         {
+            previewImage.source = maskImage.source = null;
             if (original) original.dispose();
             if (preview) preview.dispose();
             if (overlay) overlay.dispose();
@@ -299,15 +317,20 @@
 
         private function releasePreview():void
         {
+            if (released) return;
             released = true;
             if (controller)
             {
-                if (mcpToggle.selected) controller.suspend();
+                controller.releaseConsumer(this);
                 controller.removeEventListener("ready", mcpStatusChanged);
                 controller.removeEventListener("status", mcpStatusChanged);
             }
             finishDrag();
             disposeBitmaps();
+            selections = {};
+            sharedSelection = null;
+            sourceData = null;
+            saveHandler = startMcpHandler = null;
         }
 
         private function openMcp():void
@@ -317,6 +340,7 @@
             try
             {
                 controller = startMcpHandler();
+                controller.retainConsumer(this);
                 controller.addEventListener("ready", mcpStatusChanged);
                 controller.addEventListener("status", mcpStatusChanged);
                 mcpStatusChanged(null);
@@ -559,7 +583,7 @@
                 <s:Label width="100%" text="{mcpStatus}" maxDisplayedLines="2"/>
             </s:VGroup>
             <s:HGroup width="100%" gap="4" enabled="{maskToggle.selected}">
-                <s:ToggleButton label="@Resource(key='recolor.wand', bundle='strings')" selected="{tool == 'wand'}" click="tool = 'wand';"/>
+                <s:ToggleButton id="wandButton" label="@Resource(key='recolor.wand', bundle='strings')" selected="{tool == 'wand'}" click="tool = 'wand';"/>
                 <s:ToggleButton id="brushButton" label="@Resource(key='recolor.brush', bundle='strings')" selected="{tool == 'brush'}" click="tool = 'brush';"/>
                 <s:ToggleButton id="eraserButton" label="@Resource(key='recolor.eraser', bundle='strings')" selected="{tool == 'erase'}" click="tool = 'erase';"/>
                 <s:ToggleButton id="rectangleButton" label="@Resource(key='recolor.rectangle', bundle='strings')" selected="{tool == 'rectangle'}" click="tool = 'rectangle';"/>

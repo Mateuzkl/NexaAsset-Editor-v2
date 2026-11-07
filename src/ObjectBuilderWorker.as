@@ -522,12 +522,14 @@ package
             _things = new ThingTypeStorage(_settings);
             _things.addEventListener(StorageEvent.LOAD, storageLoadHandler);
             _things.addEventListener(StorageEvent.CHANGE, storageChangeHandler);
+            _things.addEventListener(StorageEvent.MUTATION, storageMutationHandler);
             _things.addEventListener(ProgressEvent.PROGRESS, thingsProgressHandler);
             _things.addEventListener(ErrorEvent.ERROR, thingsErrorHandler);
 
             _sprites = new SpriteStorage();
             _sprites.addEventListener(StorageEvent.LOAD, storageLoadHandler);
             _sprites.addEventListener(StorageEvent.CHANGE, storageChangeHandler);
+            _sprites.addEventListener(StorageEvent.MUTATION, storageMutationHandler);
             _sprites.addEventListener(ProgressEvent.PROGRESS, spritesProgressHandler);
             _sprites.addEventListener(ErrorEvent.ERROR, spritesErrorHandler);
         }
@@ -838,6 +840,7 @@ package
                 _things.unload();
                 _things.removeEventListener(StorageEvent.LOAD, storageLoadHandler);
                 _things.removeEventListener(StorageEvent.CHANGE, storageChangeHandler);
+                _things.removeEventListener(StorageEvent.MUTATION, storageMutationHandler);
                 _things.removeEventListener(ProgressEvent.PROGRESS, thingsProgressHandler);
                 _things.removeEventListener(ErrorEvent.ERROR, thingsErrorHandler);
                 _things = null;
@@ -848,6 +851,7 @@ package
                 _sprites.unload();
                 _sprites.removeEventListener(StorageEvent.LOAD, storageLoadHandler);
                 _sprites.removeEventListener(StorageEvent.CHANGE, storageChangeHandler);
+                _sprites.removeEventListener(StorageEvent.MUTATION, storageMutationHandler);
                 _sprites.removeEventListener(ProgressEvent.PROGRESS, spritesProgressHandler);
                 _sprites.removeEventListener(ErrorEvent.ERROR, spritesErrorHandler);
                 _sprites = null;
@@ -3635,11 +3639,23 @@ package
                 return;
             }
 
-            if (createNew) syncItemsHelper(new <uint>[saved], category);
-            sendClientInfo();
-            sendThingList(new <uint>[saved], category, true);
-            sendSpriteList(new <uint>[_sprites.spritesCount], true);
-            getThingCallback(saved, category);
+            // A committed save must always be acknowledged, even if a refresh fails.
+            try
+            {
+                if (createNew) syncItemsHelper(new <uint>[saved], category);
+                else if (otbLoaded && category == ThingCategory.ITEM)
+                {
+                    var mapped:Array = _items.getItemsByClientId(saved);
+                    for each (var item:ServerItem in mapped)
+                        item.spriteHash = _sprites.getSpriteHash(_things.getThingType(saved, category));
+                    if (mapped && mapped.length) _items.invalidate();
+                }
+                sendClientInfo();
+                sendThingList(new <uint>[saved], category, true);
+                sendSpriteList(new <uint>[_sprites.spritesCount], true);
+                getThingCallback(saved, category);
+            }
+            catch (refreshError:Error) { Log.error("Recolor saved; refresh failed: " + refreshError.message); }
             sendCommand(new RecolorResultCommand(request));
         }
 
@@ -3763,6 +3779,12 @@ package
         {
             if(_studioCommitting){_studioStorageChanged=true;return;}
             sendClientInfo();
+        }
+
+        private function storageMutationHandler(event:StorageEvent):void
+        {
+            _studioRevision++;
+            if (_studioCommitting) _studioStorageChanged = true;
         }
 
         protected function thingsProgressHandler(event:ProgressEvent):void

@@ -20,6 +20,15 @@ package ob.studio {
         private var sequence:uint=0;
         private var startup:uint=0;
         private var drafts:Object={};
+        private const consumers:Dictionary=new Dictionary(true);
+        /** Track every open UI consumer of this shared gateway, independently of who enabled it. */
+        public function retainConsumer(owner:Object):void {consumers[owner]=true;}
+        public function releaseConsumer(owner:Object):void {
+            if(!consumers[owner])return;
+            delete consumers[owner];
+            for(var other:Object in consumers)return;
+            suspend();
+        }
         public function get hasUncommittedDrafts():Boolean {for each(var open:Boolean in drafts)if(open)return true;return false;}
         public function start(executable:File=null):void {
             if(process)return;

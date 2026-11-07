@@ -30,6 +30,7 @@
         private var externalOutput:String = "";
         private var externalError:String = "";
         private var externalExit:int = -999;
+        private var otherConsumer:Object = {};
 
         override protected function applicationInvokeHandler(event:InvokeEvent):void {}
         override protected function applicationCompleteHandler(event:FlexEvent):void
@@ -73,6 +74,17 @@
                     check(dialog.zoomLabel.text == "10×" && dialog.imageArea.width == 640 && !dialog.zoomInButton.enabled,
                         "Zoom did not reach its 10x limit.");
                     capture("recolor-zoom-10x.png");
+                    // Exercise real selection targets while the viewport has scrollbars.
+                    dialog.setZoom(8);
+                    dialog.validateNow();
+                    record("Starting 8x wand click");
+                    dialog.imageArea.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_DOWN, true, false, 40 * 8, 40 * 8, null, false, false, false, true));
+                    record("Finished 8x wand click");
+                    dialog.brushButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    drag(20, 20, 30, 30, 8);
+                    record("Finished 8x brush drag");
+                    dialog.wandButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                    dialog.clearMaskButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
                     dialog.setZoom(3);
                     dialog.brushSize.validateNow();
                     var stepper:Object = dialog.brushSize.skin;
@@ -195,7 +207,18 @@
                 {
                     check(externalExit == 0, "MCP client failed: " + externalError + externalOutput);
                     check(JSON.parse(externalOutput).passed, "MCP validation did not complete.");
+                    studio.retainConsumer(otherConsumer);
                     dialog.close();
+                    phase = 11;
+                }
+                else if (phase == 11)
+                {
+                    check(studio.enabled,"Closing Recolor suspended another MCP consumer.");
+                    studio.releaseConsumer(otherConsumer);
+                    phase = 12;
+                }
+                else if (phase == 12 && !studio.enabled)
+                {
                     record("PASS: 10x zoom, visible steppers, selections/save, live MCP discovery/PNG/mask/HSL and manual conflict protection");
                     timer.stop(); clear(); NativeApplication.nativeApplication.exit(0);
                 }
@@ -217,11 +240,12 @@
             }
             return false;
         }
-        private function drag(x:int, y:int, endX:int, endY:int):void
+        private function drag(x:int, y:int, endX:int, endY:int, zoom:int = 3):void
         {
-            dialog.imageArea.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_DOWN, true, false, x * 3, y * 3));
-            var point:Point = dialog.imageArea.localToGlobal(new Point(endX * 3, endY * 3));
-            stage.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_MOVE, true, false, point.x, point.y));
+            dialog.imageArea.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_DOWN, true, false, x * zoom, y * zoom, null, false, false, false, true));
+            var point:Point = dialog.imageArea.localToGlobal(new Point(endX * zoom, endY * zoom));
+            for (var i:int = 0; i < 200; i++)
+                stage.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_MOVE, true, false, point.x, point.y, null, false, false, false, true));
             stage.dispatchEvent(new MouseEvent(MouseEvent.MOUSE_UP, true, false, point.x, point.y));
         }
         private function capture(name:String):void

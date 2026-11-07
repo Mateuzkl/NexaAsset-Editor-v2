@@ -849,6 +849,7 @@ package otlib.sprites
 
         public function invalidate():void
         {
+            dispatchEvent(new StorageEvent(StorageEvent.MUTATION));
             if (!_changed)
             {
                 _changed = true;

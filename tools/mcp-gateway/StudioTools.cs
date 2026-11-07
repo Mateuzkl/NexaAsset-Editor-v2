@@ -23,17 +23,32 @@ public sealed class StudioTools(StudioService studio)
     public Task<object> Capabilities(CancellationToken ct) => Read("get_capabilities", new { }, ct);
     [McpServerTool(Name = "nexa_get_recolor_preview", ReadOnly = true), Description("Inspect the open Recolor window after the user enables MCP there. Returns sessionId, revision, texture coordinates, HSL/replacement settings, selection mask, original and adjusted pixels, plus a PNG preview. Coordinates are unscaled image pixels. Changes remain a preview until the user clicks Create New or Replace Current.")]
     public async Task<CallToolResult> RecolorPreview(CancellationToken ct)
+        => await RecolorCall("get_recolor_preview", new { }, true, ct);
+
+    /// <summary>Return editor failures explicitly instead of an opaque MCP invocation error.</summary>
+    private async Task<CallToolResult> RecolorCall(string method, object args, bool pixels, CancellationToken ct)
     {
-        var metadata = JsonSerializer.SerializeToElement(await Read("get_recolor_preview", new { }, ct), ArtDocument.Json);
-        return ImageResult(metadata, ArtDocument.FromArgb(Convert.FromBase64String(metadata.GetProperty("argb").GetString()!)),
-            metadata.GetProperty("width").GetInt32(), metadata.GetProperty("height").GetInt32());
+        try
+        {
+            var metadata = JsonSerializer.SerializeToElement(await Read(method, args, ct), ArtDocument.Json);
+            return pixels ? ImageResult(metadata, ArtDocument.FromArgb(Convert.FromBase64String(metadata.GetProperty("argb").GetString()!)),
+                metadata.GetProperty("width").GetInt32(), metadata.GetProperty("height").GetInt32())
+                : new() { StructuredContent = metadata, Content = [new TextContentBlock { Text = metadata.GetRawText() }] };
+        }
+        catch (Exception error) when (error is InvalidOperationException or InvalidDataException or OperationCanceledException or TimeoutException)
+        {
+            string message = error is OperationCanceledException or TimeoutException
+                ? "EDITOR_TIMEOUT: the editor did not return the Recolor preview within 25 seconds. Check whether the editor is responding; no preview was applied."
+                : error.Message;
+            return new() { IsError = true, Content = [new TextContentBlock { Text = message }] };
+        }
     }
     [McpServerTool(Name = "nexa_adjust_recolor"), Description("Adjust the visible Recolor preview using its exact sessionId and expectedRevision. parameters may contain hue (-180..180), saturation/lightness (-100..100), hsl/colorize/replace/shading/maskOnly/applyAllFrames/showOverlay (boolean), source/target (six hex digits), tolerance (0..100 percent), zoom (1..10), group/frame/direction/patternY/patternZ/layer (zero based). Outfit dye template layers are protected. Read nexa_get_recolor_preview again to inspect changes. The human applies the result in Recolor.")]
-    public Task<object> AdjustRecolor(string sessionId, long expectedRevision, JsonElement parameters, CancellationToken ct)
-        => Read("adjust_recolor", new { sessionId, expectedRevision, parameters }, ct);
+    public Task<CallToolResult> AdjustRecolor(string sessionId, long expectedRevision, JsonElement parameters, CancellationToken ct)
+        => RecolorCall("adjust_recolor", new { sessionId, expectedRevision, parameters }, false, ct);
     [McpServerTool(Name = "nexa_select_recolor_area"), Description("Edit the current Recolor selection with exact sessionId and expectedRevision. parameters: action (all/clear/invert/wand/brush/erase/rectangle). Wand uses x,y,tolerance (0..100 percent),add (boolean). Brush/erase use x,y,endX,endY,size (1..4). Rectangle uses x,y,endX,endY. All coordinates are unscaled image pixels. Only changes the live preview selection; the user applies the result.")]
-    public Task<object> RecolorSelection(string sessionId, long expectedRevision, JsonElement parameters, CancellationToken ct)
-        => Read("select_recolor_area", new { sessionId, expectedRevision, parameters }, ct);
+    public Task<CallToolResult> RecolorSelection(string sessionId, long expectedRevision, JsonElement parameters, CancellationToken ct)
+        => RecolorCall("select_recolor_area", new { sessionId, expectedRevision, parameters }, false, ct);
     [McpServerTool(Name = "nexa_list_assets", ReadOnly = true), Description("List up to 100 active assets. Category: item, outfit, effect, missile, sprite. Page is zero based.")]
     public Task<object> List(string category, CancellationToken ct, int page = 0, string query = "") => Read("list_assets", new { category, page, query }, ct);
     [McpServerTool(Name = "nexa_get_asset", ReadOnly = true), Description("Read geometry, animation timings and actual sprite references.")]

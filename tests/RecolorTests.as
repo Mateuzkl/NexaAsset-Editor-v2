@@ -10,6 +10,8 @@ package
     import otlib.sprites.*;
     import otlib.things.*;
     import otlib.utils.OTFI;
+    import otlib.storages.events.StorageEvent;
+    use namespace otlib_internal;
 
     public final class RecolorTests
     {
@@ -22,6 +24,10 @@ package
             var sprites:FailingRecolorSprites = new FailingRecolorSprites();
             things.createNew(version, features);
             sprites.createNew(version, features);
+            var mutations:int;
+            sprites.addEventListener(StorageEvent.MUTATION, function(e:StorageEvent):void { mutations++; });
+            sprites.invalidate(); sprites.invalidate();
+            check(mutations == 2, "Dirty storage stopped reporting mutations.");
             var red:ByteArray = tile(255, 255, 0, 0);
             var spriteId:uint = sprites.addSprite(red).list[0].id;
             var green:ByteArray = tile(255, 0, 255, 0);
@@ -117,6 +123,32 @@ package
             }
             catch (maskError:Error) { check(maskError.message != "Malformed mask accepted.", maskError.message); }
             check(sprites.spritesCount == before, "Invalid mask left partial SPR records.");
+            // Equivalent masks in repeated animation slots need only one new SPR ID.
+            var repeated:ThingType = ThingType.create(0, "effect", false, 100);
+            var repeatedGroup:FrameGroup = repeated.getFrameGroup(0);
+            repeatedGroup.frames = 2;
+            repeatedGroup.isAnimation = true;
+            repeatedGroup.spriteIndex = new <uint>[spriteId, spriteId];
+            repeatedGroup.frameDurations = new <FrameDuration>[new FrameDuration(100,100), new FrameDuration(100,100)];
+            var repeatedId:uint = things.addThing(repeated, "effect").list[0].id;
+            var repeatedMask:RecolorMask = new RecolorMask(32,32); repeatedMask.fill(true);
+            var originalCount:uint = sprites._spritesCount;
+            sprites._spritesCount = 65534;
+            var limited:ClientFeatures = features.clone(); limited.extended = false;
+            try
+            {
+                RecolorSave.apply(things,sprites,limited,repeatedId,"effect",settings,
+                    {"0:0":repeatedMask.pixels,"0:1":repeatedMask.pixels},false);
+                check(sprites.spritesCount == 65535, "Last SPR ID or masked frame reuse failed.");
+                check(things.getThingType(repeatedId,"effect").getFrameGroup(0).spriteIndex[1] == 65535,
+                    "Repeated masked frame allocated another record.");
+            }
+            finally
+            {
+                if (sprites._sprites[65535]) sprites._sprites[65535].dispose();
+                delete sprites._sprites[65535]; sprites._spritesCount = originalCount;
+                things.removeThing(repeatedId,"effect");
+            }
 
             var client:File = root.resolvePath("client");
             client.createDirectory();
@@ -154,6 +186,11 @@ package
             check(mask.pixels[0] == 1 && mask.pixels[1] == 1 && mask.pixels[63] == 0, "Wand crossed disconnected regions.");
             mask.wand(image, 7, 7, 0, true);
             check(mask.pixels[0] == 1 && mask.pixels[63] == 1, "Shift + wand did not add selection.");
+            image.setPixel32(0,0,0);
+            mask.wand(image,0,0,0,true);
+            check(mask.pixels[63] == 1,"Shift transparent wand erased the mask.");
+            mask.wand(image,0,0,0,false);
+            check(mask.pixels[63] == 0,"Transparent wand retained an old selection.");
             mask.fill(false);
             mask.stroke(0, 0, 7, 7, 1, true);
             for (var i:int = 0; i < 8; i++) check(mask.pixels[i * 9] == 1, "Brush stroke skipped a pixel.");
