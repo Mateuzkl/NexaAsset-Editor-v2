@@ -81,7 +81,8 @@ package
                 if (event.arguments.length > 1)
                 {
                     if (event.arguments.length > 3 && event.arguments[3] == "probe-only")
-                        testRealProbe(new File(event.arguments[1]), new File(event.arguments[2]));
+                        testRealProbe(new File(event.arguments[1]), new File(event.arguments[2]),
+                            event.arguments.length > 4 ? uint(event.arguments[4]) : 860);
                     else
                         testReal(new File(event.arguments[1]), new File(event.arguments[2]));
                 }
@@ -703,7 +704,7 @@ package
         }
 
         /** Read-only real-client validation: intentionally does not write or merge assets. */
-        private function testRealProbe(selected:File, config:File):void
+        private function testRealProbe(selected:File, config:File, expectedVersion:uint):void
         {
             var source:File = AssetDirectoryFinder.resolve(selected);
             check(source && source.exists && source.isDirectory, "Client folder not found.");
@@ -718,7 +719,8 @@ package
             probe.load(source.resolvePath("Tibia.dat"), inputSpr, true);
             check(probe.clientInfo != null, "Real file probe: " + errorText);
             var info:ClientInfo = probe.clientInfo;
-            check(info.clientVersion == 860, "Expected 8.60, detected " + info.clientVersionStr + ".");
+            check(info.clientVersion == expectedVersion,
+                "Expected client version " + expectedVersion + ", detected " + info.clientVersionStr + ".");
             check(info.multiSpr && info.features.extended, "Expected extended multi-SPR assets.");
             var v:Version = VersionStorage.getInstance().getFromClientInfo(info);
             check(v != null, "Could not resolve client version from DAT/SPR signatures.");
@@ -726,7 +728,8 @@ package
             things.addEventListener(ErrorEvent.ERROR, capture);
             things.load(source.resolvePath("Tibia.dat"), v, info.features);
             check(things.loaded, "Real DAT load: " + errorText);
-            note("PASS: real 8.60 DAT loaded (items " + things.itemsCount + ", outfits " + things.outfitsCount + ")");
+            note("PASS: real " + info.clientVersionStr + " DAT loaded (items " + things.itemsCount +
+                ", outfits " + things.outfitsCount + ")");
 
             var sprites:SpriteStorage = new SpriteStorage();
             sprites.addEventListener(ErrorEvent.ERROR, capture);
